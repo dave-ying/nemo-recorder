@@ -64,6 +64,7 @@ export const WAVEFORM_STYLE = {
  * @property {number|null} mouseMoveRaf
  * @property {number} draggingHandleIndex
  * @property {Object|null} _dragSnapshot
+ * @property {boolean} draggingPlayhead
  */
 
 /** @type {AppState} */
@@ -105,7 +106,8 @@ export const state = {
   settings: { sampleRate: 48000, bitDepth: 24, channels: 1 },
   exportSettings: { format: 'wav', quality: 32 },
   trashHideTimer: null,
-  mouseMoveRaf: null
+  mouseMoveRaf: null,
+  draggingPlayhead: false
 };
 
 

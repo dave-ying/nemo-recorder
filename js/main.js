@@ -2,7 +2,7 @@ import { state } from './state.js';
 import { el } from './dom.js';
 import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
-import { drawPlaybackWaveform, hideSegmentTrash, scheduleHideSegmentTrash, updateSegmentTrashPosition, removeDraggingClass } from './waveform.js';
+import { drawPlaybackWaveform, hideSegmentTrash, scheduleHideSegmentTrash, updateSegmentTrashPosition, removeDraggingClass, removePlayheadCaretDraggingClass } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
@@ -75,6 +75,11 @@ window.addEventListener('mouseup', () => {
     showToast('Split line repositioned');
     return;
   }
+  if (state.draggingPlayhead) {
+    state.draggingPlayhead = false;
+    removePlayheadCaretDraggingClass();
+    return;
+  }
   state.isDragging = false;
 });
 
@@ -93,11 +98,17 @@ window.addEventListener('mousemove', (e) => {
       ? state.playbackOffset / state.recordedBuffer.duration
       : 0;
     drawPlaybackWaveform(playheadRatio);
+    return;
+  }
+  if (state.draggingPlayhead && state.recordedBuffer) {
+    const rect = el.waveformContainer.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seekToRatio(ratio);
   }
 });
 
 function handlePlaybackViewHover(e) {
-  if (state.draggingHandleIndex >= 0 || !state.recordedBuffer) return;
+  if (state.draggingHandleIndex >= 0 || state.draggingPlayhead || !state.recordedBuffer) return;
   const containerRect = el.waveformContainer.getBoundingClientRect();
   const hoverZoneTop = containerRect.top - HOVER_ZONE_OFFSET;
   const hoverZoneBottom = containerRect.bottom + HOVER_ZONE_OFFSET;

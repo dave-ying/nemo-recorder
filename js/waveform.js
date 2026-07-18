@@ -142,13 +142,79 @@ export function updatePlayheadScissorsPosition(ratio) {
   const halfBtn = (el.playheadScissors.offsetHeight || SCISSORS_FALLBACK_HEIGHT) / 2;
 
   let leftPx = (containerRect.left - viewRect.left) + ratio * containerRect.width;
-  const topPx = (containerRect.bottom - viewRect.top) + TRASH_TOP_OFFSET;
+  const topPx = (containerRect.top - viewRect.top) + containerRect.height / 2;
 
   leftPx = Math.max(halfBtn, Math.min(viewRect.width - halfBtn, leftPx));
 
   el.playheadScissors.style.left = leftPx + 'px';
   el.playheadScissors.style.top = topPx + 'px';
   el.playheadScissors.classList.add('visible');
+}
+
+// ===== Playhead caret positioning =====
+
+export function positionPlayheadCarets(ratio) {
+  if (!state.recordedBuffer || el.playbackView.hidden || ratio < 0 || ratio > 1) {
+    el.playheadCaretTop.style.display = 'none';
+    el.playheadCaretBottom.style.display = 'none';
+    return;
+  }
+
+  if (state.draggingHandleIndex >= 0) {
+    el.playheadCaretTop.style.display = 'none';
+    el.playheadCaretBottom.style.display = 'none';
+    return;
+  }
+
+  const EDGE_THRESHOLD = 0.01;
+  if (ratio <= EDGE_THRESHOLD || ratio >= 1 - EDGE_THRESHOLD) {
+    el.playheadCaretTop.style.display = 'none';
+    el.playheadCaretBottom.style.display = 'none';
+    return;
+  }
+
+  const canvasRect = el.waveformCanvas.getBoundingClientRect();
+  const viewRect = el.playbackView.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.floor(canvasRect.width * dpr);
+  const lineXCssPx = Math.floor(ratio * W) / dpr;
+  let leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
+
+  const HALF = 12;
+  leftPx = Math.max(HALF, Math.min(viewRect.width - HALF, leftPx));
+
+  const HANDLE_H = 20;
+  const OVERLAP = 4;
+  const topPx = (canvasRect.top - viewRect.top) - HANDLE_H + OVERLAP;
+  const bottomPx = (canvasRect.bottom - viewRect.top) - OVERLAP;
+
+  el.playheadCaretTop.style.display = '';
+  el.playheadCaretTop.style.left = leftPx + 'px';
+  el.playheadCaretTop.style.top = topPx + 'px';
+
+  el.playheadCaretBottom.style.display = '';
+  el.playheadCaretBottom.style.left = leftPx + 'px';
+  el.playheadCaretBottom.style.top = bottomPx + 'px';
+}
+
+function playheadCaretMouseDown(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (state.isPlaying) pausePlayback();
+  state.draggingPlayhead = true;
+  el.playheadCaretTop.classList.add('dragging');
+  el.playheadCaretBottom.classList.add('dragging');
+  hideSegmentTrash();
+}
+
+el.playheadCaretTop.addEventListener('mousedown', playheadCaretMouseDown);
+el.playheadCaretBottom.addEventListener('mousedown', playheadCaretMouseDown);
+el.playheadCaretTop.addEventListener('click', (e) => e.stopPropagation());
+el.playheadCaretBottom.addEventListener('click', (e) => e.stopPropagation());
+
+export function removePlayheadCaretDraggingClass() {
+  el.playheadCaretTop.classList.remove('dragging');
+  el.playheadCaretBottom.classList.remove('dragging');
 }
 
 // ===== Trash hide helpers =====
@@ -427,10 +493,13 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
 
   if (!state.recordedBuffer) {
     el.playheadScissors.classList.remove('visible');
+    el.playheadCaretTop.style.display = 'none';
+    el.playheadCaretBottom.style.display = 'none';
     return;
   }
 
   updatePlayheadScissorsPosition(playheadRatio);
+  positionPlayheadCarets(playheadRatio);
 
   if (!state.cachedPeaks || state.cachedPeaksWidth !== W) {
     state.cachedPeaks = computePeaks(W);
