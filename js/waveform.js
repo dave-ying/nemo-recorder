@@ -125,7 +125,7 @@ export function updateSegmentTrashPosition() {
 }
 
 export function updatePlayheadScissorsPosition(ratio) {
-  if (state.isPlaying || !state.recordedBuffer || ratio < 0 || ratio > 1 || el.playbackView.hidden || el.segmentTrash.classList.contains('visible')) {
+  if (state.isPlaying || !state.recordedBuffer || ratio < 0 || ratio > 1 || el.playbackView.hidden) {
     el.playheadScissors.classList.remove('visible');
     return;
   }
