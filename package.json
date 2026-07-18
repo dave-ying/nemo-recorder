@@ -1,0 +1,13 @@
+{
+  "name": "nemo-record",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "check": "tsc --noEmit -p jsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
