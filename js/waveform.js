@@ -112,7 +112,8 @@ export function updateSegmentTrashPosition() {
   const viewRect = el.playbackView.getBoundingClientRect();
 
   let leftPx = (containerRect.left - viewRect.left) + centerRatio * containerRect.width;
-  const topPx = (containerRect.bottom - viewRect.top) + TRASH_TOP_OFFSET;
+  const trashH = el.segmentTrash.offsetHeight || 30;
+  const topPx = (containerRect.top - viewRect.top) - TRASH_TOP_OFFSET - trashH;
 
   const halfBtn = TRASH_BUTTON_HALF;
   leftPx = Math.max(halfBtn, Math.min(viewRect.width - halfBtn, leftPx));

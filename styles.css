@@ -142,7 +142,7 @@ body::after {
 .stop-button svg { width: 20px; height: 20px; fill: currentColor; }
 
 .playback-view { gap: 16px; justify-content: space-between; position: relative; }
-.waveform-container { position: relative; flex: 1 1 0; min-height: 60px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.3); overflow: hidden; cursor: crosshair; margin: 24px 0 42px; }
+.waveform-container { position: relative; flex: 1 1 0; min-height: 60px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.3); overflow: hidden; cursor: crosshair; margin: 42px 0 42px; }
 .waveform-container::before { content: 'WAVEFORM'; position: absolute; top: 8px; left: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--fg-dim); letter-spacing: 0.25em; z-index: 2; pointer-events: none; }
 .waveform-segment-count { position: absolute; top: 8px; right: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--accent); letter-spacing: 0.15em; z-index: 2; pointer-events: none; padding: 2px 8px; background: rgba(255, 140, 66, 0.08); border: 1px solid rgba(255, 140, 66, 0.2); border-radius: 4px; }
 .waveform-segment-count.hidden { display: none; }
@@ -161,18 +161,18 @@ body::after {
 }
 .segment-trash svg { width: 14px; height: 14px; }
 .segment-trash::before {
-  content: ''; position: absolute; top: -5px; left: 50%;
+  content: ''; position: absolute; bottom: -5px; left: 50%;
   transform: translateX(-50%); width: 0; height: 0;
   border-left: 5px solid transparent; border-right: 5px solid transparent;
-  border-bottom: 5px solid var(--border-bright);
-  transition: border-bottom-color 0.15s;
+  border-top: 5px solid var(--border-bright);
+  transition: border-top-color 0.15s;
 }
 .segment-trash::after {
-  content: ''; position: absolute; top: -4px; left: 50%;
+  content: ''; position: absolute; bottom: -4px; left: 50%;
   transform: translateX(-50%); width: 0; height: 0;
   border-left: 4px solid transparent; border-right: 4px solid transparent;
-  border-bottom: 4px solid var(--surface);
-  transition: border-bottom-color 0.15s;
+  border-top: 4px solid var(--surface);
+  transition: border-top-color 0.15s;
 }
 .segment-trash.visible {
   opacity: 1; pointer-events: auto;
@@ -187,8 +187,8 @@ body::after {
   background: rgba(255, 58, 92, 0.12);
   box-shadow: 0 4px 20px rgba(255, 58, 92, 0.35);
 }
-.segment-trash:hover::before { border-bottom-color: var(--rec); }
-.segment-trash:hover::after { border-bottom-color: rgba(255, 58, 92, 0.12); }
+.segment-trash:hover::before { border-top-color: var(--rec); }
+.segment-trash:hover::after { border-top-color: rgba(255, 58, 92, 0.12); }
 
 .playhead-scissors {
   position: absolute;

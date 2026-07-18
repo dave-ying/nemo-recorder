@@ -99,10 +99,11 @@ window.addEventListener('mousemove', (e) => {
 function handlePlaybackViewHover(e) {
   if (state.draggingHandleIndex >= 0 || !state.recordedBuffer) return;
   const containerRect = el.waveformContainer.getBoundingClientRect();
+  const hoverZoneTop = containerRect.top - HOVER_ZONE_OFFSET;
   const hoverZoneBottom = containerRect.bottom + HOVER_ZONE_OFFSET;
 
   const inHoverZone = e.clientX >= containerRect.left && e.clientX <= containerRect.right &&
-                      e.clientY >= containerRect.top && e.clientY <= hoverZoneBottom;
+                      e.clientY >= hoverZoneTop && e.clientY <= hoverZoneBottom;
 
   if (inHoverZone) {
     const ratio = (e.clientX - containerRect.left) / containerRect.width;
