@@ -109,28 +109,12 @@ export function positionPlayheadCarets(ratio) {
     return;
   }
 
-  if (state.draggingHandleIndex >= 0) {
-    el.playheadCaretTop.style.display = 'none';
-    el.playheadCaretBottom.style.display = 'none';
-    return;
-  }
-
-  const EDGE_THRESHOLD = 0.01;
-  if (ratio <= EDGE_THRESHOLD || ratio >= 1 - EDGE_THRESHOLD) {
-    el.playheadCaretTop.style.display = 'none';
-    el.playheadCaretBottom.style.display = 'none';
-    return;
-  }
-
   const canvasRect = el.waveformCanvas.getBoundingClientRect();
   const viewRect = el.playbackView.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const W = Math.floor(canvasRect.width * dpr);
   const lineXCssPx = Math.floor(ratio * W) / dpr;
-  let leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
-
-  const HALF = 17;
-  leftPx = Math.max(HALF, Math.min(viewRect.width - HALF, leftPx));
+  const leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
 
   const HANDLE_H = 30;
   const OVERLAP = 4;
