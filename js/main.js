@@ -112,25 +112,33 @@ function handlePlaybackViewHover(e) {
       hideSegmentTrash();
     } else {
       const newHover = Math.max(0, Math.min(1, ratio));
-      const playheadRatio = state.playbackOffset / state.recordedBuffer.duration;
-      const distToPlayheadPx = Math.abs(newHover - playheadRatio) * containerRect.width;
-      if (distToPlayheadPx < SEEK_SNAP_DISTANCE) {
-        state.hoverRatio = -1;
-        hideSegmentTrash();
-        if (state.mouseMoveRaf) cancelAnimationFrame(state.mouseMoveRaf);
-        state.mouseMoveRaf = requestAnimationFrame(() => {
-          drawPlaybackWaveform(playheadRatio);
-        });
-      } else {
+      if (state.isPlaying) {
         if (Math.abs(newHover - state.hoverRatio) > HOVER_RATIO_THRESHOLD) {
           state.hoverRatio = newHover;
-          if (state.mouseMoveRaf) cancelAnimationFrame(state.mouseMoveRaf);
-          state.mouseMoveRaf = requestAnimationFrame(() => {
-            drawPlaybackWaveform(state.playbackOffset / state.recordedBuffer.duration);
-          });
         }
         clearTimeout(state.trashHideTimer);
         updateSegmentTrashPosition();
+      } else {
+        const playheadRatio = state.playbackOffset / state.recordedBuffer.duration;
+        const distToPlayheadPx = Math.abs(newHover - playheadRatio) * containerRect.width;
+        if (distToPlayheadPx < SEEK_SNAP_DISTANCE) {
+          state.hoverRatio = -1;
+          hideSegmentTrash();
+          if (state.mouseMoveRaf) cancelAnimationFrame(state.mouseMoveRaf);
+          state.mouseMoveRaf = requestAnimationFrame(() => {
+            drawPlaybackWaveform(playheadRatio);
+          });
+        } else {
+          if (Math.abs(newHover - state.hoverRatio) > HOVER_RATIO_THRESHOLD) {
+            state.hoverRatio = newHover;
+            if (state.mouseMoveRaf) cancelAnimationFrame(state.mouseMoveRaf);
+            state.mouseMoveRaf = requestAnimationFrame(() => {
+              drawPlaybackWaveform(state.playbackOffset / state.recordedBuffer.duration);
+            });
+          }
+          clearTimeout(state.trashHideTimer);
+          updateSegmentTrashPosition();
+        }
       }
     }
   } else {
