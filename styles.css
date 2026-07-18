@@ -216,7 +216,7 @@ body::after {
 .division-handle {
   position: absolute;
   z-index: 15;
-  cursor: col-resize;
+  cursor: default;
   padding: 2px;
   margin: 0;
   background: transparent;
