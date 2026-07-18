@@ -8,10 +8,9 @@ export const WAVEFORM_STYLE = {
   midlineColor: 'rgba(255, 255, 255, 0.04)',
   playedColor: 'rgba(77, 216, 200, 0.95)',
   unplayedColor: 'rgba(77, 216, 200, 0.28)',
-  divisionColor: 'rgba(255, 140, 66, 0.5)',
+  divisionColor: 'rgba(240, 238, 230, 0.45)',
   trashOverlayColor: 'rgba(255, 58, 92, 0.25)',
   trashBorderColor: 'rgba(255, 58, 92, 0.8)',
-  hoverLineColor: 'rgba(240, 238, 230, 0.2)',
   playheadColor: '#ff8c42',
   playheadGlow: 'rgba(255, 140, 66, 0.7)',
   tickColor: 'rgba(110, 110, 122, 0.5)'
@@ -55,7 +54,6 @@ export const WAVEFORM_STYLE = {
  * @property {Float32Array|null} cachedPeaks
  * @property {number} cachedPeaksWidth
  * @property {Path2D|null} cachedPath
- * @property {boolean} isDragging
  * @property {(() => void)|null} liveResizeHandler
  * @property {boolean} isDownloading
  * @property {{sampleRate: number, bitDepth: number, channels: number}} settings
@@ -98,7 +96,6 @@ export const state = {
   cachedPeaks: null,
   cachedPeaksWidth: 0,
   cachedPath: null,
-  isDragging: false,
   draggingHandleIndex: -1,
   _dragSnapshot: null,
   liveResizeHandler: null,

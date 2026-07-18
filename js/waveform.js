@@ -18,25 +18,6 @@ export function findSegmentAtSample(editedSample) {
   return null;
 }
 
-function findSegmentIndexAtRatio(ratio) {
-  if (!state.recordedBuffer) return -1;
-  const targetSample = Math.round(ratio * state.recordedBuffer.length);
-  const result = findSegmentAtSample(targetSample);
-  return result ? result.index : -1;
-}
-
-function getSegmentCenterRatio(segIndex) {
-  if (!state.recordedBuffer || segIndex < 0 || segIndex >= state.segments.length) return 0;
-  const totalSamples = state.recordedBuffer.length;
-  let acc = 0;
-  for (let i = 0; i < state.segments.length; i++) {
-    const segLen = state.segments[i].end - state.segments[i].start;
-    if (i === segIndex) return (acc + segLen / 2) / totalSamples;
-    acc += segLen;
-  }
-  return 0;
-}
-
 // ===== Waveform path helpers =====
 
 export function buildWaveformPath(path, peaks, startIdx, endIdx, midY, scale) {
@@ -93,38 +74,6 @@ export function computePeaks(width) {
 
 // ===== Trash & scissors positioning =====
 
-export function updateSegmentTrashPosition() {
-  if (state.hoverRatio < 0 || !state.recordedBuffer || state.segments.length <= 1) {
-    el.segmentTrash.classList.remove('visible');
-    state.hoveredSegmentIndex = -1;
-    return;
-  }
-
-  const segIndex = findSegmentIndexAtRatio(state.hoverRatio);
-  if (segIndex < 0) {
-    el.segmentTrash.classList.remove('visible');
-    state.hoveredSegmentIndex = -1;
-    return;
-  }
-
-  const centerRatio = getSegmentCenterRatio(segIndex);
-  const containerRect = el.waveformContainer.getBoundingClientRect();
-  const viewRect = el.playbackView.getBoundingClientRect();
-
-  let leftPx = (containerRect.left - viewRect.left) + centerRatio * containerRect.width;
-  const trashH = el.segmentTrash.offsetHeight || 30;
-  const topPx = (containerRect.top - viewRect.top) - TRASH_TOP_OFFSET - trashH;
-
-  const halfBtn = TRASH_BUTTON_HALF;
-  leftPx = Math.max(halfBtn, Math.min(viewRect.width - halfBtn, leftPx));
-
-  el.segmentTrash.style.left = leftPx + 'px';
-  el.segmentTrash.style.top = topPx + 'px';
-  el.segmentTrash.title = `Delete segment ${segIndex + 1} of ${state.segments.length}`;
-  el.segmentTrash.classList.add('visible');
-  state.hoveredSegmentIndex = segIndex;
-}
-
 export function updatePlayheadScissorsPosition(ratio) {
   if (state.isPlaying || !state.recordedBuffer || ratio < 0 || ratio > 1 || el.playbackView.hidden) {
     el.playheadScissors.classList.remove('visible');
@@ -180,10 +129,10 @@ export function positionPlayheadCarets(ratio) {
   const lineXCssPx = Math.floor(ratio * W) / dpr;
   let leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
 
-  const HALF = 12;
+  const HALF = 17;
   leftPx = Math.max(HALF, Math.min(viewRect.width - HALF, leftPx));
 
-  const HANDLE_H = 20;
+  const HANDLE_H = 30;
   const OVERLAP = 4;
   const topPx = (canvasRect.top - viewRect.top) - HANDLE_H + OVERLAP;
   const bottomPx = (canvasRect.bottom - viewRect.top) - OVERLAP;
@@ -207,8 +156,19 @@ function playheadCaretMouseDown(e) {
   hideSegmentTrash();
 }
 
+function playheadCaretTouchStart(e) {
+  e.preventDefault();
+  if (state.isPlaying) pausePlayback();
+  state.draggingPlayhead = true;
+  el.playheadCaretTop.classList.add('dragging');
+  el.playheadCaretBottom.classList.add('dragging');
+  hideSegmentTrash();
+}
+
 el.playheadCaretTop.addEventListener('mousedown', playheadCaretMouseDown);
 el.playheadCaretBottom.addEventListener('mousedown', playheadCaretMouseDown);
+el.playheadCaretTop.addEventListener('touchstart', playheadCaretTouchStart, { passive: false });
+el.playheadCaretBottom.addEventListener('touchstart', playheadCaretTouchStart, { passive: false });
 el.playheadCaretTop.addEventListener('click', (e) => e.stopPropagation());
 el.playheadCaretBottom.addEventListener('click', (e) => e.stopPropagation());
 
@@ -226,24 +186,8 @@ export function hideSegmentTrash() {
   state.isHoveringTrash = false;
 }
 
-export function scheduleHideSegmentTrash(delay = TRASH_HIDE_DELAY_MS) {
-  clearTimeout(state.trashHideTimer);
-  state.trashHideTimer = setTimeout(() => {
-    hideSegmentTrash();
-    if (state.hoverRatio !== -1) {
-      state.hoverRatio = -1;
-      if (state.recordedBuffer) {
-        drawPlaybackWaveform(state.playbackOffset / state.recordedBuffer.duration);
-      }
-    }
-  }, delay);
-}
-
 const PEAK_STEP_DIVISOR = 100;
-const TRASH_TOP_OFFSET = 6;
-const TRASH_BUTTON_HALF = 15;
 const SCISSORS_FALLBACK_HEIGHT = 30;
-const TRASH_HIDE_DELAY_MS = 200;
 
 const DIVISION_HANDLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 9c.852 0 1.297 .986 .783 1.623l-.076 .084l-6 6a1 1 0 0 1 -1.32 .083l-.094 -.083l-6 -6l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057v-.118l.005 -.058l.009 -.06l.01 -.052l.032 -.108l.027 -.067l.07 -.132l.065 -.09l.073 -.081l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01l.057 -.004l12.059 -.002z"/></svg>`;
 
@@ -436,7 +380,7 @@ function drawDivisionMarkers(ctx, segBounds, H, dpr, highlightIndex = -1) {
   if (highlightIndex >= 0 && highlightIndex < segBounds.length - 1) {
     const x = segBounds[highlightIndex].end;
     ctx.setLineDash([4 * dpr, 4 * dpr]);
-    ctx.strokeStyle = WAVEFORM_STYLE.divisionColor;
+    ctx.strokeStyle = 'rgba(240, 238, 230, 0.75)';
     ctx.lineWidth = 2 * dpr;
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -455,17 +399,6 @@ function drawTrashOverlay(ctx, segBounds, H, dpr) {
   ctx.strokeStyle = WAVEFORM_STYLE.trashBorderColor;
   ctx.lineWidth = 2 * dpr;
   ctx.strokeRect(sb.start + 1 * dpr, 1 * dpr, sb.end - sb.start - 2 * dpr, H - 2 * dpr);
-}
-
-function drawHoverLine(ctx, hoverX, H, dpr) {
-  ctx.strokeStyle = WAVEFORM_STYLE.hoverLineColor;
-  ctx.lineWidth = 1 * dpr;
-  ctx.setLineDash([3 * dpr, 3 * dpr]);
-  ctx.beginPath();
-  ctx.moveTo(hoverX, 0);
-  ctx.lineTo(hoverX, H);
-  ctx.stroke();
-  ctx.setLineDash([]);
 }
 
 function drawTimeTicks(ctx, W, H, duration, dpr) {
@@ -519,10 +452,6 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   drawPlayedFill(waveCtx, path, playheadX, H);
   drawDivisionMarkers(waveCtx, segBounds, H, dpr, state.draggingHandleIndex);
   drawTrashOverlay(waveCtx, segBounds, H, dpr);
-
-  if (state.draggingHandleIndex < 0 && !state.isHoveringTrash && state.hoverRatio >= 0 && state.hoverRatio <= 1) {
-    drawHoverLine(waveCtx, Math.floor(state.hoverRatio * W), H, dpr);
-  }
 
   waveCtx.strokeStyle = WAVEFORM_STYLE.playheadColor;
   waveCtx.lineWidth = 2 * dpr;

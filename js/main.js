@@ -2,14 +2,11 @@ import { state } from './state.js';
 import { el } from './dom.js';
 import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
-import { drawPlaybackWaveform, hideSegmentTrash, scheduleHideSegmentTrash, updateSegmentTrashPosition, removeDraggingClass, removePlayheadCaretDraggingClass } from './waveform.js';
+import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 
-const HOVER_ZONE_OFFSET = 40;
-const SEEK_SNAP_DISTANCE = 25;
-const HOVER_RATIO_THRESHOLD = 0.001;
 const RESIZE_DEBOUNCE_MS = 120;
 
 // ===== Event handlers =====
@@ -51,14 +48,6 @@ el.playheadScissors.addEventListener('click', (e) => {
 });
 el.playheadScissors.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
-el.waveformContainer.addEventListener('click', (e) => {
-  if (!state.recordedBuffer) return;
-  const rect = el.waveformContainer.getBoundingClientRect();
-  seekToRatio((e.clientX - rect.left) / rect.width);
-});
-
-el.waveformContainer.addEventListener('mousedown', () => { state.isDragging = true; });
-
 window.addEventListener('mouseup', () => {
   if (state.draggingHandleIndex >= 0) {
     const idx = state.draggingHandleIndex;
@@ -80,7 +69,13 @@ window.addEventListener('mouseup', () => {
     removePlayheadCaretDraggingClass();
     return;
   }
-  state.isDragging = false;
+});
+
+window.addEventListener('touchend', () => {
+  if (state.draggingPlayhead) {
+    state.draggingPlayhead = false;
+    removePlayheadCaretDraggingClass();
+  }
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -107,84 +102,12 @@ window.addEventListener('mousemove', (e) => {
   }
 });
 
-function handlePlaybackViewHover(e) {
-  if (state.draggingHandleIndex >= 0 || state.draggingPlayhead || !state.recordedBuffer) return;
-  const containerRect = el.waveformContainer.getBoundingClientRect();
-  const hoverZoneTop = containerRect.top - HOVER_ZONE_OFFSET;
-  const hoverZoneBottom = containerRect.bottom + HOVER_ZONE_OFFSET;
-
-  const inHoverZone = e.clientX >= containerRect.left && e.clientX <= containerRect.right &&
-                      e.clientY >= hoverZoneTop && e.clientY <= hoverZoneBottom;
-
-  if (inHoverZone) {
-    const ratio = (e.clientX - containerRect.left) / containerRect.width;
-    if (state.isDragging) {
-      seekToRatio(ratio);
-      state.hoverRatio = -1;
-      hideSegmentTrash();
-    } else {
-      const newHover = Math.max(0, Math.min(1, ratio));
-      if (state.isPlaying) {
-        if (Math.abs(newHover - state.hoverRatio) > HOVER_RATIO_THRESHOLD) {
-          state.hoverRatio = newHover;
-        }
-        clearTimeout(state.trashHideTimer);
-        updateSegmentTrashPosition();
-      } else {
-        const playheadRatio = state.playbackOffset / state.recordedBuffer.duration;
-        const distToPlayheadPx = Math.abs(newHover - playheadRatio) * containerRect.width;
-        if (distToPlayheadPx < SEEK_SNAP_DISTANCE) {
-          state.hoverRatio = -1;
-          hideSegmentTrash();
-          if (state.mouseMoveRaf) cancelAnimationFrame(state.mouseMoveRaf);
-          state.mouseMoveRaf = requestAnimationFrame(() => {
-            drawPlaybackWaveform(playheadRatio);
-          });
-        } else {
-          if (Math.abs(newHover - state.hoverRatio) > HOVER_RATIO_THRESHOLD) {
-            state.hoverRatio = newHover;
-            if (state.mouseMoveRaf) cancelAnimationFrame(state.mouseMoveRaf);
-            state.mouseMoveRaf = requestAnimationFrame(() => {
-              drawPlaybackWaveform(state.playbackOffset / state.recordedBuffer.duration);
-            });
-          }
-          clearTimeout(state.trashHideTimer);
-          updateSegmentTrashPosition();
-        }
-      }
-    }
-  } else {
-    if (!state.isDragging) scheduleHideSegmentTrash();
+window.addEventListener('touchmove', (e) => {
+  if (state.draggingPlayhead && state.recordedBuffer) {
+    const rect = el.waveformContainer.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width));
+    seekToRatio(ratio);
   }
-}
-
-el.playbackView.addEventListener('mousemove', handlePlaybackViewHover);
-
-el.playbackView.addEventListener('mouseleave', () => {
-  if (!state.isDragging) scheduleHideSegmentTrash();
-});
-
-el.segmentTrash.addEventListener('mouseenter', () => {
-  clearTimeout(state.trashHideTimer);
-  state.isHoveringTrash = true;
-  if (state.recordedBuffer) drawPlaybackWaveform(state.playbackOffset / state.recordedBuffer.duration);
-});
-el.segmentTrash.addEventListener('mouseleave', () => {
-  state.isHoveringTrash = false;
-  if (state.recordedBuffer) drawPlaybackWaveform(state.playbackOffset / state.recordedBuffer.duration);
-  scheduleHideSegmentTrash();
-});
-el.segmentTrash.addEventListener('mousedown', (e) => e.stopPropagation());
-el.segmentTrash.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
-});
-
-el.waveformContainer.addEventListener('touchstart', (e) => {
-  if (!state.recordedBuffer) return;
-  const touch = e.touches[0];
-  const rect = el.waveformContainer.getBoundingClientRect();
-  seekToRatio((touch.clientX - rect.left) / rect.width);
 }, { passive: true });
 
 document.addEventListener('keydown', (e) => {
@@ -225,7 +148,6 @@ window.addEventListener('resize', () => {
         ? state.audioContext.currentTime - state.playbackStartTime + state.playbackOffset
         : state.playbackOffset;
       drawPlaybackWaveform(elapsed / state.recordedBuffer.duration);
-      if (el.segmentTrash.classList.contains('visible')) updateSegmentTrashPosition();
     }
   }, RESIZE_DEBOUNCE_MS);
 });
