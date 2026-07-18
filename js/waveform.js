@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX } from './state.js';
 import { el, waveCtx } from './dom.js';
 import { formatTime } from './utils.js';
 import { pausePlayback } from './playback.js';
@@ -303,86 +303,148 @@ export function removeDraggingClass(index) {
 
 // ===== Playback waveform rendering =====
 
-function drawMidline(ctx, W, midY) {
-  ctx.strokeStyle = WAVEFORM_STYLE.midlineColor;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, midY);
-  ctx.lineTo(W, midY);
-  ctx.stroke();
+function roundedRectPath(path, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  if (r === 0) {
+    path.rect(x, y, w, h);
+    return;
+  }
+  path.moveTo(x + r, y);
+  path.lineTo(x + w - r, y);
+  path.arcTo(x + w, y, x + w, y + r, r);
+  path.lineTo(x + w, y + h - r);
+  path.arcTo(x + w, y + h, x + w - r, y + h, r);
+  path.lineTo(x + r, y + h);
+  path.arcTo(x, y + h, x, y + h - r, r);
+  path.lineTo(x, y + r);
+  path.arcTo(x, y, x + r, y, r);
+  path.closePath();
 }
 
-function drawPlayedFill(ctx, path, playheadX, H) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, playheadX, H);
-  ctx.clip();
-  ctx.fillStyle = WAVEFORM_STYLE.playedColor;
-  ctx.fill(path);
-  ctx.restore();
+function buildSegmentCardPaths(segBounds, H, dpr) {
+  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX * dpr;
+  const cardH = H - 2 * insetY;
+  const baseR = SEGMENT_CORNER_RADIUS_CSS_PX * dpr;
+  const cardPaths = [];
+  for (const sb of segBounds) {
+    const x = sb.drawStart;
+    const w = sb.drawEnd - sb.drawStart;
+    if (w <= 0) {
+      cardPaths.push(null);
+      continue;
+    }
+    const r = Math.min(baseR, w / 2, cardH / 2);
+    const cardPath = new Path2D();
+    roundedRectPath(cardPath, x, insetY, w, cardH, r);
+    cardPaths.push(cardPath);
+  }
+  return cardPaths;
 }
 
-function drawUnplayedFill(ctx, path, playheadX, W, H) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(playheadX, 0, W - playheadX, H);
-  ctx.clip();
-  ctx.fillStyle = WAVEFORM_STYLE.unplayedColor;
-  ctx.fill(path);
-  ctx.restore();
+function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
+  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX * dpr;
+  const shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
+  const shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
+  const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
+  const midY = H / 2;
+
+  // Pass 1: card backgrounds with drop shadows (drawn first so shadows don't darken neighbors' content)
+  for (const cardPath of cardPaths) {
+    if (!cardPath) continue;
+    ctx.save();
+    ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
+    ctx.shadowBlur = shadowBlur;
+    ctx.shadowOffsetY = shadowOffsetY;
+    ctx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
+    ctx.fill(cardPath);
+    ctx.restore();
+  }
+
+  // Pass 2: clipped waveform content + edge stroke per card
+  for (let i = 0; i < segBounds.length; i++) {
+    const sb = segBounds[i];
+    const cardPath = cardPaths[i];
+    if (!cardPath) continue;
+    const x = sb.drawStart;
+    const w = sb.drawEnd - sb.drawStart;
+
+    ctx.save();
+    ctx.clip(cardPath);
+
+    // Midline (clipped to card so it breaks at gaps)
+    ctx.strokeStyle = WAVEFORM_STYLE.midlineColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, midY);
+    ctx.lineTo(x + w, midY);
+    ctx.stroke();
+
+    // Played / unplayed fills (clipped to card, then to each side of the playhead)
+    const midX = Math.min(sb.drawEnd, Math.max(sb.drawStart, playheadX));
+    if (midX > x) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, 0, midX - x, H);
+      ctx.clip();
+      ctx.fillStyle = WAVEFORM_STYLE.playedColor;
+      ctx.fill(path);
+      ctx.restore();
+    }
+    if (midX < x + w) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(midX, 0, x + w - midX, H);
+      ctx.clip();
+      ctx.fillStyle = WAVEFORM_STYLE.unplayedColor;
+      ctx.fill(path);
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // Edge stroke (on top, not clipped)
+    ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
+    ctx.lineWidth = edgeWidth;
+    ctx.stroke(cardPath);
+  }
 }
 
-function computeSegmentBounds(W, totalSamples) {
+function computeSegmentBounds(W, totalSamples, gapPx) {
   const segBounds = [];
   let accSamples = 0;
-  for (const seg of state.segments) {
+  for (let i = 0; i < state.segments.length; i++) {
+    const seg = state.segments[i];
     const segLen = seg.end - seg.start;
     const startX = Math.floor((accSamples / totalSamples) * W);
     accSamples += segLen;
     const endX = Math.floor((accSamples / totalSamples) * W);
-    segBounds.push({ start: startX, end: endX });
+
+    const gapHalf = gapPx / 2;
+    const drawStart = i === 0 ? startX : Math.min(startX + gapHalf, endX);
+    const drawEnd = i === state.segments.length - 1 ? endX : Math.max(startX, endX - gapHalf);
+
+    segBounds.push({ start: startX, end: endX, drawStart, drawEnd });
   }
   return segBounds;
 }
 
-function drawDivisionMarkers(ctx, segBounds, H, dpr, highlightIndex = -1) {
-  if (segBounds.length <= 1) return;
-
-  ctx.strokeStyle = WAVEFORM_STYLE.divisionColor;
-  ctx.lineWidth = 1 * dpr;
-  ctx.setLineDash([4 * dpr, 4 * dpr]);
-  for (let i = 0; i < segBounds.length - 1; i++) {
-    if (i === highlightIndex) continue;
-    const x = segBounds[i].end;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, H);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-
-  if (highlightIndex >= 0 && highlightIndex < segBounds.length - 1) {
-    const x = segBounds[highlightIndex].end;
-    ctx.setLineDash([4 * dpr, 4 * dpr]);
-    ctx.strokeStyle = 'rgba(240, 238, 230, 0.75)';
-    ctx.lineWidth = 2 * dpr;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, H);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function drawTrashOverlay(ctx, segBounds, H, dpr) {
+function drawTrashOverlay(ctx, segBounds, cardPaths, H, dpr) {
   if (!state.isHoveringTrash || state.hoveredSegmentIndex === -1 || state.hoveredSegmentIndex >= segBounds.length) return;
   const sb = segBounds[state.hoveredSegmentIndex];
+  const cardPath = cardPaths[state.hoveredSegmentIndex];
+  if (!cardPath) return;
+  const x = sb.drawStart;
+  const w = sb.drawEnd - sb.drawStart;
+
+  ctx.save();
+  ctx.clip(cardPath);
   ctx.fillStyle = WAVEFORM_STYLE.trashOverlayColor;
-  ctx.fillRect(sb.start, 0, sb.end - sb.start, H);
+  ctx.fillRect(x, 0, w, H);
+  ctx.restore();
 
   ctx.strokeStyle = WAVEFORM_STYLE.trashBorderColor;
   ctx.lineWidth = 2 * dpr;
-  ctx.strokeRect(sb.start + 1 * dpr, 1 * dpr, sb.end - sb.start - 2 * dpr, H - 2 * dpr);
+  ctx.stroke(cardPath);
 }
 
 function drawTimeTicks(ctx, W, H, duration, dpr) {
@@ -426,16 +488,14 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   }
   const path = state.cachedPath;
 
-  const midY = H / 2;
   const playheadX = Math.floor(playheadRatio * W);
   const totalSamples = state.recordedBuffer.length;
-  const segBounds = computeSegmentBounds(W, totalSamples);
+  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const segBounds = computeSegmentBounds(W, totalSamples, gapPx);
+  const cardPaths = buildSegmentCardPaths(segBounds, H, dpr);
 
-  drawMidline(waveCtx, W, midY);
-  drawUnplayedFill(waveCtx, path, playheadX, W, H);
-  drawPlayedFill(waveCtx, path, playheadX, H);
-  drawDivisionMarkers(waveCtx, segBounds, H, dpr, state.draggingHandleIndex);
-  drawTrashOverlay(waveCtx, segBounds, H, dpr);
+  drawSegmentCards(waveCtx, path, segBounds, cardPaths, playheadX, H, dpr);
+  drawTrashOverlay(waveCtx, segBounds, cardPaths, H, dpr);
 
   waveCtx.strokeStyle = WAVEFORM_STYLE.playheadColor;
   waveCtx.lineWidth = 2 * dpr;

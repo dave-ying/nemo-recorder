@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateReadouts, updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
@@ -55,6 +55,14 @@ export function splitAtPlayhead() {
     { start: seg.start, end: splitPoint },
     { start: splitPoint, end: seg.end }
   );
+
+  // Shift playhead to the start of the right card so the split gap stays visible
+  const canvasRect = el.waveformCanvas.getBoundingClientRect();
+  if (canvasRect.width > 0 && state.recordedBuffer.duration > 0) {
+    const shiftSec = ((SEGMENT_GAP_CSS_PX / 2 + 1) / canvasRect.width) * state.recordedBuffer.duration;
+    state.playbackOffset = Math.min(state.recordedBuffer.duration, state.playbackOffset + shiftSec);
+    el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  }
 
   hideSegmentTrash();
   drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);

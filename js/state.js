@@ -3,12 +3,20 @@ export const WAVEFORM_SCALE = 0.88;
 export const READOUT_IDS = ['readoutDurationBox', 'readoutRateBox', 'readoutBitBox', 'readoutChBox', 'readoutSizeBox'];
 
 export const MIN_SEGMENT_SAMPLES = 500;
+export const SEGMENT_GAP_CSS_PX = 8;
+export const SEGMENT_CORNER_RADIUS_CSS_PX = 6;
+export const SEGMENT_VERTICAL_INSET_CSS_PX = 3;
+export const SEGMENT_SHADOW_BLUR_CSS_PX = 8;
+export const SEGMENT_SHADOW_OFFSET_Y_CSS_PX = 3;
+export const SEGMENT_EDGE_WIDTH_CSS_PX = 1;
 
 export const WAVEFORM_STYLE = {
   midlineColor: 'rgba(255, 255, 255, 0.04)',
   playedColor: 'rgba(77, 216, 200, 0.95)',
   unplayedColor: 'rgba(77, 216, 200, 0.28)',
-  divisionColor: 'rgba(240, 238, 230, 0.45)',
+  segmentCardBg: 'rgba(255, 255, 255, 0.035)',
+  segmentEdgeColor: 'rgba(255, 255, 255, 0.12)',
+  segmentShadowColor: 'rgba(0, 0, 0, 0.6)',
   trashOverlayColor: 'rgba(255, 58, 92, 0.25)',
   trashBorderColor: 'rgba(255, 58, 92, 0.8)',
   playheadColor: '#ff8c42',
