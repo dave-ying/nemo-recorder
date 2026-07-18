@@ -38,6 +38,7 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} bitrateReadout
  * @property {HTMLDivElement} toast
  * @property {HTMLSpanElement} toastMessage
+ * @property {HTMLDivElement} readoutsPane
  * @property {HTMLDivElement} exportModal
  * @property {HTMLButtonElement} exportClose
  * @property {HTMLDivElement} exportQualityGrid
@@ -65,6 +66,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   readoutSize: $('readoutSize'), micName: $('micName'),
   rateOptions: $('rateOptions'), bitOptions: $('bitOptions'), chOptions: $('chOptions'),
   bitrateReadout: $('bitrateReadout'), toast: $('toast'), toastMessage: $('toastMessage'),
+  readoutsPane: $('readoutsPane'),
   exportModal: $('exportModal'), exportClose: $('exportClose'),
   exportQualityGrid: $('exportQualityGrid'), exportSize: $('exportSize'),
   exportDetail: $('exportDetail'), exportConfirm: $('exportConfirm')

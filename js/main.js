@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { el } from './dom.js';
-import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
+import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
 import { drawPlaybackWaveform, hideSegmentTrash, scheduleHideSegmentTrash, updateSegmentTrashPosition, removeDraggingClass } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
@@ -211,6 +211,7 @@ window.addEventListener('resize', () => {
 });
 
 // ===== Init =====
+showView('connect');
 updateSegmentCountDisplay();
 setTransportDisabled(true);
 

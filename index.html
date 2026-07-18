@@ -17,7 +17,7 @@
           <div class="brand-logo"></div>
           <div>
             <div class="brand-name">Nemo Record</div>
-            <div class="brand-sub">PCM capture · No compression · No codecs</div>
+
           </div>
         </div>
       </div>
@@ -158,7 +158,7 @@
       </div>
     </section>
 
-    <section class="readouts">
+    <section class="readouts" id="readoutsPane">
       <div class="readout" id="readoutDurationBox">
         <div class="readout-label">Duration</div>
         <div class="readout-value" id="readoutDuration">—<span class="unit">s</span></div>
@@ -180,15 +180,6 @@
         <div class="readout-value" id="readoutSize">—<span class="unit">MB</span></div>
       </div>
     </section>
-
-    <div class="info-note">
-      <svg class="info-note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
-      </svg>
-      <div class="info-note-text">
-        <strong>Truly lossless capture.</strong> Audio is taken as raw PCM directly from the Web Audio graph via <code>AudioWorklet</code>, bypassing <code>MediaRecorder</code>'s lossy Opus/Vorbis codecs. Browser DSP (AGC, noise suppression, echo cancellation) is disabled at the source. The internal buffer is bit-exact PCM — equivalent in fidelity to Audacity at the same sample rate and bit depth. Exports are available in both lossless (WAV) and compressed (MP3) formats.
-      </div>
-    </div>
 
     <footer class="app-footer">
       All processing local · No uploads · No tracking · Space: Play · ✂: Split · Hover: Delete

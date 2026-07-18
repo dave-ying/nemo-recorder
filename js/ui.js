@@ -19,6 +19,7 @@ export const showView = (name) => {
   el.recordingView.hidden = name !== 'recording';
   el.playbackView.hidden = name !== 'playback';
   el.downloadButton.hidden = name !== 'playback';
+  el.readoutsPane.hidden = name !== 'playback';
   if (name !== 'playback') {
     el.playheadScissors.classList.remove('visible');
     el.segmentTrash.classList.remove('visible');
