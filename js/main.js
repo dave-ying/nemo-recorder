@@ -2,10 +2,11 @@ import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
-import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash } from './waveform.js';
+import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
+import { formatTime } from './utils.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
@@ -18,9 +19,37 @@ el.recordButton.addEventListener('click', () => { if (!state.isRecording) startR
 el.stopButton.addEventListener('click', () => { if (state.isRecording) stopRecording(); });
 el.restartButton.addEventListener('click', () => {
   if (state.isPlaying) pausePlayback();
-  state.playbackOffset = 0;
-  el.timeCurrent.textContent = '00:00.000';
-  drawPlaybackWaveform(0);
+  const sr = state.originalBuffer.sampleRate;
+  const editedSample = Math.round(state.playbackOffset * sr);
+  const target = findSegmentAtSample(editedSample);
+  if (!target) return;
+  let acc = 0;
+  for (let i = 0; i < target.index; i++) acc += state.segments[i].end - state.segments[i].start;
+  if (target.offsetInSeg === 0 && target.index > 0) {
+    acc = 0;
+    for (let i = 0; i < target.index - 1; i++) acc += state.segments[i].end - state.segments[i].start;
+  }
+  state.playbackOffset = acc / sr;
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+});
+el.skipForwardButton.addEventListener('click', () => {
+  if (state.isPlaying) pausePlayback();
+  const sr = state.originalBuffer.sampleRate;
+  const editedSample = Math.round(state.playbackOffset * sr);
+  const target = findSegmentAtSample(editedSample);
+  if (!target) return;
+  if (target.index === state.segments.length - 1) {
+    state.playbackOffset = state.recordedBuffer.duration;
+    el.timeCurrent.textContent = formatTime(state.playbackOffset);
+    drawPlaybackWaveform(1);
+    return;
+  }
+  let acc = 0;
+  for (let i = 0; i <= target.index; i++) acc += state.segments[i].end - state.segments[i].start;
+  state.playbackOffset = acc / sr;
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
 });
 el.playButton.addEventListener('click', () => { state.isPlaying ? pausePlayback() : startPlayback(); });
 el.retryButton.addEventListener('click', rerecord);

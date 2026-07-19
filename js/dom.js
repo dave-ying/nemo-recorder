@@ -7,6 +7,7 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} recordButton
  * @property {HTMLButtonElement} stopButton
  * @property {HTMLButtonElement} restartButton
+ * @property {HTMLButtonElement} skipForwardButton
  * @property {HTMLButtonElement} playButton
  * @property {HTMLButtonElement} retryButton
  * @property {HTMLButtonElement} downloadButton
@@ -54,7 +55,7 @@ export const $ = (id) => document.getElementById(id);
 export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   connectButton: $('connectButton'), disconnectButton: $('disconnectButton'),
   recordButton: $('recordButton'), stopButton: $('stopButton'),
-  restartButton: $('restartButton'), playButton: $('playButton'), retryButton: $('retryButton'), downloadButton: $('downloadButton'),
+  restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), retryButton: $('retryButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteButton: $('deleteButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadCaretBottom: $('playheadCaretBottom'), segmentTrash: $('segmentTrash'),
   connectView: $('connectView'), readyView: $('readyView'),

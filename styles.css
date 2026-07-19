@@ -311,6 +311,16 @@ body::after {
 .restart-button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; color: var(--fg-dim); }
 .restart-button svg { width: 16px; height: 16px; }
 
+.skip-forward-button {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--surface); border: none; cursor: pointer;
+  display: grid; place-items: center; color: var(--fg); transition: all 0.2s;
+  flex-shrink: 0;
+}
+.skip-forward-button:hover { background: var(--surface-hover); color: var(--accent); }
+.skip-forward-button:active { transform: scale(0.96); }
+.skip-forward-button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; color: var(--fg-dim); }
+.skip-forward-button svg { width: 16px; height: 16px; }
+
 .play-button { 
   width: 44px; height: 44px; border-radius: 50%; background: var(--accent); border: none; cursor: pointer; 
   display: grid; place-items: center; color: var(--bg); transition: all 0.2s; 
@@ -460,6 +470,8 @@ body::after {
   .stop-button { width: 60px; height: 60px; }
   .restart-button { width: 32px; height: 32px; }
   .restart-button svg { width: 14px; height: 14px; }
+  .skip-forward-button { width: 32px; height: 32px; }
+  .skip-forward-button svg { width: 14px; height: 14px; }
   .play-button { width: 38px; height: 38px; }
   .play-button svg { width: 14px; height: 14px; }
   .time-display { font-size: 12px; min-width: 110px; }
