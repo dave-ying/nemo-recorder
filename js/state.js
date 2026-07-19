@@ -23,10 +23,16 @@ export const WAVEFORM_STYLE = {
   selectedUnplayedColorBright: 'rgba(77, 216, 200, 0.52)',
   selectedEdgeColor: 'rgba(77, 216, 200, 0.8)',
   selectedGlowColor: 'rgba(77, 216, 200, 0.45)',
+  deletePlayedColor: 'rgba(255, 58, 92, 0.95)',
+  deleteUnplayedColorDim: 'rgba(255, 58, 92, 0.34)',
+  deleteUnplayedColorBright: 'rgba(255, 58, 92, 0.58)',
+  deleteEdgeColor: 'rgba(255, 58, 92, 0.9)',
+  deleteGlowColor: 'rgba(255, 58, 92, 0.55)',
   tickColor: 'rgba(110, 110, 122, 0.5)'
 };
 
 export const SELECTION_PULSE_PERIOD_SEC = 2;
+export const DELETE_PULSE_PERIOD_SEC = 0.55;
 
 /**
  * @typedef {Object} MicCapabilities

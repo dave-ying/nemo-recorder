@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC } from './state.js';
 import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
@@ -190,11 +190,13 @@ export function showSegmentTrash(index) {
   if (state.segments.length < 2) return;
   clearTimeout(state.trashHideTimer);
   state.hoveredSegmentIndex = index;
-  state.isHoveringTrash = true;
   el.segmentTrash.classList.add('visible');
   positionSegmentTrash();
   startSelectionAnim();
 }
+
+el.segmentTrash.addEventListener('mouseenter', () => { state.isHoveringTrash = true; });
+el.segmentTrash.addEventListener('mouseleave', () => { state.isHoveringTrash = false; });
 
 let selectionAnimRaf = null;
 
@@ -398,8 +400,10 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
   const selectedIdx = state.hoveredSegmentIndex;
   const hoverIdx = state.hoverSegmentIndex;
   const hasSelection = selectedIdx >= 0 && selectedIdx < segBounds.length;
+  const isMarkedForDelete = hasSelection && state.isHoveringTrash;
+  const pulsePeriod = isMarkedForDelete ? DELETE_PULSE_PERIOD_SEC : SELECTION_PULSE_PERIOD_SEC;
   const pulse = hasSelection
-    ? (Math.sin((performance.now() / 1000) * (Math.PI * 2 / SELECTION_PULSE_PERIOD_SEC)) + 1) / 2
+    ? (Math.sin((performance.now() / 1000) * (Math.PI * 2 / pulsePeriod)) + 1) / 2
     : 0;
 
   // Pass 1: card backgrounds with drop shadows (drawn first so shadows don't darken neighbors' content)
@@ -440,13 +444,16 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
     // Played / unplayed fills (clipped to card, then to each side of the playhead)
     const midX = Math.min(sb.drawEnd, Math.max(sb.drawStart, playheadX));
     if (isSelected) {
-      const unplayedColor = lerpColorAlpha(WAVEFORM_STYLE.selectedUnplayedColorDim, WAVEFORM_STYLE.selectedUnplayedColorBright, pulse);
+      const unplayedColor = isMarkedForDelete
+        ? lerpColorAlpha(WAVEFORM_STYLE.deleteUnplayedColorDim, WAVEFORM_STYLE.deleteUnplayedColorBright, pulse)
+        : lerpColorAlpha(WAVEFORM_STYLE.selectedUnplayedColorDim, WAVEFORM_STYLE.selectedUnplayedColorBright, pulse);
+      const playedColor = isMarkedForDelete ? WAVEFORM_STYLE.deletePlayedColor : WAVEFORM_STYLE.selectedPlayedColor;
       if (midX > x) {
         ctx.save();
         ctx.beginPath();
         ctx.rect(x, 0, midX - x, H);
         ctx.clip();
-        ctx.fillStyle = WAVEFORM_STYLE.selectedPlayedColor;
+        ctx.fillStyle = playedColor;
         ctx.fill(path);
         ctx.restore();
       }
@@ -486,9 +493,9 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
     if (isSelected) {
       const glowBlur = (6 + pulse * 8) * dpr;
       ctx.save();
-      ctx.strokeStyle = WAVEFORM_STYLE.selectedEdgeColor;
-      ctx.lineWidth = edgeWidth;
-      ctx.shadowColor = WAVEFORM_STYLE.selectedGlowColor;
+      ctx.strokeStyle = isMarkedForDelete ? WAVEFORM_STYLE.deleteEdgeColor : WAVEFORM_STYLE.selectedEdgeColor;
+      ctx.lineWidth = isMarkedForDelete ? edgeWidth * 1.5 : edgeWidth;
+      ctx.shadowColor = isMarkedForDelete ? WAVEFORM_STYLE.deleteGlowColor : WAVEFORM_STYLE.selectedGlowColor;
       ctx.shadowBlur = glowBlur;
       ctx.stroke(cardPath);
       ctx.restore();
