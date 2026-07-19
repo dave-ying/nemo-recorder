@@ -213,46 +213,69 @@ body::after {
   transform: translate(-50%, -50%) scale(0.92);
 }
 
-.playhead-caret {
+.playhead {
   position: absolute;
-  z-index: 15;
+  z-index: 8;
   cursor: default;
-  padding: 2px;
+  padding: 0;
   margin: 0;
   background: transparent;
   border: none;
   color: var(--accent);
-  border-radius: 6px;
-  width: 34px;
-  height: 30px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   opacity: 0.85;
-  pointer-events: auto;
+  pointer-events: none;
   transform: translateX(-50%);
-  transition: opacity 0.15s, transform 0.15s, color 0.15s;
+  transition: opacity 0.15s, color 0.15s;
   line-height: 0;
   -webkit-user-select: none;
   user-select: none;
 }
-.playhead-caret:hover {
+.playhead:hover,
+.playhead.dragging {
   opacity: 1;
   color: var(--accent-2);
-  transform: translateX(-50%) scale(1.15);
 }
-.playhead-caret.dragging {
-  opacity: 1;
-  color: var(--accent-2);
-  transform: translateX(-50%) scale(1.2);
+.playhead.dragging {
   transition: none;
 }
-.playhead-caret svg {
+.playhead-grip {
   width: 26px;
   height: 26px;
   display: block;
-  pointer-events: none;
+  flex: none;
+  pointer-events: auto;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+  transition: transform 0.15s;
+}
+.playhead:hover .playhead-grip {
+  transform: scale(1.15);
+}
+.playhead.dragging .playhead-grip {
+  transform: scale(1.2);
+  transition: none;
+}
+.playhead-line {
+  /* 10px-wide hit strip; the visible 2px line is the centered ::before */
+  width: 10px;
+  margin-top: -6px; /* tuck the line's top under the grip tip's empty viewBox margin */
+  display: flex;
+  justify-content: center;
+  pointer-events: auto;
+}
+.playhead-line::before {
+  content: '';
+  width: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 0 0 6px rgba(255, 140, 66, 0.6);
+  transition: box-shadow 0.15s;
+}
+.playhead:hover .playhead-line::before,
+.playhead.dragging .playhead-line::before {
+  box-shadow: 0 0 9px rgba(255, 140, 66, 0.85);
 }
 .division-handle {
   position: absolute;
@@ -470,8 +493,8 @@ body::after {
   .playhead-scissors { width: 26px; height: 26px; padding: 4px; }
   .division-handle { width: 20px; height: 18px; padding: 1px; }
   .division-handle svg { width: 16px; height: 16px; }
-  .playhead-caret { width: 28px; height: 24px; padding: 1px; border-radius: 5px; }
-  .playhead-caret svg { width: 22px; height: 22px; }
+  .playhead-grip { width: 22px; height: 22px; }
+  .playhead-line { margin-top: -5px; }
   .readout { padding: 8px 6px; gap: 2px; }
   .readout-label { font-size: 8px; letter-spacing: 0.1em; }
   .readout-value { font-size: 12px; }

@@ -23,8 +23,6 @@ export const WAVEFORM_STYLE = {
   selectedUnplayedColorBright: 'rgba(77, 216, 200, 0.52)',
   selectedEdgeColor: 'rgba(77, 216, 200, 0.8)',
   selectedGlowColor: 'rgba(77, 216, 200, 0.45)',
-  playheadColor: '#ff8c42',
-  playheadGlow: 'rgba(255, 140, 66, 0.7)',
   tickColor: 'rgba(110, 110, 122, 0.5)'
 };
 

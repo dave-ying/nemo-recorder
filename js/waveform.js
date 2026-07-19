@@ -124,11 +124,16 @@ export function positionPlayheadCarets(ratio) {
   const lineXCssPx = Math.floor(visualRatio * W) / dpr;
   const leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
 
-  const HANDLE_H = 30;
-  const OVERLAP = 4;
-  const topPx = (canvasRect.top - viewRect.top) - HANDLE_H + OVERLAP;
-
   el.playheadCaretTop.style.display = '';
+
+  // Align the line's top with the segment cards' top inset; the grip sits above
+  // it. offsetTop (grip height + the CSS tuck margin) is a layout value, so it's
+  // immune to the hover/drag scale transform and tracks the mobile grip size.
+  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX;
+  const lineOffsetTop = el.playheadLine.offsetTop;
+  const topPx = (canvasRect.top - viewRect.top) + insetY - lineOffsetTop;
+
+  el.playheadLine.style.height = Math.max(0, canvasRect.height - 2 * insetY) + 'px';
   el.playheadCaretTop.style.left = leftPx + 'px';
   el.playheadCaretTop.style.top = topPx + 'px';
 }
@@ -572,16 +577,6 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   const cardPaths = buildSegmentCardPaths(segBounds, H, dpr);
 
   drawSegmentCards(waveCtx, path, segBounds, cardPaths, playheadX, H, dpr);
-
-  waveCtx.strokeStyle = WAVEFORM_STYLE.playheadColor;
-  waveCtx.lineWidth = 2 * dpr;
-  waveCtx.shadowColor = WAVEFORM_STYLE.playheadGlow;
-  waveCtx.shadowBlur = 8;
-  waveCtx.beginPath();
-  waveCtx.moveTo(playheadX, 0);
-  waveCtx.lineTo(playheadX, H);
-  waveCtx.stroke();
-  waveCtx.shadowBlur = 0;
 
   if (state.draggingHandleIndex < 0) {
     ensureDivisionHandles();
