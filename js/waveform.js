@@ -2,6 +2,7 @@ import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP
 import { el, waveCtx } from './dom.js';
 import { formatTime } from './utils.js';
 import { pausePlayback } from './playback.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio } from './waveform-math.js';
 
 // ===== Segment helpers (moved here to avoid circular deps with editing.js) =====
 
@@ -90,7 +91,11 @@ export function updatePlayheadScissorsPosition(ratio) {
   const viewRect = el.playbackView.getBoundingClientRect();
   const halfBtn = (el.playheadScissors.offsetHeight || SCISSORS_FALLBACK_HEIGHT) / 2;
 
-  let leftPx = (containerRect.left - viewRect.left) + ratio * containerRect.width;
+  const gapPx = SEGMENT_GAP_CSS_PX;
+  const segBounds = computeSegmentBounds(containerRect.width, state.recordedBuffer.length, gapPx);
+  const visualRatio = audioRatioToVisualRatio(ratio, containerRect.width, segBounds);
+
+  let leftPx = (containerRect.left - viewRect.left) + visualRatio * containerRect.width;
   const topPx = (containerRect.top - viewRect.top) + containerRect.height / 2;
 
   leftPx = Math.max(halfBtn, Math.min(viewRect.width - halfBtn, leftPx));
@@ -113,7 +118,10 @@ export function positionPlayheadCarets(ratio) {
   const viewRect = el.playbackView.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const W = Math.floor(canvasRect.width * dpr);
-  const lineXCssPx = Math.floor(ratio * W) / dpr;
+  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const segBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+  const visualRatio = audioRatioToVisualRatio(ratio, W, segBounds);
+  const lineXCssPx = Math.floor(visualRatio * W) / dpr;
   const leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
 
   const HANDLE_H = 30;
@@ -410,22 +418,15 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
 }
 
 function computeSegmentBounds(W, totalSamples, gapPx) {
-  const segBounds = [];
-  let accSamples = 0;
-  for (let i = 0; i < state.segments.length; i++) {
-    const seg = state.segments[i];
-    const segLen = seg.end - seg.start;
-    const startX = Math.floor((accSamples / totalSamples) * W);
-    accSamples += segLen;
-    const endX = Math.floor((accSamples / totalSamples) * W);
+  return computeSegmentBoundsPure(W, state.segments, totalSamples, gapPx);
+}
 
-    const gapHalf = gapPx / 2;
-    const drawStart = i === 0 ? startX : Math.min(startX + gapHalf, endX);
-    const drawEnd = i === state.segments.length - 1 ? endX : Math.max(startX, endX - gapHalf);
-
-    segBounds.push({ start: startX, end: endX, drawStart, drawEnd });
-  }
-  return segBounds;
+// State-aware inverse mapping for drag handling: takes the gap in px and
+// derives segBounds from current state, so callers don't need to.
+export function visualRatioToAudioRatioWithState(visualRatio, W, gapPx) {
+  if (!state.recordedBuffer) return visualRatio;
+  const segBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+  return visualRatioToAudioRatio(visualRatio, W, segBounds);
 }
 
 function drawTrashOverlay(ctx, segBounds, cardPaths, H, dpr) {
@@ -447,12 +448,13 @@ function drawTrashOverlay(ctx, segBounds, cardPaths, H, dpr) {
   ctx.stroke(cardPath);
 }
 
-function drawTimeTicks(ctx, W, H, duration, dpr) {
+function drawTimeTicks(ctx, W, H, duration, dpr, segBounds) {
   ctx.fillStyle = WAVEFORM_STYLE.tickColor;
   ctx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
   for (let i = 1; i < 5; i++) {
-    const t = (i / 5) * duration;
-    const x = (i / 5) * W;
+    const audioRatio = i / 5;
+    const t = audioRatio * duration;
+    const x = audioRatioToVisualRatio(audioRatio, W, segBounds) * W;
     const label = formatTime(t);
     const tw = ctx.measureText(label).width;
     ctx.fillText(label, x - tw / 2, H - 8 * dpr);
@@ -477,6 +479,11 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     return;
   }
 
+  const totalSamples = state.recordedBuffer.length;
+  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const segBounds = computeSegmentBounds(W, totalSamples, gapPx);
+  const visualRatio = audioRatioToVisualRatio(playheadRatio, W, segBounds);
+
   updatePlayheadScissorsPosition(playheadRatio);
   positionPlayheadCarets(playheadRatio);
 
@@ -488,10 +495,7 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   }
   const path = state.cachedPath;
 
-  const playheadX = Math.floor(playheadRatio * W);
-  const totalSamples = state.recordedBuffer.length;
-  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
-  const segBounds = computeSegmentBounds(W, totalSamples, gapPx);
+  const playheadX = Math.floor(visualRatio * W);
   const cardPaths = buildSegmentCardPaths(segBounds, H, dpr);
 
   drawSegmentCards(waveCtx, path, segBounds, cardPaths, playheadX, H, dpr);
@@ -512,5 +516,5 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   }
   positionDivisionHandles();
 
-  drawTimeTicks(waveCtx, W, H, state.recordedBuffer.duration, dpr);
+  drawTimeTicks(waveCtx, W, H, state.recordedBuffer.duration, dpr, segBounds);
 }

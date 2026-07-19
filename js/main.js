@@ -1,8 +1,8 @@
-import { state } from './state.js';
+import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
-import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass } from './waveform.js';
+import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
@@ -98,7 +98,8 @@ window.addEventListener('mousemove', (e) => {
   }
   if (state.draggingPlayhead && state.recordedBuffer) {
     const rect = el.waveformContainer.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const visualRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const ratio = visualRatioToAudioRatioWithState(visualRatio, rect.width, SEGMENT_GAP_CSS_PX);
     seekToRatio(ratio);
   }
 });
@@ -106,7 +107,8 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('touchmove', (e) => {
   if (state.draggingPlayhead && state.recordedBuffer) {
     const rect = el.waveformContainer.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width));
+    const visualRatio = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width));
+    const ratio = visualRatioToAudioRatioWithState(visualRatio, rect.width, SEGMENT_GAP_CSS_PX);
     seekToRatio(ratio);
   }
 }, { passive: true });
