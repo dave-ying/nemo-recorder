@@ -177,6 +177,9 @@ export function hideSegmentTrash() {
   state.hoveredSegmentIndex = -1;
   state.isHoveringTrash = false;
   stopSelectionAnim();
+  if (!state.isPlaying && state.recordedBuffer) {
+    drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  }
 }
 
 export function clearSegmentHover() {
@@ -634,12 +637,21 @@ function findSegmentAtX(x, width) {
   return -1;
 }
 
-el.waveformContainer.addEventListener('click', (e) => {
+el.waveformContainer.addEventListener('pointerdown', (e) => {
   if (state.segments.length < 2 || !state.recordedBuffer) return;
   const rect = el.waveformContainer.getBoundingClientRect();
-  const i = findSegmentAtX(e.clientX - rect.left, rect.width);
-  if (i >= 0) showSegmentTrash(i);
-  else hideSegmentTrash();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const cardTop = SEGMENT_VERTICAL_INSET_CSS_PX;
+  const cardBottom = rect.height - SEGMENT_VERTICAL_INSET_CSS_PX;
+  if (y < cardTop || y > cardBottom) { hideSegmentTrash(); return; }
+  const i = findSegmentAtX(x, rect.width);
+  if (i >= 0) {
+    if (i === state.hoveredSegmentIndex) hideSegmentTrash(); // toggle: click selected segment to deselect
+    else showSegmentTrash(i);
+  } else {
+    hideSegmentTrash();
+  }
 });
 
 // ===== Segment hover =====
@@ -660,7 +672,11 @@ function scheduleHoverRedraw() {
 el.waveformContainer.addEventListener('mousemove', (e) => {
   if (state.segments.length < 2 || !state.recordedBuffer) return;
   const rect = el.waveformContainer.getBoundingClientRect();
-  const i = findSegmentAtX(e.clientX - rect.left, rect.width);
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const cardTop = SEGMENT_VERTICAL_INSET_CSS_PX;
+  const cardBottom = rect.height - SEGMENT_VERTICAL_INSET_CSS_PX;
+  const i = (y >= cardTop && y <= cardBottom) ? findSegmentAtX(x, rect.width) : -1;
   if (i !== state.hoverSegmentIndex) {
     state.hoverSegmentIndex = i;
     el.waveformContainer.style.cursor = i >= 0 ? 'pointer' : 'default';
