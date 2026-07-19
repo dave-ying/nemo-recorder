@@ -141,6 +141,19 @@
             <span class="time-total" id="timeTotal">00:00.000</span>
           </div>
           <div class="transport-actions">
+            <button class="btn btn-edit" id="undoButton" title="Undo (Ctrl+Z)" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 13l-4 -4l4 -4"/><path d="M5 9h7a4 4 0 1 1 0 8h-1"/>
+              </svg>
+              Undo
+            </button>
+            <button class="btn btn-edit" id="redoButton" title="Redo (Ctrl+Y)" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 13l4 -4l-4 -4"/><path d="M19 9h-7a4 4 0 1 0 0 8h1"/>
+              </svg>
+              Redo
+            </button>
+            <div class="action-divider"></div>
             <button class="btn btn-edit" id="splitButton" title="Split at playhead (S)" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>
@@ -165,7 +178,7 @@
     </section>
 
     <footer class="app-footer">
-      All processing local · No uploads · No tracking · Space: Play · ✂: Split · Hover: Delete
+      All processing local · No uploads · No tracking · Space: Play · ✂: Split · Hover: Delete · Ctrl+Z: Undo
     </footer>
   </div>
 

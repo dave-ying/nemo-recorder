@@ -4,6 +4,7 @@ import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
 import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample } from './waveform.js';
 import { pausePlayback } from './playback.js';
+import { pushHistory, popUndo, popRedo } from './history.js';
 
 export function rebuildPlaybackBuffer() {
   if (!state.originalBuffer || !state.audioContext) return;
@@ -51,6 +52,7 @@ export function splitAtPlayhead() {
   }
 
   const splitPoint = seg.start + offsetInSeg;
+  pushHistory();
   state.segments.splice(index, 1,
     { start: seg.start, end: splitPoint },
     { start: splitPoint, end: seg.end }
@@ -99,6 +101,7 @@ export function deleteSegmentByIndex(index) {
     newPlayheadSample = deletedSegStart;
   }
 
+  pushHistory();
   state.segments.splice(index, 1);
   rebuildPlaybackBuffer();
 
@@ -135,4 +138,47 @@ export function deleteSegmentAtPlayhead() {
   const editedSample = Math.round(state.playbackOffset * sr);
   const target = findSegmentAtSample(editedSample);
   if (target) deleteSegmentByIndex(target.index);
+}
+
+function applyHistorySnapshot(snapshot) {
+  state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end }));
+  rebuildPlaybackBuffer();
+
+  hideSegmentTrash();
+  clearSegmentHover();
+  el.playheadScissors.classList.remove('visible');
+  state.hoverRatio = -1;
+
+  if (!state.recordedBuffer) {
+    el.playButton.classList.remove('playing');
+    state.playbackOffset = 0;
+    el.timeCurrent.textContent = '00:00.000';
+    el.timeTotal.textContent = '00:00.000';
+    setTransportDisabled(true);
+    updateSegmentCountDisplay();
+    return;
+  }
+
+  setTransportDisabled(false);
+  state.playbackOffset = Math.max(0, Math.min(snapshot.playbackOffset, state.recordedBuffer.duration));
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
+  updateSegmentCountDisplay();
+  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+}
+
+export function undo() {
+  if (state.isPlaying) pausePlayback();
+  const snapshot = popUndo();
+  if (!snapshot) return;
+  applyHistorySnapshot(snapshot);
+  showToast('Undo');
+}
+
+export function redo() {
+  if (state.isPlaying) pausePlayback();
+  const snapshot = popRedo();
+  if (!snapshot) return;
+  applyHistorySnapshot(snapshot);
+  showToast('Redo');
 }

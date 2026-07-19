@@ -3,6 +3,7 @@ import { el, waveCtx } from './dom.js';
 import { formatTime } from './utils.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio } from './waveform-math.js';
+import { pushHistory } from './history.js';
 
 // ===== Segment helpers (moved here to avoid circular deps with editing.js) =====
 
@@ -253,6 +254,7 @@ function createHandleElement() {
     }
     const segILen = state.segments[index].end - state.segments[index].start;
     const segIP1Len = state.segments[index + 1].end - state.segments[index + 1].start;
+    pushHistory();
     state.draggingHandleIndex = index;
     state._dragSnapshot = {
       handleIndex: index,

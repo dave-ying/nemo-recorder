@@ -3,7 +3,7 @@ import { el } from './dom.js';
 import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
 import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer, undo, redo } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
 import { formatTime } from './utils.js';
@@ -56,6 +56,8 @@ el.retryButton.addEventListener('click', rerecord);
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
 el.deleteButton.addEventListener('click', deleteSegmentAtPlayhead);
+el.undoButton.addEventListener('click', undo);
+el.redoButton.addEventListener('click', redo);
 
 el.exportClose.addEventListener('click', closeExportModal);
 el.exportConfirm.addEventListener('click', executeExport);
@@ -159,7 +161,13 @@ document.addEventListener('keydown', (e) => {
   if (keyTarget.tagName === 'INPUT' || keyTarget.tagName === 'TEXTAREA') return;
   const noMod = !e.metaKey && !e.ctrlKey && !e.altKey;
 
-  if (e.code === 'Space' && noMod) {
+  if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && !el.playbackView.hidden) {
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+  } else if (e.code === 'KeyY' && (e.ctrlKey || e.metaKey) && !el.playbackView.hidden) {
+    e.preventDefault();
+    redo();
+  } else if (e.code === 'Space' && noMod) {
     if (!el.playbackView.hidden && state.recordedBuffer) {
       e.preventDefault();
       state.isPlaying ? pausePlayback() : startPlayback();

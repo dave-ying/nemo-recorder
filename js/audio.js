@@ -4,6 +4,7 @@ import { formatTime } from './utils.js';
 import { showToast, showView, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled } from './ui.js';
 import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
 import { pausePlayback } from './playback.js';
+import { resetHistory } from './history.js';
 
 let liveRafId;
 
@@ -103,6 +104,7 @@ export function disconnectMicrophone() {
   state.segments = [];
   state.cachedPeaks = null;
   state.cachedPath = null;
+  resetHistory();
   hideSegmentTrash();
   el.playheadScissors.classList.remove('visible');
   state.hoverRatio = -1;
@@ -395,6 +397,7 @@ export function stopRecording() {
   state.originalBuffer = buffer;
   state.recordedBuffer = buffer;
   state.segments = [{ start: 0, end: totalLength }];
+  resetHistory();
 
   el.timeCurrent.textContent = '00:00.000';
   el.timeTotal.textContent = formatTime(buffer.duration);
@@ -431,6 +434,7 @@ export function rerecord() {
   state.cachedPath = null;
   state.hoverRatio = -1;
   state.hoveredSegmentIndex = -1;
+  resetHistory();
   clearSegmentHover();
   hideSegmentTrash();
   el.playheadScissors.classList.remove('visible');
