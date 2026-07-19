@@ -81,22 +81,27 @@ export function updatePlayheadScissorsPosition(ratio) {
     return;
   }
 
-  const EDGE_THRESHOLD = 0.01;
+  // Only hide at the exact first/last frame; a tiny epsilon absorbs float error.
+  const EDGE_THRESHOLD = 1 / (2 * state.recordedBuffer.length);
   if (ratio <= EDGE_THRESHOLD || ratio >= 1 - EDGE_THRESHOLD) {
     el.playheadScissors.classList.remove('visible');
     return;
   }
 
-  const containerRect = el.waveformContainer.getBoundingClientRect();
+  const canvasRect = el.waveformCanvas.getBoundingClientRect();
   const viewRect = el.playbackView.getBoundingClientRect();
   const halfBtn = (el.playheadScissors.offsetHeight || SCISSORS_FALLBACK_HEIGHT) / 2;
 
   const gapPx = SEGMENT_GAP_CSS_PX;
-  const segBounds = computeSegmentBounds(containerRect.width, state.recordedBuffer.length, gapPx);
-  const visualRatio = audioRatioToVisualRatio(ratio, containerRect.width, segBounds);
+  const segBounds = computeSegmentBounds(canvasRect.width, state.recordedBuffer.length, gapPx);
+  const visualRatio = audioRatioToVisualRatio(ratio, canvasRect.width, segBounds);
 
-  let leftPx = (containerRect.left - viewRect.left) + visualRatio * containerRect.width;
-  const topPx = (containerRect.top - viewRect.top) + containerRect.height / 2;
+  let leftPx = (canvasRect.left - viewRect.left) + visualRatio * canvasRect.width;
+  // Match positionPlayheadCarets: the visible playhead line ends at
+  // canvasRect.bottom - insetY, so sit the button flush against that point.
+  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX;
+  const playheadBottomY = (canvasRect.bottom - viewRect.top) - insetY;
+  const topPx = playheadBottomY + halfBtn;
 
   leftPx = Math.max(halfBtn, Math.min(viewRect.width - halfBtn, leftPx));
 

@@ -46,6 +46,8 @@ export function pausePlayback() {
   state.isPlaying = false;
   el.playButton.classList.remove('playing');
   if (playbackRafId) cancelAnimationFrame(playbackRafId);
+  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  drawPlaybackWaveform(ratio);
 }
 
 export function animatePlayback() {
