@@ -29,11 +29,6 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLDivElement} levelFill
  * @property {HTMLSpanElement} timeCurrent
  * @property {HTMLSpanElement} timeTotal
- * @property {HTMLDivElement} readoutDuration
- * @property {HTMLDivElement} readoutRate
- * @property {HTMLDivElement} readoutBit
- * @property {HTMLDivElement} readoutCh
- * @property {HTMLDivElement} readoutSize
  * @property {HTMLDivElement} micName
  * @property {HTMLDivElement} rateOptions
  * @property {HTMLDivElement} bitOptions
@@ -41,7 +36,6 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} bitrateReadout
  * @property {HTMLDivElement} toast
  * @property {HTMLSpanElement} toastMessage
- * @property {HTMLDivElement} readoutsPane
  * @property {HTMLDivElement} exportModal
  * @property {HTMLButtonElement} exportClose
  * @property {HTMLDivElement} exportQualityGrid
@@ -64,12 +58,9 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   waveformContainer: $('waveformContainer'), segmentCountEl: $('segmentCount'),
   liveTimer: $('liveTimer'), levelFill: $('levelFill'),
   timeCurrent: $('timeCurrent'), timeTotal: $('timeTotal'),
-  readoutDuration: $('readoutDuration'), readoutRate: $('readoutRate'),
-  readoutBit: $('readoutBit'), readoutCh: $('readoutCh'),
-  readoutSize: $('readoutSize'), micName: $('micName'),
+  micName: $('micName'),
   rateOptions: $('rateOptions'), bitOptions: $('bitOptions'), chOptions: $('chOptions'),
   bitrateReadout: $('bitrateReadout'), toast: $('toast'), toastMessage: $('toastMessage'),
-  readoutsPane: $('readoutsPane'),
   exportModal: $('exportModal'), exportClose: $('exportClose'),
   exportQualityGrid: $('exportQualityGrid'), exportSize: $('exportSize'),
   exportDetail: $('exportDetail'), exportConfirm: $('exportConfirm')

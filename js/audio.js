@@ -1,7 +1,7 @@
 import { state, LIVE_SECONDS, WAVEFORM_SCALE, WAVEFORM_STYLE } from './state.js';
 import { el, liveCtx } from './dom.js';
 import { formatTime } from './utils.js';
-import { showToast, showView, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, updateReadouts, setTransportDisabled } from './ui.js';
+import { showToast, showView, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled } from './ui.js';
 import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
 import { pausePlayback } from './playback.js';
 
@@ -395,8 +395,6 @@ export function stopRecording() {
   state.originalBuffer = buffer;
   state.recordedBuffer = buffer;
   state.segments = [{ start: 0, end: totalLength }];
-
-  updateReadouts(buffer);
 
   el.timeCurrent.textContent = '00:00.000';
   el.timeTotal.textContent = formatTime(buffer.duration);

@@ -1,6 +1,5 @@
 export const LIVE_SECONDS = 4;
 export const WAVEFORM_SCALE = 0.88;
-export const READOUT_IDS = ['readoutDurationBox', 'readoutRateBox', 'readoutBitBox', 'readoutChBox', 'readoutSizeBox'];
 
 export const MIN_SEGMENT_SAMPLES = 500;
 export const SEGMENT_GAP_CSS_PX = 8;

@@ -1,6 +1,6 @@
 import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
-import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
+import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
 import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
@@ -98,7 +98,6 @@ window.addEventListener('mouseup', () => {
     state.draggingHandleIndex = -1;
     state._dragSnapshot = null;
     rebuildPlaybackBuffer();
-    updateReadouts(state.recordedBuffer);
     updateSegmentCountDisplay();
     const ratio = state.recordedBuffer.duration > 0
       ? state.playbackOffset / state.recordedBuffer.duration

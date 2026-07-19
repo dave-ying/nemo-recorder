@@ -1,7 +1,7 @@
 import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
-import { updateReadouts, updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
+import { updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
 import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample } from './waveform.js';
 import { pausePlayback } from './playback.js';
 
@@ -119,7 +119,6 @@ export function deleteSegmentByIndex(index) {
   state.playbackOffset = Math.max(0, Math.min(newPlayheadSample / sr, state.recordedBuffer.duration));
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
-  updateReadouts(state.recordedBuffer);
 
   hideSegmentTrash();
   clearSegmentHover();
