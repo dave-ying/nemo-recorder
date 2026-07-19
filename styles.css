@@ -142,7 +142,7 @@ body::after {
 .stop-button svg { width: 20px; height: 20px; fill: currentColor; }
 
 .playback-view { gap: 16px; justify-content: space-between; position: relative; overflow: visible; }
-.waveform-container { position: relative; flex: 1 1 0; min-height: 60px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.3); overflow: hidden; cursor: default; margin: 42px 0 42px; }
+.waveform-container { position: relative; flex: 1 1 0; min-height: 60px; cursor: default; margin: 42px 0 42px; }
 .waveform-container::before { content: 'WAVEFORM'; position: absolute; top: 8px; left: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--fg-dim); letter-spacing: 0.25em; z-index: 2; pointer-events: none; }
 .waveform-segment-count { position: absolute; top: 8px; right: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--accent); letter-spacing: 0.15em; z-index: 2; pointer-events: none; padding: 2px 8px; background: rgba(255, 140, 66, 0.08); border: 1px solid rgba(255, 140, 66, 0.2); border-radius: 4px; }
 .waveform-segment-count.hidden { display: none; }
