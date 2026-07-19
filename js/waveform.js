@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC } from './state.js';
 import { el, waveCtx } from './dom.js';
 import { formatTime } from './utils.js';
 import { pausePlayback } from './playback.js';
@@ -169,13 +169,68 @@ export function removePlayheadCaretDraggingClass() {
   el.playheadCaretBottom.classList.remove('dragging');
 }
 
-// ===== Trash hide helpers =====
+// ===== Trash show/hide helpers =====
 
 export function hideSegmentTrash() {
   clearTimeout(state.trashHideTimer);
   el.segmentTrash.classList.remove('visible');
   state.hoveredSegmentIndex = -1;
   state.isHoveringTrash = false;
+  stopSelectionAnim();
+}
+
+export function clearSegmentHover() {
+  state.hoverSegmentIndex = -1;
+  el.waveformContainer.style.cursor = 'default';
+}
+
+export function showSegmentTrash(index) {
+  if (index < 0 || index >= state.segments.length) return;
+  if (state.segments.length < 2) return;
+  clearTimeout(state.trashHideTimer);
+  state.hoveredSegmentIndex = index;
+  state.isHoveringTrash = true;
+  el.segmentTrash.classList.add('visible');
+  positionSegmentTrash();
+  startSelectionAnim();
+}
+
+let selectionAnimRaf = null;
+
+function startSelectionAnim() {
+  if (selectionAnimRaf) return;
+  const tick = () => {
+    if (state.hoveredSegmentIndex < 0) { selectionAnimRaf = null; return; }
+    if (!state.isPlaying && state.recordedBuffer) {
+      drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+    }
+    selectionAnimRaf = requestAnimationFrame(tick);
+  };
+  selectionAnimRaf = requestAnimationFrame(tick);
+}
+
+function stopSelectionAnim() {
+  if (selectionAnimRaf) { cancelAnimationFrame(selectionAnimRaf); selectionAnimRaf = null; }
+}
+
+function positionSegmentTrash() {
+  if (state.hoveredSegmentIndex < 0 || !state.recordedBuffer) return;
+  if (state.hoveredSegmentIndex >= state.segments.length) { hideSegmentTrash(); return; }
+  const canvasRect = el.waveformCanvas.getBoundingClientRect();
+  const viewRect = el.playbackView.getBoundingClientRect();
+  const gapPx = SEGMENT_GAP_CSS_PX;
+  const segBounds = computeSegmentBounds(canvasRect.width, state.recordedBuffer.length, gapPx);
+  const sb = segBounds[state.hoveredSegmentIndex];
+  if (!sb) { hideSegmentTrash(); return; }
+
+  const centerX = (sb.drawStart + sb.drawEnd) / 2;
+  const halfW = 15;
+  let leftPx = (canvasRect.left - viewRect.left) + centerX;
+  leftPx = Math.max(halfW, Math.min(viewRect.width - halfW, leftPx));
+  const topPx = (canvasRect.top - viewRect.top) - 30 - 4;
+
+  el.segmentTrash.style.left = leftPx + 'px';
+  el.segmentTrash.style.top = topPx + 'px';
 }
 
 const PEAK_STEP_DIVISOR = 100;
@@ -356,14 +411,24 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
   const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
   const midY = H / 2;
 
+  const selectedIdx = state.hoveredSegmentIndex;
+  const hoverIdx = state.hoverSegmentIndex;
+  const hasSelection = selectedIdx >= 0 && selectedIdx < segBounds.length;
+  const pulse = hasSelection
+    ? (Math.sin((performance.now() / 1000) * (Math.PI * 2 / SELECTION_PULSE_PERIOD_SEC)) + 1) / 2
+    : 0;
+
   // Pass 1: card backgrounds with drop shadows (drawn first so shadows don't darken neighbors' content)
-  for (const cardPath of cardPaths) {
+  for (let i = 0; i < cardPaths.length; i++) {
+    const cardPath = cardPaths[i];
     if (!cardPath) continue;
     ctx.save();
     ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
     ctx.shadowBlur = shadowBlur;
     ctx.shadowOffsetY = shadowOffsetY;
-    ctx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
+    ctx.fillStyle = (i === selectedIdx) ? WAVEFORM_STYLE.hoverCardBg
+      : (i === hoverIdx) ? WAVEFORM_STYLE.hoverCardBg
+      : WAVEFORM_STYLE.segmentCardBg;
     ctx.fill(cardPath);
     ctx.restore();
   }
@@ -375,6 +440,7 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
     if (!cardPath) continue;
     const x = sb.drawStart;
     const w = sb.drawEnd - sb.drawStart;
+    const isSelected = i === selectedIdx;
 
     ctx.save();
     ctx.clip(cardPath);
@@ -389,32 +455,84 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
 
     // Played / unplayed fills (clipped to card, then to each side of the playhead)
     const midX = Math.min(sb.drawEnd, Math.max(sb.drawStart, playheadX));
-    if (midX > x) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x, 0, midX - x, H);
-      ctx.clip();
-      ctx.fillStyle = WAVEFORM_STYLE.playedColor;
-      ctx.fill(path);
-      ctx.restore();
-    }
-    if (midX < x + w) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(midX, 0, x + w - midX, H);
-      ctx.clip();
-      ctx.fillStyle = WAVEFORM_STYLE.unplayedColor;
-      ctx.fill(path);
-      ctx.restore();
+    if (isSelected) {
+      const unplayedColor = lerpColorAlpha(WAVEFORM_STYLE.selectedUnplayedColorDim, WAVEFORM_STYLE.selectedUnplayedColorBright, pulse);
+      if (midX > x) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, 0, midX - x, H);
+        ctx.clip();
+        ctx.fillStyle = WAVEFORM_STYLE.selectedPlayedColor;
+        ctx.fill(path);
+        ctx.restore();
+      }
+      if (midX < x + w) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(midX, 0, x + w - midX, H);
+        ctx.clip();
+        ctx.fillStyle = unplayedColor;
+        ctx.fill(path);
+        ctx.restore();
+      }
+    } else {
+      if (midX > x) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, 0, midX - x, H);
+        ctx.clip();
+        ctx.fillStyle = WAVEFORM_STYLE.playedColor;
+        ctx.fill(path);
+        ctx.restore();
+      }
+      if (midX < x + w) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(midX, 0, x + w - midX, H);
+        ctx.clip();
+        ctx.fillStyle = WAVEFORM_STYLE.unplayedColor;
+        ctx.fill(path);
+        ctx.restore();
+      }
     }
 
     ctx.restore();
 
     // Edge stroke (on top, not clipped)
-    ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
-    ctx.lineWidth = edgeWidth;
-    ctx.stroke(cardPath);
+    if (isSelected) {
+      const glowBlur = (6 + pulse * 8) * dpr;
+      ctx.save();
+      ctx.strokeStyle = WAVEFORM_STYLE.selectedEdgeColor;
+      ctx.lineWidth = edgeWidth;
+      ctx.shadowColor = WAVEFORM_STYLE.selectedGlowColor;
+      ctx.shadowBlur = glowBlur;
+      ctx.stroke(cardPath);
+      ctx.restore();
+    } else if (i === hoverIdx) {
+      ctx.strokeStyle = WAVEFORM_STYLE.hoverEdgeColor;
+      ctx.lineWidth = edgeWidth;
+      ctx.stroke(cardPath);
+    } else {
+      ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
+      ctx.lineWidth = edgeWidth;
+      ctx.stroke(cardPath);
+    }
   }
+}
+
+function lerpColorAlpha(dimRgba, brightRgba, t) {
+  const d = parseRgba(dimRgba);
+  const b = parseRgba(brightRgba);
+  const r = Math.round(d.r + (b.r - d.r) * t);
+  const g = Math.round(d.g + (b.g - d.g) * t);
+  const bl = Math.round(d.b + (b.b - d.b) * t);
+  const a = d.a + (b.a - d.a) * t;
+  return `rgba(${r}, ${g}, ${bl}, ${a})`;
+}
+
+function parseRgba(str) {
+  const m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(str);
+  return { r: parseFloat(m[1]), g: parseFloat(m[2]), b: parseFloat(m[3]), a: m[4] !== undefined ? parseFloat(m[4]) : 1 };
 }
 
 function computeSegmentBounds(W, totalSamples, gapPx) {
@@ -427,25 +545,6 @@ export function visualRatioToAudioRatioWithState(visualRatio, W, gapPx) {
   if (!state.recordedBuffer) return visualRatio;
   const segBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
   return visualRatioToAudioRatio(visualRatio, W, segBounds);
-}
-
-function drawTrashOverlay(ctx, segBounds, cardPaths, H, dpr) {
-  if (!state.isHoveringTrash || state.hoveredSegmentIndex === -1 || state.hoveredSegmentIndex >= segBounds.length) return;
-  const sb = segBounds[state.hoveredSegmentIndex];
-  const cardPath = cardPaths[state.hoveredSegmentIndex];
-  if (!cardPath) return;
-  const x = sb.drawStart;
-  const w = sb.drawEnd - sb.drawStart;
-
-  ctx.save();
-  ctx.clip(cardPath);
-  ctx.fillStyle = WAVEFORM_STYLE.trashOverlayColor;
-  ctx.fillRect(x, 0, w, H);
-  ctx.restore();
-
-  ctx.strokeStyle = WAVEFORM_STYLE.trashBorderColor;
-  ctx.lineWidth = 2 * dpr;
-  ctx.stroke(cardPath);
 }
 
 function drawTimeTicks(ctx, W, H, duration, dpr, segBounds) {
@@ -499,7 +598,6 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   const cardPaths = buildSegmentCardPaths(segBounds, H, dpr);
 
   drawSegmentCards(waveCtx, path, segBounds, cardPaths, playheadX, H, dpr);
-  drawTrashOverlay(waveCtx, segBounds, cardPaths, H, dpr);
 
   waveCtx.strokeStyle = WAVEFORM_STYLE.playheadColor;
   waveCtx.lineWidth = 2 * dpr;
@@ -516,5 +614,64 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   }
   positionDivisionHandles();
 
+  if (state.hoveredSegmentIndex >= 0 && state.segments.length >= 2) {
+    positionSegmentTrash();
+  }
+
   drawTimeTicks(waveCtx, W, H, state.recordedBuffer.duration, dpr, segBounds);
 }
+
+// ===== Segment click-to-select =====
+
+function findSegmentAtX(x, width) {
+  if (state.segments.length < 2 || !state.recordedBuffer) return -1;
+  const gapPx = SEGMENT_GAP_CSS_PX;
+  const segBounds = computeSegmentBounds(width, state.recordedBuffer.length, gapPx);
+  for (let i = 0; i < segBounds.length; i++) {
+    const sb = segBounds[i];
+    if (x >= sb.drawStart && x < sb.drawEnd) return i;
+  }
+  return -1;
+}
+
+el.waveformContainer.addEventListener('click', (e) => {
+  if (state.segments.length < 2 || !state.recordedBuffer) return;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const i = findSegmentAtX(e.clientX - rect.left, rect.width);
+  if (i >= 0) showSegmentTrash(i);
+  else hideSegmentTrash();
+});
+
+// ===== Segment hover =====
+
+let hoverRedrawRaf = null;
+
+function scheduleHoverRedraw() {
+  if (state.hoveredSegmentIndex >= 0) return; // selection anim handles redraws
+  if (hoverRedrawRaf) return;
+  hoverRedrawRaf = requestAnimationFrame(() => {
+    hoverRedrawRaf = null;
+    if (!state.isPlaying && state.recordedBuffer) {
+      drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+    }
+  });
+}
+
+el.waveformContainer.addEventListener('mousemove', (e) => {
+  if (state.segments.length < 2 || !state.recordedBuffer) return;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const i = findSegmentAtX(e.clientX - rect.left, rect.width);
+  if (i !== state.hoverSegmentIndex) {
+    state.hoverSegmentIndex = i;
+    el.waveformContainer.style.cursor = i >= 0 ? 'pointer' : 'default';
+    scheduleHoverRedraw();
+  }
+});
+
+el.waveformContainer.addEventListener('mouseleave', () => {
+  if (state.hoverSegmentIndex !== -1) {
+    state.hoverSegmentIndex = -1;
+    el.waveformContainer.style.cursor = 'default';
+    scheduleHoverRedraw();
+  }
+});

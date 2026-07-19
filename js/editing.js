@@ -2,7 +2,7 @@ import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateReadouts, updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
-import { hideSegmentTrash, drawPlaybackWaveform, findSegmentAtSample } from './waveform.js';
+import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample } from './waveform.js';
 import { pausePlayback } from './playback.js';
 
 export function rebuildPlaybackBuffer() {
@@ -65,6 +65,7 @@ export function splitAtPlayhead() {
   }
 
   hideSegmentTrash();
+  clearSegmentHover();
   drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
   updateSegmentCountDisplay();
   showToast(`Split: segment ${index + 1} → ${index + 1} and ${index + 2}`);
@@ -104,6 +105,7 @@ export function deleteSegmentByIndex(index) {
   if (!state.recordedBuffer) {
     showToast('All audio deleted', true);
     hideSegmentTrash();
+    clearSegmentHover();
     el.playheadScissors.classList.remove('visible');
     state.hoverRatio = -1;
 
@@ -120,6 +122,7 @@ export function deleteSegmentByIndex(index) {
   updateReadouts(state.recordedBuffer);
 
   hideSegmentTrash();
+  clearSegmentHover();
   state.hoverRatio = -1;
   drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
   updateSegmentCountDisplay();

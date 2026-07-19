@@ -2,7 +2,7 @@ import { state, LIVE_SECONDS, WAVEFORM_SCALE, WAVEFORM_STYLE } from './state.js'
 import { el, liveCtx } from './dom.js';
 import { formatTime } from './utils.js';
 import { showToast, showView, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, updateReadouts, setTransportDisabled } from './ui.js';
-import { fillWaveformPathLive, hideSegmentTrash, drawPlaybackWaveform } from './waveform.js';
+import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
 import { pausePlayback } from './playback.js';
 
 let liveRafId;
@@ -406,6 +406,7 @@ export function stopRecording() {
   state.playbackOffset = 0;
   state.hoverRatio = -1;
   state.hoveredSegmentIndex = -1;
+  state.hoverSegmentIndex = -1;
   hideSegmentTrash();
   updateSegmentCountDisplay();
   setTransportDisabled(false);
@@ -432,6 +433,7 @@ export function rerecord() {
   state.cachedPath = null;
   state.hoverRatio = -1;
   state.hoveredSegmentIndex = -1;
+  clearSegmentHover();
   hideSegmentTrash();
   el.playheadScissors.classList.remove('visible');
 

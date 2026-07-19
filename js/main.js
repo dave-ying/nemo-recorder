@@ -2,7 +2,7 @@ import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled, updateReadouts } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
-import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState } from './waveform.js';
+import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
@@ -48,6 +48,19 @@ el.playheadScissors.addEventListener('click', (e) => {
   splitAtPlayhead();
 });
 el.playheadScissors.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
+el.segmentTrash.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (!el.playbackView.hidden && state.hoveredSegmentIndex >= 0) {
+    const target = /** @type {Node} */ (e.target);
+    if (el.waveformContainer.contains(target) || target === el.segmentTrash || el.segmentTrash.contains(target)) return;
+    hideSegmentTrash();
+  }
+});
 
 window.addEventListener('mouseup', () => {
   if (state.draggingHandleIndex >= 0) {

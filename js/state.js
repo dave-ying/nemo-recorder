@@ -17,12 +17,19 @@ export const WAVEFORM_STYLE = {
   segmentCardBg: 'rgba(255, 255, 255, 0.035)',
   segmentEdgeColor: 'rgba(255, 255, 255, 0.12)',
   segmentShadowColor: 'rgba(0, 0, 0, 0.6)',
-  trashOverlayColor: 'rgba(255, 58, 92, 0.25)',
-  trashBorderColor: 'rgba(255, 58, 92, 0.8)',
+  hoverCardBg: 'rgba(255, 255, 255, 0.07)',
+  hoverEdgeColor: 'rgba(255, 255, 255, 0.28)',
+  selectedPlayedColor: 'rgba(255, 58, 92, 0.95)',
+  selectedUnplayedColorDim: 'rgba(255, 58, 92, 0.32)',
+  selectedUnplayedColorBright: 'rgba(255, 58, 92, 0.5)',
+  selectedEdgeColor: 'rgba(255, 58, 92, 0.9)',
+  selectedGlowColor: 'rgba(255, 58, 92, 0.55)',
   playheadColor: '#ff8c42',
   playheadGlow: 'rgba(255, 140, 66, 0.7)',
   tickColor: 'rgba(110, 110, 122, 0.5)'
 };
+
+export const SELECTION_PULSE_PERIOD_SEC = 2;
 
 /**
  * @typedef {Object} MicCapabilities
@@ -52,6 +59,7 @@ export const WAVEFORM_STYLE = {
  * @property {number} recordStartTime - performance.now() at recording start (drives live timer)
  * @property {number} hoverRatio
  * @property {number} hoveredSegmentIndex
+ * @property {number} hoverSegmentIndex - segment currently under the mouse cursor (hover, distinct from selected)
  * @property {boolean} isHoveringTrash
  * @property {Float32Array|null} liveBuffer
  * @property {number} liveWritePos
@@ -94,6 +102,7 @@ export const state = {
   recordStartTime: 0,
   hoverRatio: -1,
   hoveredSegmentIndex: -1,
+  hoverSegmentIndex: -1,
   isHoveringTrash: false,
   liveBuffer: null,
   liveWritePos: 0,
