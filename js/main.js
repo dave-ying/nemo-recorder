@@ -80,6 +80,17 @@ el.playheadScissors.addEventListener('click', (e) => {
 });
 el.playheadScissors.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
+el.timelineRulerCanvas.addEventListener('pointerdown', (e) => {
+  if (!state.recordedBuffer) return;
+  e.preventDefault();
+  e.stopPropagation();
+  hideSegmentTrash();
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const visualRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const ratio = visualRatioToAudioRatioWithState(visualRatio, rect.width, SEGMENT_GAP_CSS_PX);
+  seekToRatio(ratio);
+});
+
 el.segmentTrash.addEventListener('click', (e) => {
   e.stopPropagation();
   if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);

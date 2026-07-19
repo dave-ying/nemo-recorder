@@ -80,6 +80,50 @@ export function audioRatioToVisualRatio(audioRatio, W, segBounds) {
  * @param {Array<{start: number, end: number, drawStart: number, drawEnd: number}>} segBounds
  * @returns {number} audio ratio in [0, 1]
  */
+/**
+ * Nice tick intervals (in seconds) the timeline ruler can choose between,
+ * from sub-second recordings up to hour-plus ones.
+ */
+export const RULER_NICE_INTERVALS_SEC = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+const RULER_MIN_PX_PER_MAJOR_TICK = 60;
+
+/**
+ * Pick the tick interval (seconds) that keeps major ticks readably spaced
+ * for a given duration and available ruler width.
+ *
+ * @param {number} duration - total duration in seconds
+ * @param {number} cssWidth - ruler width in CSS px
+ * @returns {number} interval in seconds
+ */
+export function pickRulerIntervalSec(duration, cssWidth) {
+  const maxMajorTicks = Math.max(1, Math.floor(cssWidth / RULER_MIN_PX_PER_MAJOR_TICK));
+  for (const iv of RULER_NICE_INTERVALS_SEC) {
+    if (duration / iv <= maxMajorTicks) return iv;
+  }
+  return RULER_NICE_INTERVALS_SEC[RULER_NICE_INTERVALS_SEC.length - 1];
+}
+
+/**
+ * Format a ruler tick label for a given time, at a given chosen interval.
+ * Sub-second intervals get a one-decimal seconds field; second-or-coarser
+ * intervals show whole mm:ss so labels don't get cluttered.
+ *
+ * @param {number} t - time in seconds
+ * @param {number} intervalSec - the chosen tick interval, from pickRulerIntervalSec
+ * @returns {string}
+ */
+export function formatRulerLabel(t, intervalSec) {
+  if (intervalSec < 1) {
+    const m = Math.floor(t / 60);
+    const s = t - m * 60;
+    return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`;
+  }
+  const rt = Math.round(t);
+  const m = Math.floor(rt / 60);
+  const s = rt % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export function visualRatioToAudioRatio(visualRatio, W, segBounds) {
   if (segBounds.length === 0) return visualRatio;
   const targetPx = visualRatio * W;

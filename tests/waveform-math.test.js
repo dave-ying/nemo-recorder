@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio } from '../js/waveform-math.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel } from '../js/waveform-math.js';
 
 // Two equal segments, each 500 samples of a 1000-sample edited buffer.
 // On a 1000px canvas with a 20px gap, each segment's linear range is 500px,
@@ -107,4 +107,47 @@ test('three segments: boundary audio ratios never map into a gap', () => {
     assert.ok(v <= 290 / 1000 || v >= 310 / 1000, `boundary ${boundary} visual ${v} landed in gap 1`);
     assert.ok(v <= 590 / 1000 || v >= 610 / 1000, `boundary ${boundary} visual ${v} landed in gap 2`);
   }
+});
+
+// ===== pickRulerIntervalSec =====
+
+test('pickRulerIntervalSec picks a coarser interval as duration grows for a fixed width', () => {
+  assert.equal(pickRulerIntervalSec(8, 400), 2);
+  assert.equal(pickRulerIntervalSec(45, 400), 10);
+  assert.equal(pickRulerIntervalSec(75, 400), 15);
+  assert.equal(pickRulerIntervalSec(600, 400), 120);
+  assert.equal(pickRulerIntervalSec(3700, 400), 900);
+});
+
+test('pickRulerIntervalSec picks a sub-second interval for very short durations', () => {
+  assert.equal(pickRulerIntervalSec(0.5, 400), 0.1);
+});
+
+test('pickRulerIntervalSec never produces more major ticks than the width allows, unless even the coarsest interval overflows', () => {
+  for (const duration of [3, 20, 90, 600, 4000]) {
+    for (const width of [80, 200, 500]) {
+      const interval = pickRulerIntervalSec(duration, width);
+      const majorTicks = duration / interval;
+      const maxMajorTicks = Math.max(1, Math.floor(width / 60));
+      const isCoarsestFallback = interval === 3600;
+      assert.ok(isCoarsestFallback || majorTicks <= maxMajorTicks + 1e-9, `duration=${duration} width=${width} interval=${interval} ticks=${majorTicks}`);
+    }
+  }
+});
+
+test('pickRulerIntervalSec falls back to the coarsest interval for very long durations', () => {
+  assert.equal(pickRulerIntervalSec(100000, 80), 3600);
+});
+
+// ===== formatRulerLabel =====
+
+test('formatRulerLabel shows whole mm:ss for second-or-coarser intervals', () => {
+  assert.equal(formatRulerLabel(0, 15), '00:00');
+  assert.equal(formatRulerLabel(75, 15), '01:15');
+  assert.equal(formatRulerLabel(3600, 900), '60:00');
+});
+
+test('formatRulerLabel shows a one-decimal seconds field for sub-second intervals', () => {
+  assert.equal(formatRulerLabel(0, 0.1), '00:00.0');
+  assert.equal(formatRulerLabel(0.4, 0.1), '00:00.4');
 });

@@ -1,8 +1,7 @@
 import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC } from './state.js';
-import { el, waveCtx } from './dom.js';
-import { formatTime } from './utils.js';
+import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
-import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio } from './waveform-math.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
 import { pushHistory } from './history.js';
 
 // ===== Segment helpers (moved here to avoid circular deps with editing.js) =====
@@ -527,16 +526,45 @@ export function visualRatioToAudioRatioWithState(visualRatio, W, gapPx) {
   return visualRatioToAudioRatio(visualRatio, W, segBounds);
 }
 
-function drawTimeTicks(ctx, W, H, duration, dpr, segBounds) {
-  ctx.fillStyle = WAVEFORM_STYLE.tickColor;
-  ctx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
-  for (let i = 1; i < 5; i++) {
-    const audioRatio = i / 5;
-    const t = audioRatio * duration;
-    const x = audioRatioToVisualRatio(audioRatio, W, segBounds) * W;
-    const label = formatTime(t);
-    const tw = ctx.measureText(label).width;
-    ctx.fillText(label, x - tw / 2, H - 8 * dpr);
+// ===== Timeline ruler =====
+
+const RULER_MAJOR_TICK_CSS_PX = 9;
+const RULER_MINOR_TICK_CSS_PX = 5;
+const RULER_MINOR_TICKS_PER_MAJOR = 5;
+const RULER_LABEL_GAP_CSS_PX = 4;
+
+function drawTimelineRuler(duration, segBounds, W, dpr) {
+  const rect = el.timelineRulerCanvas.getBoundingClientRect();
+  const H = Math.max(1, Math.floor(rect.height * dpr));
+  if (el.timelineRulerCanvas.width !== W) el.timelineRulerCanvas.width = W;
+  if (el.timelineRulerCanvas.height !== H) el.timelineRulerCanvas.height = H;
+  rulerCtx.clearRect(0, 0, W, H);
+  if (duration <= 0 || rect.width <= 0) return;
+
+  const majorTickH = RULER_MAJOR_TICK_CSS_PX * dpr;
+  const minorTickH = RULER_MINOR_TICK_CSS_PX * dpr;
+  const lineW = Math.max(1, Math.round(dpr));
+  const intervalSec = pickRulerIntervalSec(duration, rect.width);
+  const minorIntervalSec = intervalSec / RULER_MINOR_TICKS_PER_MAJOR;
+  const EPS = intervalSec * 1e-6;
+
+  rulerCtx.fillStyle = WAVEFORM_STYLE.tickColor;
+
+  rulerCtx.globalAlpha = 0.55;
+  for (let t = 0; t <= duration + EPS; t += minorIntervalSec) {
+    const x = Math.floor(audioRatioToVisualRatio(t / duration, W, segBounds) * W);
+    rulerCtx.fillRect(x - lineW / 2, H - minorTickH, lineW, minorTickH);
+  }
+
+  rulerCtx.globalAlpha = 1;
+  rulerCtx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
+  for (let t = 0; t <= duration + EPS; t += intervalSec) {
+    const x = Math.floor(audioRatioToVisualRatio(t / duration, W, segBounds) * W);
+    rulerCtx.fillRect(x - lineW / 2, H - majorTickH, lineW, majorTickH);
+    const label = formatRulerLabel(t, intervalSec);
+    const tw = rulerCtx.measureText(label).width;
+    const labelX = Math.max(2 * dpr, Math.min(W - tw - 2 * dpr, x - tw / 2));
+    rulerCtx.fillText(label, labelX, H - majorTickH - RULER_LABEL_GAP_CSS_PX * dpr);
   }
 }
 
@@ -554,6 +582,7 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   if (!state.recordedBuffer) {
     el.playheadScissors.classList.remove('visible');
     el.playheadCaretTop.style.display = 'none';
+    rulerCtx.clearRect(0, 0, el.timelineRulerCanvas.width, el.timelineRulerCanvas.height);
     return;
   }
 
@@ -587,7 +616,7 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     positionSegmentTrash();
   }
 
-  drawTimeTicks(waveCtx, W, H, state.recordedBuffer.duration, dpr, segBounds);
+  drawTimelineRuler(state.recordedBuffer.duration, segBounds, W, dpr);
 }
 
 // ===== Segment click-to-select =====
