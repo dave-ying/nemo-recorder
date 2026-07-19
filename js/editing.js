@@ -2,7 +2,8 @@ import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
-import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample } from './waveform.js';
+import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore } from './waveform.js';
+import { findSingleSegmentRemoval } from './waveform-math.js';
 import { pausePlayback } from './playback.js';
 import { pushHistory, popUndo, popRedo } from './history.js';
 
@@ -101,6 +102,10 @@ export function deleteSegmentByIndex(index) {
     newPlayheadSample = deletedSegStart;
   }
 
+  const oldSegments = state.segments.map(s => ({ start: s.start, end: s.end }));
+  const oldTotalSamples = state.recordedBuffer.length;
+  const oldPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+
   pushHistory();
   state.segments.splice(index, 1);
   rebuildPlaybackBuffer();
@@ -126,7 +131,8 @@ export function deleteSegmentByIndex(index) {
   hideSegmentTrash();
   clearSegmentHover();
   state.hoverRatio = -1;
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  const newPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, newPlayheadRatio);
   updateSegmentCountDisplay();
   showToast(`Deleted segment ${index + 1} · ${state.segments.length} remaining`);
 }
@@ -140,7 +146,7 @@ export function deleteSegmentAtPlayhead() {
   if (target) deleteSegmentByIndex(target.index);
 }
 
-function applyHistorySnapshot(snapshot) {
+function applyHistorySnapshot(snapshot, render) {
   state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end }));
   rebuildPlaybackBuffer();
 
@@ -164,21 +170,54 @@ function applyHistorySnapshot(snapshot) {
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   updateSegmentCountDisplay();
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  render(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+}
+
+// If the transition being undone/redone is a clean single-segment delete,
+// replay the matching delete/restore animation instead of an instant redraw.
+function pickHistoryRenderer(beforeSegments, beforeTotalSamples, beforeRatio, targetSegments, isRedo) {
+  if (isRedo && targetSegments.length === beforeSegments.length - 1) {
+    const deletedIndex = findSingleSegmentRemoval(beforeSegments, targetSegments);
+    if (deletedIndex >= 0) {
+      return (newRatio) => animateSegmentDelete(beforeSegments, beforeTotalSamples, deletedIndex, beforeRatio, newRatio);
+    }
+  } else if (!isRedo && targetSegments.length === beforeSegments.length + 1) {
+    const restoredIndex = findSingleSegmentRemoval(targetSegments, beforeSegments);
+    if (restoredIndex >= 0) {
+      return (newRatio) => animateSegmentRestore(beforeSegments, beforeTotalSamples, restoredIndex, beforeRatio, newRatio);
+    }
+  }
+  return null;
+}
+
+function captureBeforeState() {
+  return {
+    segments: state.segments.map(s => ({ start: s.start, end: s.end })),
+    totalSamples: state.recordedBuffer ? state.recordedBuffer.length : 0,
+    ratio: state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0
+  };
 }
 
 export function undo() {
   if (state.isPlaying) pausePlayback();
+  const before = captureBeforeState();
+
   const snapshot = popUndo();
   if (!snapshot) return;
-  applyHistorySnapshot(snapshot);
+
+  const render = pickHistoryRenderer(before.segments, before.totalSamples, before.ratio, snapshot.segments, false) || drawPlaybackWaveform;
+  applyHistorySnapshot(snapshot, render);
   showToast('Undo');
 }
 
 export function redo() {
   if (state.isPlaying) pausePlayback();
+  const before = captureBeforeState();
+
   const snapshot = popRedo();
   if (!snapshot) return;
-  applyHistorySnapshot(snapshot);
+
+  const render = pickHistoryRenderer(before.segments, before.totalSamples, before.ratio, snapshot.segments, true) || drawPlaybackWaveform;
+  applyHistorySnapshot(snapshot, render);
   showToast('Redo');
 }

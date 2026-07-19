@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS } from './state.js';
 import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
@@ -44,16 +44,25 @@ export function fillWaveformPathLive(ctx, peaks, startIdx, endIdx, midY, scale) 
 export function computePeaks(width) {
   if (!state.recordedBuffer) return null;
   const data = state.recordedBuffer.getChannelData(0);
-  const totalSamples = data.length;
-  if (totalSamples === 0) return new Float32Array(width * 2);
+  return computePeaksForRange(data, 0, data.length, width);
+}
 
-  const samplesPerPixel = totalSamples / width;
-  const peaks = new Float32Array(width * 2);
+// Same min/max-per-pixel peak computation as computePeaks, but scoped to an
+// arbitrary sample range — used to render a single segment's own waveform
+// shape independent of the full recordedBuffer (e.g. mid-delete-animation,
+// where a segment's on-screen width no longer matches its final width).
+function computePeaksForRange(data, startSample, endSample, pixelWidth) {
+  const w = Math.max(1, pixelWidth);
+  const peaks = new Float32Array(w * 2);
+  const totalSamples = endSample - startSample;
+  if (totalSamples <= 0) return peaks;
+
+  const samplesPerPixel = totalSamples / w;
   const step = Math.max(1, (samplesPerPixel / PEAK_STEP_DIVISOR) | 0);
 
-  for (let x = 0; x < width; x++) {
-    const start = (x * samplesPerPixel) | 0;
-    const end = Math.min(totalSamples, ((x + 1) * samplesPerPixel) | 0);
+  for (let x = 0; x < w; x++) {
+    const start = startSample + ((x * samplesPerPixel) | 0);
+    const end = Math.min(endSample, startSample + (((x + 1) * samplesPerPixel) | 0));
     let min = 0, max = 0;
     if (start < end) {
       min = 1; max = -1;
@@ -370,22 +379,21 @@ function roundedRectPath(path, x, y, w, h, r) {
   path.closePath();
 }
 
-function buildSegmentCardPaths(segBounds, H, dpr) {
+function buildOneCardPath(x, w, H, dpr) {
+  if (w <= 0) return null;
   const insetY = SEGMENT_VERTICAL_INSET_CSS_PX * dpr;
   const cardH = H - 2 * insetY;
   const baseR = SEGMENT_CORNER_RADIUS_CSS_PX * dpr;
+  const r = Math.min(baseR, w / 2, cardH / 2);
+  const cardPath = new Path2D();
+  roundedRectPath(cardPath, x, insetY, w, cardH, r);
+  return cardPath;
+}
+
+function buildSegmentCardPaths(segBounds, H, dpr) {
   const cardPaths = [];
   for (const sb of segBounds) {
-    const x = sb.drawStart;
-    const w = sb.drawEnd - sb.drawStart;
-    if (w <= 0) {
-      cardPaths.push(null);
-      continue;
-    }
-    const r = Math.min(baseR, w / 2, cardH / 2);
-    const cardPath = new Path2D();
-    roundedRectPath(cardPath, x, insetY, w, cardH, r);
-    cardPaths.push(cardPath);
+    cardPaths.push(buildOneCardPath(sb.drawStart, sb.drawEnd - sb.drawStart, H, dpr));
   }
   return cardPaths;
 }
@@ -581,6 +589,7 @@ function drawTimelineRuler(duration, segBounds, W, dpr) {
 }
 
 export function drawPlaybackWaveform(playheadRatio = 0) {
+  cancelSegmentDeleteAnimation();
   const dpr = window.devicePixelRatio || 1;
   const rect = el.waveformCanvas.getBoundingClientRect();
   const W = Math.max(1, Math.floor(rect.width * dpr));
@@ -629,6 +638,312 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   }
 
   drawTimelineRuler(state.recordedBuffer.duration, segBounds, W, dpr);
+}
+
+// ===== Segment delete animation =====
+//
+// The deleted card shatters into small waveform-derived fragments that burst
+// outward and fade, tinted the same red used for the trash-hover highlight.
+// The surviving cards slide/reflow from their old positions into their final
+// ones — each keeps rendering its own (unchanged) audio via a local waveform
+// path, stretched to its animated width, so the shapes stay correct mid-slide
+// instead of morphing through unrelated content. DOM chrome (playhead caret,
+// scissors, split handles) rides a matching temporary CSS transition so the
+// whole editor glides in lockstep rather than just the canvas.
+
+const SHATTER_SPACING_CSS_PX = 9;
+const SHATTER_MAX_PARTICLES = 26;
+const SHATTER_MAX_DRIFT_CSS_PX = 44;
+const SHATTER_STAGGER_MS = 90;
+
+let deleteAnim = null;
+
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+function cancelSegmentDeleteAnimation() {
+  if (!deleteAnim) return;
+  cancelAnimationFrame(deleteAnim.raf);
+  clearDomSlideTransitions();
+  deleteAnim = null;
+}
+
+function clearDomSlideTransitions() {
+  el.playheadCaretTop.style.transition = '';
+  el.playheadScissors.style.transition = '';
+  for (const h of bottomHandles) h.style.transition = '';
+}
+
+function buildShatterParticles(delSb, delSeg, channelData, H, dpr) {
+  if (!delSb || !delSeg) return [];
+  const width = delSb.drawEnd - delSb.drawStart;
+  if (width <= 0) return [];
+
+  const spacing = SHATTER_SPACING_CSS_PX * dpr;
+  const count = Math.max(1, Math.min(SHATTER_MAX_PARTICLES, Math.round(width / spacing)));
+  const peaks = computePeaksForRange(channelData, delSeg.start, delSeg.end, count);
+  const midY = H / 2;
+  const segCenterX = (delSb.drawStart + delSb.drawEnd) / 2;
+  const colStep = width / count;
+  const barW = Math.max(2 * dpr, colStep * 0.62);
+
+  const particles = [];
+  for (let i = 0; i < count; i++) {
+    const min = peaks[i * 2], max = peaks[i * 2 + 1];
+    const topY = midY - max * midY * WAVEFORM_SCALE;
+    const botY = midY - min * midY * WAVEFORM_SCALE;
+    const cx = delSb.drawStart + (i + 0.5) * colStep;
+    const cy = (topY + botY) / 2;
+    const barH = Math.max(3 * dpr, botY - topY);
+
+    const dirX = cx === segCenterX ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(cx - segCenterX);
+    const dirY = cy === midY ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(cy - midY);
+
+    particles.push({
+      cx, cy, w: barW, h: barH,
+      vx: dirX * (0.5 + Math.random() * 0.5),
+      vy: dirY * (0.5 + Math.random() * 0.5) - 0.25,
+      rot0: (Math.random() - 0.5) * 0.3,
+      rotSpeed: (Math.random() - 0.5) * 2.4,
+      delay: Math.random() * SHATTER_STAGGER_MS,
+      warm: Math.random() > 0.5
+    });
+  }
+  return particles;
+}
+
+function drawShatterParticles(ctx, particles, elapsedMs, dpr, colorA, colorB) {
+  const maxDrift = SHATTER_MAX_DRIFT_CSS_PX * dpr;
+  for (const p of particles) {
+    const localDuration = Math.max(60, SEGMENT_DELETE_ANIM_MS - p.delay);
+    const pt = Math.max(0, Math.min(1, (elapsedMs - p.delay) / localDuration));
+    const eased = 1 - Math.pow(1 - pt, 2);
+    const alpha = 1 - Math.pow(pt, 1.6);
+    if (alpha <= 0.01) continue;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(p.cx + p.vx * maxDrift * eased, p.cy + p.vy * maxDrift * eased);
+    ctx.rotate(p.rot0 + p.rotSpeed * eased);
+    const scale = 1 - 0.4 * eased;
+    ctx.scale(scale, scale);
+    ctx.fillStyle = p.warm ? colorA : colorB;
+    ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    ctx.restore();
+  }
+}
+
+function buildSlide(oldSb, newSb, seg, channelData, H) {
+  const finalWidth = Math.max(1, Math.round(newSb.drawEnd - newSb.drawStart));
+  const peaks = computePeaksForRange(channelData, seg.start, seg.end, finalWidth);
+  const localPath = new Path2D();
+  buildWaveformPath(localPath, peaks, 0, finalWidth, H / 2, WAVEFORM_SCALE);
+  return { oldSb, newSb, finalWidth, localPath };
+}
+
+function drawDeleteAnimFrame(anim, now) {
+  const { slides, particles, W, H, dpr } = anim;
+  const elapsedMs = now - anim.startTime;
+  const t = Math.max(0, Math.min(1, elapsedMs / SEGMENT_DELETE_ANIM_MS));
+  const eased = easeOutCubic(t);
+
+  waveCtx.clearRect(0, 0, W, H);
+
+  const curPlayheadX = anim.oldPlayheadX + (anim.newPlayheadX - anim.oldPlayheadX) * eased;
+  const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
+
+  for (const s of slides) {
+    const curStart = s.oldSb.drawStart + (s.newSb.drawStart - s.oldSb.drawStart) * eased;
+    const curEnd = s.oldSb.drawEnd + (s.newSb.drawEnd - s.oldSb.drawEnd) * eased;
+    const curWidth = curEnd - curStart;
+    const cardPath = buildOneCardPath(curStart, curWidth, H, dpr);
+    if (!cardPath) continue;
+
+    waveCtx.save();
+    waveCtx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
+    waveCtx.shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
+    waveCtx.shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
+    waveCtx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
+    waveCtx.fill(cardPath);
+    waveCtx.restore();
+
+    waveCtx.save();
+    waveCtx.clip(cardPath);
+
+    waveCtx.strokeStyle = WAVEFORM_STYLE.midlineColor;
+    waveCtx.lineWidth = 1;
+    waveCtx.beginPath();
+    waveCtx.moveTo(curStart, H / 2);
+    waveCtx.lineTo(curEnd, H / 2);
+    waveCtx.stroke();
+
+    const scaleX = curWidth / s.finalWidth;
+    const midX = Math.min(curEnd, Math.max(curStart, curPlayheadX));
+    if (midX > curStart) {
+      waveCtx.save();
+      waveCtx.beginPath();
+      waveCtx.rect(curStart, 0, midX - curStart, H);
+      waveCtx.clip();
+      waveCtx.translate(curStart, 0);
+      waveCtx.scale(scaleX, 1);
+      waveCtx.fillStyle = WAVEFORM_STYLE.playedColor;
+      waveCtx.fill(s.localPath);
+      waveCtx.restore();
+    }
+    if (midX < curEnd) {
+      waveCtx.save();
+      waveCtx.beginPath();
+      waveCtx.rect(midX, 0, curEnd - midX, H);
+      waveCtx.clip();
+      waveCtx.translate(curStart, 0);
+      waveCtx.scale(scaleX, 1);
+      waveCtx.fillStyle = WAVEFORM_STYLE.unplayedColor;
+      waveCtx.fill(s.localPath);
+      waveCtx.restore();
+    }
+
+    waveCtx.restore();
+
+    waveCtx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
+    waveCtx.lineWidth = edgeWidth;
+    waveCtx.stroke(cardPath);
+  }
+
+  // Restore plays the exact same particle trajectory backwards in time, so
+  // fragments converge into solid form instead of bursting apart from it —
+  // tinted teal (the "selected/restored" color) rather than delete's red,
+  // since a restore isn't a destructive action.
+  const particleElapsedMs = anim.reverseParticles ? SEGMENT_DELETE_ANIM_MS - elapsedMs : elapsedMs;
+  const [colorA, colorB] = anim.reverseParticles
+    ? [WAVEFORM_STYLE.selectedPlayedColor, WAVEFORM_STYLE.selectedEdgeColor]
+    : [WAVEFORM_STYLE.deletePlayedColor, WAVEFORM_STYLE.deleteEdgeColor];
+  drawShatterParticles(waveCtx, particles, particleElapsedMs, dpr, colorA, colorB);
+}
+
+// Shared setup for both directions: hands the DOM chrome (caret, scissors,
+// split handles) a temporary CSS transition to their final spot so they glide
+// in lockstep with the canvas, then drives the canvas animation via rAF.
+function beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlayheadRatio, reverseParticles, dpr, W, H) {
+  cancelSegmentDeleteAnimation();
+
+  const domTransition = `left ${SEGMENT_DELETE_ANIM_MS}ms ease-out, top ${SEGMENT_DELETE_ANIM_MS}ms ease-out`;
+  el.playheadCaretTop.style.transition = domTransition;
+  el.playheadScissors.style.transition = `${domTransition}, opacity 0.18s ease`;
+  positionPlayheadCarets(newPlayheadRatio);
+  updatePlayheadScissorsPosition(newPlayheadRatio);
+  if (state.draggingHandleIndex < 0) ensureDivisionHandles();
+  for (const h of bottomHandles) h.style.transition = `${domTransition}, opacity 0.15s, transform 0.15s, color 0.15s`;
+  positionDivisionHandles();
+
+  deleteAnim = { startTime: performance.now(), slides, particles, W, H, dpr, oldPlayheadX, newPlayheadX, reverseParticles, raf: null };
+
+  const tick = (now) => {
+    drawDeleteAnimFrame(deleteAnim, now);
+    if (now - deleteAnim.startTime < SEGMENT_DELETE_ANIM_MS) {
+      deleteAnim.raf = requestAnimationFrame(tick);
+    } else {
+      clearDomSlideTransitions();
+      deleteAnim = null;
+      drawPlaybackWaveform(newPlayheadRatio);
+    }
+  };
+  deleteAnim.raf = requestAnimationFrame(tick);
+}
+
+function prepareCanvasForAnim() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = el.waveformCanvas.getBoundingClientRect();
+  const W = Math.max(1, Math.floor(rect.width * dpr));
+  const H = Math.max(1, Math.floor(rect.height * dpr));
+  if (el.waveformCanvas.width !== W) el.waveformCanvas.width = W;
+  if (el.waveformCanvas.height !== H) el.waveformCanvas.height = H;
+  return { dpr, W, H };
+}
+
+/**
+ * Animates a segment deletion: the removed card's waveform shatters into
+ * fragments that burst outward and fade, while the surviving cards slide
+ * from their old layout into their final one. Call this in place of
+ * drawPlaybackWaveform right after splicing state.segments and rebuilding
+ * state.recordedBuffer for a delete (including a redo that replays one).
+ *
+ * @param {Array<{start: number, end: number}>} oldSegments - segments snapshot from before the splice
+ * @param {number} oldTotalSamples - state.recordedBuffer.length from before the splice
+ * @param {number} deletedIndex - index removed from oldSegments
+ * @param {number} oldPlayheadRatio - playback ratio before the delete
+ * @param {number} newPlayheadRatio - playback ratio after the delete (current state)
+ */
+export function animateSegmentDelete(oldSegments, oldTotalSamples, deletedIndex, oldPlayheadRatio, newPlayheadRatio) {
+  if (!state.originalBuffer || !state.recordedBuffer) {
+    cancelSegmentDeleteAnimation();
+    drawPlaybackWaveform(newPlayheadRatio);
+    return;
+  }
+
+  const { dpr, W, H } = prepareCanvasForAnim();
+  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const oldSegBounds = computeSegmentBoundsPure(W, oldSegments, oldTotalSamples, gapPx);
+  const newSegBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+  const channelData = state.originalBuffer.getChannelData(0);
+
+  const slides = [];
+  for (let i = 0; i < oldSegments.length; i++) {
+    if (i === deletedIndex) continue;
+    const newIndex = i < deletedIndex ? i : i - 1;
+    const oldSb = oldSegBounds[i];
+    const newSb = newSegBounds[newIndex];
+    if (!oldSb || !newSb) continue;
+    slides.push(buildSlide(oldSb, newSb, oldSegments[i], channelData, H));
+  }
+
+  const particles = buildShatterParticles(oldSegBounds[deletedIndex], oldSegments[deletedIndex], channelData, H, dpr);
+  const oldPlayheadX = audioRatioToVisualRatio(oldPlayheadRatio, W, oldSegBounds) * W;
+  const newPlayheadX = audioRatioToVisualRatio(newPlayheadRatio, W, newSegBounds) * W;
+
+  beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlayheadRatio, false, dpr, W, H);
+}
+
+/**
+ * The reverse of animateSegmentDelete, for undoing a delete: the restored
+ * card's fragments converge inward and solidify (the same particle motion as
+ * a delete's shatter, played backwards in time) while the other cards slide
+ * apart from their current layout to make room. Call this in place of
+ * drawPlaybackWaveform right after restoring state.segments/recordedBuffer
+ * to the pre-delete snapshot.
+ *
+ * @param {Array<{start: number, end: number}>} beforeSegments - segments snapshot from before the restore (the post-delete state)
+ * @param {number} beforeTotalSamples - state.recordedBuffer.length from before the restore
+ * @param {number} restoredIndex - index the restored segment occupies in the current (post-restore) state.segments
+ * @param {number} oldPlayheadRatio - playback ratio before the restore
+ * @param {number} newPlayheadRatio - playback ratio after the restore (current state)
+ */
+export function animateSegmentRestore(beforeSegments, beforeTotalSamples, restoredIndex, oldPlayheadRatio, newPlayheadRatio) {
+  if (!state.originalBuffer || !state.recordedBuffer) {
+    cancelSegmentDeleteAnimation();
+    drawPlaybackWaveform(newPlayheadRatio);
+    return;
+  }
+
+  const { dpr, W, H } = prepareCanvasForAnim();
+  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const oldSegBounds = computeSegmentBoundsPure(W, beforeSegments, beforeTotalSamples, gapPx);
+  const newSegBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+  const channelData = state.originalBuffer.getChannelData(0);
+
+  const slides = [];
+  for (let k = 0; k < state.segments.length; k++) {
+    if (k === restoredIndex) continue;
+    const oldIndex = k < restoredIndex ? k : k - 1;
+    const oldSb = oldSegBounds[oldIndex];
+    const newSb = newSegBounds[k];
+    if (!oldSb || !newSb) continue;
+    slides.push(buildSlide(oldSb, newSb, state.segments[k], channelData, H));
+  }
+
+  const particles = buildShatterParticles(newSegBounds[restoredIndex], state.segments[restoredIndex], channelData, H, dpr);
+  const oldPlayheadX = audioRatioToVisualRatio(oldPlayheadRatio, W, oldSegBounds) * W;
+  const newPlayheadX = audioRatioToVisualRatio(newPlayheadRatio, W, newSegBounds) * W;
+
+  beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlayheadRatio, true, dpr, W, H);
 }
 
 // ===== Segment click-to-select =====

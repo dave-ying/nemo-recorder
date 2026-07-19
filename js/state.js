@@ -33,6 +33,7 @@ export const WAVEFORM_STYLE = {
 
 export const SELECTION_PULSE_PERIOD_SEC = 2;
 export const DELETE_PULSE_PERIOD_SEC = 0.55;
+export const SEGMENT_DELETE_ANIM_MS = 480;
 
 /**
  * @typedef {Object} MicCapabilities

@@ -43,6 +43,34 @@ export function computeSegmentBoundsPure(W, segments, totalSamples, gapPx) {
 }
 
 /**
+ * Detects whether `shorterSegments` is exactly `longerSegments` with one
+ * element removed (used by undo/redo to recognize a delete transition
+ * between two history snapshots, so it can replay the delete/restore
+ * animation instead of an instant redraw).
+ *
+ * @param {Array<{start: number, end: number}>} longerSegments
+ * @param {Array<{start: number, end: number}>} shorterSegments - must have exactly one fewer element than longerSegments
+ * @returns {number} the removed index in longerSegments, or -1 if the arrays
+ *   aren't a clean single-element removal of each other (e.g. a split/merge,
+ *   or boundaries also moved)
+ */
+export function findSingleSegmentRemoval(longerSegments, shorterSegments) {
+  if (longerSegments.length !== shorterSegments.length + 1) return -1;
+
+  let i = 0;
+  while (i < shorterSegments.length && segRangesEqual(longerSegments[i], shorterSegments[i])) i++;
+
+  for (let j = i; j < shorterSegments.length; j++) {
+    if (!segRangesEqual(longerSegments[j + 1], shorterSegments[j])) return -1;
+  }
+  return i;
+}
+
+function segRangesEqual(a, b) {
+  return !!a && !!b && a.start === b.start && a.end === b.end;
+}
+
+/**
  * Map an audio-time ratio (fraction of edited duration) to a visual ratio
  * (fraction of canvas width), so the result always lands inside a segment card.
  *

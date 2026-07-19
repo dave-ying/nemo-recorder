@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel } from '../js/waveform-math.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, findSingleSegmentRemoval } from '../js/waveform-math.js';
 
 // Two equal segments, each 500 samples of a 1000-sample edited buffer.
 // On a 1000px canvas with a 20px gap, each segment's linear range is 500px,
@@ -150,4 +150,40 @@ test('formatRulerLabel shows whole mm:ss for second-or-coarser intervals', () =>
 test('formatRulerLabel shows a one-decimal seconds field for sub-second intervals', () => {
   assert.equal(formatRulerLabel(0, 0.1), '00:00.0');
   assert.equal(formatRulerLabel(0.4, 0.1), '00:00.4');
+});
+
+// ===== findSingleSegmentRemoval =====
+
+test('finds a removal in the middle of the array', () => {
+  const longer = [{ start: 0, end: 10 }, { start: 10, end: 20 }, { start: 20, end: 30 }];
+  const shorter = [{ start: 0, end: 10 }, { start: 20, end: 30 }];
+  assert.equal(findSingleSegmentRemoval(longer, shorter), 1);
+});
+
+test('finds a removal at the start of the array', () => {
+  const longer = [{ start: 0, end: 10 }, { start: 10, end: 20 }];
+  const shorter = [{ start: 10, end: 20 }];
+  assert.equal(findSingleSegmentRemoval(longer, shorter), 0);
+});
+
+test('finds a removal at the end of the array', () => {
+  const longer = [{ start: 0, end: 10 }, { start: 10, end: 20 }];
+  const shorter = [{ start: 0, end: 10 }];
+  assert.equal(findSingleSegmentRemoval(longer, shorter), 1);
+});
+
+test('returns -1 when lengths do not differ by exactly one', () => {
+  const a = [{ start: 0, end: 10 }, { start: 10, end: 20 }];
+  assert.equal(findSingleSegmentRemoval(a, a), -1);
+  assert.equal(findSingleSegmentRemoval(a, []), -1);
+});
+
+test('returns -1 when a kept segment also changed boundaries (not a clean removal)', () => {
+  const longer = [{ start: 0, end: 10 }, { start: 10, end: 20 }, { start: 20, end: 30 }];
+  const shorter = [{ start: 0, end: 10 }, { start: 20, end: 35 }]; // second kept segment's end moved
+  assert.equal(findSingleSegmentRemoval(longer, shorter), -1);
+});
+
+test('a single-segment array reduced to empty reports the removal at index 0', () => {
+  assert.equal(findSingleSegmentRemoval([{ start: 0, end: 10 }], []), 0);
 });
