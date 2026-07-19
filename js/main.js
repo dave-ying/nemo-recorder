@@ -5,6 +5,7 @@ import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording,
 import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
+import { arrowKeyDown, arrowKeyUp } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
@@ -123,6 +124,9 @@ document.addEventListener('keydown', (e) => {
   } else if (e.code === 'KeyS' && noMod && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
     splitAtPlayhead();
+  } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && noMod && !el.playbackView.hidden && state.recordedBuffer) {
+    e.preventDefault();
+    arrowKeyDown(e.code);
   } else if (e.code === 'Delete' && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
     if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
@@ -134,6 +138,12 @@ document.addEventListener('keydown', (e) => {
     if (el.exportModal.classList.contains('visible')) {
       closeExportModal();
     }
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+    arrowKeyUp(e.code);
   }
 });
 
