@@ -229,20 +229,17 @@ const SCISSORS_FALLBACK_HEIGHT = 30;
 
 const DIVISION_HANDLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 9c.852 0 1.297 .986 .783 1.623l-.076 .084l-6 6a1 1 0 0 1 -1.32 .083l-.094 -.083l-6 -6l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057v-.118l.005 -.058l.009 -.06l.01 -.052l.032 -.108l.027 -.067l.07 -.132l.065 -.09l.073 -.081l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01l.057 -.004l12.059 -.002z"/></svg>`;
 
-let topHandles = [];
 let bottomHandles = [];
 
-function createHandleElement(isBottom) {
+function createHandleElement() {
   const h = document.createElement('button');
   h.className = 'division-handle';
   h.innerHTML = DIVISION_HANDLE_SVG;
   h.tabIndex = -1;
   h.setAttribute('aria-label', 'Drag to reposition split');
 
-  if (isBottom) {
-    const svg = h.querySelector('svg');
-    svg.style.transform = 'rotate(180deg)';
-  }
+  const svg = h.querySelector('svg');
+  svg.style.transform = 'rotate(180deg)';
 
   h.addEventListener('mousedown', (e) => {
     e.preventDefault();
@@ -282,35 +279,27 @@ function createHandleElement(isBottom) {
 export function ensureDivisionHandles() {
   const needed = Math.max(0, state.segments.length - 1);
 
-  while (topHandles.length > needed) {
-    topHandles.pop().remove();
+  while (bottomHandles.length > needed) {
     bottomHandles.pop().remove();
   }
 
-  while (topHandles.length < needed) {
-    const topH = createHandleElement(false);
-    const bottomH = createHandleElement(true);
-    topH.dataset.index = String(topHandles.length);
-    bottomH.dataset.index = String(topHandles.length);
-    el.playbackView.appendChild(topH);
+  while (bottomHandles.length < needed) {
+    const bottomH = createHandleElement();
+    bottomH.dataset.index = String(bottomHandles.length);
     el.playbackView.appendChild(bottomH);
-    topHandles.push(topH);
     bottomHandles.push(bottomH);
   }
 
-  for (let i = 0; i < topHandles.length; i++) {
-    topHandles[i].dataset.index = String(i);
+  for (let i = 0; i < bottomHandles.length; i++) {
     bottomHandles[i].dataset.index = String(i);
   }
 }
 
 const HANDLE_HALF_W = 12;
-const HANDLE_HEIGHT = 20;
 const HANDLE_OVERLAP = 4;
 
 export function positionDivisionHandles() {
   if (!state.recordedBuffer || state.segments.length <= 1) {
-    for (const h of topHandles) h.style.display = 'none';
     for (const h of bottomHandles) h.style.display = 'none';
     return;
   }
@@ -319,21 +308,16 @@ export function positionDivisionHandles() {
   const viewRect = el.playbackView.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const W = Math.floor(canvasRect.width * dpr);
-  const topPx = (canvasRect.top - viewRect.top) - HANDLE_HEIGHT + HANDLE_OVERLAP;
   const bottomPx = (canvasRect.bottom - viewRect.top) - HANDLE_OVERLAP;
   const totalSamples = state.recordedBuffer.length;
   let acc = 0;
 
-  for (let i = 0; i < topHandles.length; i++) {
+  for (let i = 0; i < bottomHandles.length; i++) {
     acc += state.segments[i].end - state.segments[i].start;
     const ratio = acc / totalSamples;
     const lineXCssPx = Math.floor(ratio * W) / dpr;
     let leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
     leftPx = Math.max(HANDLE_HALF_W, Math.min(viewRect.width - HANDLE_HALF_W, leftPx));
-
-    topHandles[i].style.display = '';
-    topHandles[i].style.left = leftPx + 'px';
-    topHandles[i].style.top = topPx + 'px';
 
     bottomHandles[i].style.display = '';
     bottomHandles[i].style.left = leftPx + 'px';
@@ -342,15 +326,13 @@ export function positionDivisionHandles() {
 }
 
 export function addDraggingClass(index) {
-  if (index >= 0 && index < topHandles.length) {
-    topHandles[index].classList.add('dragging');
+  if (index >= 0 && index < bottomHandles.length) {
     bottomHandles[index].classList.add('dragging');
   }
 }
 
 export function removeDraggingClass(index) {
-  if (index >= 0 && index < topHandles.length) {
-    topHandles[index].classList.remove('dragging');
+  if (index >= 0 && index < bottomHandles.length) {
     bottomHandles[index].classList.remove('dragging');
   }
 }
