@@ -110,7 +110,6 @@ export function updatePlayheadScissorsPosition(ratio) {
 export function positionPlayheadCarets(ratio) {
   if (!state.recordedBuffer || el.playbackView.hidden || ratio < 0 || ratio > 1) {
     el.playheadCaretTop.style.display = 'none';
-    el.playheadCaretBottom.style.display = 'none';
     return;
   }
 
@@ -127,15 +126,10 @@ export function positionPlayheadCarets(ratio) {
   const HANDLE_H = 30;
   const OVERLAP = 4;
   const topPx = (canvasRect.top - viewRect.top) - HANDLE_H + OVERLAP;
-  const bottomPx = (canvasRect.bottom - viewRect.top) - OVERLAP;
 
   el.playheadCaretTop.style.display = '';
   el.playheadCaretTop.style.left = leftPx + 'px';
   el.playheadCaretTop.style.top = topPx + 'px';
-
-  el.playheadCaretBottom.style.display = '';
-  el.playheadCaretBottom.style.left = leftPx + 'px';
-  el.playheadCaretBottom.style.top = bottomPx + 'px';
 }
 
 function playheadCaretMouseDown(e) {
@@ -144,7 +138,6 @@ function playheadCaretMouseDown(e) {
   if (state.isPlaying) pausePlayback();
   state.draggingPlayhead = true;
   el.playheadCaretTop.classList.add('dragging');
-  el.playheadCaretBottom.classList.add('dragging');
   hideSegmentTrash();
 }
 
@@ -153,20 +146,15 @@ function playheadCaretTouchStart(e) {
   if (state.isPlaying) pausePlayback();
   state.draggingPlayhead = true;
   el.playheadCaretTop.classList.add('dragging');
-  el.playheadCaretBottom.classList.add('dragging');
   hideSegmentTrash();
 }
 
 el.playheadCaretTop.addEventListener('mousedown', playheadCaretMouseDown);
-el.playheadCaretBottom.addEventListener('mousedown', playheadCaretMouseDown);
 el.playheadCaretTop.addEventListener('touchstart', playheadCaretTouchStart, { passive: false });
-el.playheadCaretBottom.addEventListener('touchstart', playheadCaretTouchStart, { passive: false });
 el.playheadCaretTop.addEventListener('click', (e) => e.stopPropagation());
-el.playheadCaretBottom.addEventListener('click', (e) => e.stopPropagation());
 
 export function removePlayheadCaretDraggingClass() {
   el.playheadCaretTop.classList.remove('dragging');
-  el.playheadCaretBottom.classList.remove('dragging');
 }
 
 // ===== Trash show/hide helpers =====
@@ -577,7 +565,6 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   if (!state.recordedBuffer) {
     el.playheadScissors.classList.remove('visible');
     el.playheadCaretTop.style.display = 'none';
-    el.playheadCaretBottom.style.display = 'none';
     return;
   }
 

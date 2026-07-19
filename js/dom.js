@@ -15,7 +15,6 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} deleteButton
  * @property {HTMLButtonElement} playheadScissors
  * @property {HTMLButtonElement} playheadCaretTop
- * @property {HTMLButtonElement} playheadCaretBottom
  * @property {HTMLButtonElement} segmentTrash
  * @property {HTMLDivElement} connectView
  * @property {HTMLDivElement} readyView
@@ -51,7 +50,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   recordButton: $('recordButton'), stopButton: $('stopButton'),
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), retryButton: $('retryButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteButton: $('deleteButton'),
-  playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadCaretBottom: $('playheadCaretBottom'), segmentTrash: $('segmentTrash'),
+  playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), segmentTrash: $('segmentTrash'),
   connectView: $('connectView'), readyView: $('readyView'),
   recordingView: $('recordingView'), playbackView: $('playbackView'),
   liveCanvas: $('liveCanvas'), waveformCanvas: $('waveformCanvas'),

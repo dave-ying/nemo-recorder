@@ -254,10 +254,6 @@ body::after {
   pointer-events: none;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
 }
-.playhead-caret-bottom svg {
-  transform: rotate(180deg);
-}
-
 .division-handle {
   position: absolute;
   z-index: 15;
