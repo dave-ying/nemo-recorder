@@ -171,6 +171,12 @@ document.addEventListener('keydown', (e) => {
   } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && noMod && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
     arrowKeyDown(e.code);
+  } else if (e.code === 'ArrowUp' && noMod && !el.playbackView.hidden && state.recordedBuffer && !el.restartButton.disabled) {
+    e.preventDefault();
+    el.restartButton.click();
+  } else if (e.code === 'ArrowDown' && noMod && !el.playbackView.hidden && state.recordedBuffer && !el.skipForwardButton.disabled) {
+    e.preventDefault();
+    el.skipForwardButton.click();
   } else if (e.code === 'Delete' && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
     if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
