@@ -398,12 +398,73 @@ function buildSegmentCardPaths(segBounds, H, dpr) {
   return cardPaths;
 }
 
-function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
-  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX * dpr;
-  const shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
-  const shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
-  const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
+// ===== Render caches =====
+//
+// The card backgrounds (shadow-blur fills are among the most expensive canvas
+// ops) and the timeline ruler only change when the segment layout, canvas
+// size, or hover/selection state changes — never per frame. They're cached so
+// the per-frame callers (playback and the selection-pulse loop) just blit the
+// base layer and draw the cheap dynamic parts, instead of re-rendering
+// shadows and ruler text at 60fps.
+
+/** @type {HTMLCanvasElement | null} */
+let baseLayerCanvas = null;
+let baseLayerKey = '';
+/** @type {Array<Path2D | null>} */
+let cachedCardPaths = [];
+let cardPathsKey = '';
+let rulerCacheKey = '';
+
+function segmentGeometryKey(W, H, dpr) {
+  let k = W + 'x' + H + '@' + dpr;
+  for (const s of state.segments) k += '|' + s.start + ':' + s.end;
+  return k;
+}
+
+function renderBaseLayer(segBounds, cardPaths, W, H, dpr) {
+  if (!baseLayerCanvas) baseLayerCanvas = document.createElement('canvas');
+  if (baseLayerCanvas.width !== W) baseLayerCanvas.width = W;
+  if (baseLayerCanvas.height !== H) baseLayerCanvas.height = H;
+  const ctx = baseLayerCanvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, W, H);
+
   const midY = H / 2;
+  const selectedIdx = state.hoveredSegmentIndex;
+  const hoverIdx = state.hoverSegmentIndex;
+
+  // Card backgrounds with drop shadows (drawn first so shadows don't darken neighbors' content)
+  for (let i = 0; i < cardPaths.length; i++) {
+    const cardPath = cardPaths[i];
+    if (!cardPath) continue;
+    ctx.save();
+    ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
+    ctx.shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
+    ctx.shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
+    ctx.fillStyle = (i === selectedIdx || i === hoverIdx) ? WAVEFORM_STYLE.hoverCardBg : WAVEFORM_STYLE.segmentCardBg;
+    ctx.fill(cardPath);
+    ctx.restore();
+  }
+
+  // Midlines (clipped to each card so they break at gaps)
+  for (let i = 0; i < segBounds.length; i++) {
+    const sb = segBounds[i];
+    const cardPath = cardPaths[i];
+    if (!cardPath) continue;
+    ctx.save();
+    ctx.clip(cardPath);
+    ctx.strokeStyle = WAVEFORM_STYLE.midlineColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sb.drawStart, midY);
+    ctx.lineTo(sb.drawEnd, midY);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
+  const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
 
   const selectedIdx = state.hoveredSegmentIndex;
   const hoverIdx = state.hoverSegmentIndex;
@@ -414,22 +475,10 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
     ? (Math.sin((performance.now() / 1000) * (Math.PI * 2 / pulsePeriod)) + 1) / 2
     : 0;
 
-  // Pass 1: card backgrounds with drop shadows (drawn first so shadows don't darken neighbors' content)
-  for (let i = 0; i < cardPaths.length; i++) {
-    const cardPath = cardPaths[i];
-    if (!cardPath) continue;
-    ctx.save();
-    ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
-    ctx.shadowBlur = shadowBlur;
-    ctx.shadowOffsetY = shadowOffsetY;
-    ctx.fillStyle = (i === selectedIdx) ? WAVEFORM_STYLE.hoverCardBg
-      : (i === hoverIdx) ? WAVEFORM_STYLE.hoverCardBg
-      : WAVEFORM_STYLE.segmentCardBg;
-    ctx.fill(cardPath);
-    ctx.restore();
-  }
+  // Static layer: card backgrounds, shadows, midlines (cached in renderBaseLayer)
+  if (baseLayerCanvas) ctx.drawImage(baseLayerCanvas, 0, 0);
 
-  // Pass 2: clipped waveform content + edge stroke per card
+  // Dynamic pass: clipped waveform content + edge stroke per card
   for (let i = 0; i < segBounds.length; i++) {
     const sb = segBounds[i];
     const cardPath = cardPaths[i];
@@ -440,14 +489,6 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
 
     ctx.save();
     ctx.clip(cardPath);
-
-    // Midline (clipped to card so it breaks at gaps)
-    ctx.strokeStyle = WAVEFORM_STYLE.midlineColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, midY);
-    ctx.lineTo(x + w, midY);
-    ctx.stroke();
 
     // Played / unplayed fills (clipped to card, then to each side of the playhead)
     const midX = Math.min(sb.drawEnd, Math.max(sb.drawStart, playheadX));
@@ -553,9 +594,14 @@ const RULER_MINOR_TICK_CSS_PX = 5;
 const RULER_MINOR_TICKS_PER_MAJOR = 5;
 const RULER_LABEL_GAP_CSS_PX = 4;
 
-function drawTimelineRuler(duration, segBounds, W, dpr) {
+function drawTimelineRuler(duration, segBounds, W, dpr, geomKey) {
   const rect = el.timelineRulerCanvas.getBoundingClientRect();
   const H = Math.max(1, Math.floor(rect.height * dpr));
+  // The ruler doesn't depend on playhead or selection, so skip the redraw
+  // (tick loops + per-label text layout) unless layout or duration changed.
+  const key = geomKey + '#' + H + '#' + duration + '#' + rect.width;
+  if (key === rulerCacheKey) return;
+  rulerCacheKey = key;
   if (el.timelineRulerCanvas.width !== W) el.timelineRulerCanvas.width = W;
   if (el.timelineRulerCanvas.height !== H) el.timelineRulerCanvas.height = H;
   rulerCtx.clearRect(0, 0, W, H);
@@ -604,6 +650,7 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     el.playheadScissors.classList.remove('visible');
     el.playheadCaretTop.style.display = 'none';
     rulerCtx.clearRect(0, 0, el.timelineRulerCanvas.width, el.timelineRulerCanvas.height);
+    rulerCacheKey = '';
     return;
   }
 
@@ -624,9 +671,19 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   const path = state.cachedPath;
 
   const playheadX = Math.floor(visualRatio * W);
-  const cardPaths = buildSegmentCardPaths(segBounds, H, dpr);
 
-  drawSegmentCards(waveCtx, path, segBounds, cardPaths, playheadX, H, dpr);
+  const geomKey = segmentGeometryKey(W, H, dpr);
+  if (geomKey !== cardPathsKey) {
+    cachedCardPaths = buildSegmentCardPaths(segBounds, H, dpr);
+    cardPathsKey = geomKey;
+  }
+  const baseKey = geomKey + '#' + state.hoveredSegmentIndex + '#' + state.hoverSegmentIndex;
+  if (baseKey !== baseLayerKey) {
+    renderBaseLayer(segBounds, cachedCardPaths, W, H, dpr);
+    baseLayerKey = baseKey;
+  }
+
+  drawSegmentCards(waveCtx, path, segBounds, cachedCardPaths, playheadX, H, dpr);
 
   if (state.draggingHandleIndex < 0) {
     ensureDivisionHandles();
@@ -637,7 +694,7 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     positionSegmentTrash();
   }
 
-  drawTimelineRuler(state.recordedBuffer.duration, segBounds, W, dpr);
+  drawTimelineRuler(state.recordedBuffer.duration, segBounds, W, dpr, geomKey);
 }
 
 // ===== Segment delete animation =====
