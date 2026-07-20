@@ -2,7 +2,7 @@ import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateHeaderState, updateEmptyState } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording } from './audio.js';
-import { loadUploadedFile } from './upload.js';
+import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer, undo, redo } from './editing.js';
 import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
@@ -70,6 +70,39 @@ el.deleteButton.addEventListener('click', deleteSegmentAtPlayhead);
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
 
+const closeAppendMenu = () => { el.appendMenu.hidden = true; };
+
+el.appendButton.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!el.appendMenu.hidden) {
+    closeAppendMenu();
+    return;
+  }
+  el.appendMenu.hidden = false;
+  const btnRect = el.appendButton.getBoundingClientRect();
+  const viewRect = el.playbackView.getBoundingClientRect();
+  el.appendMenu.style.right = (viewRect.right - btnRect.right) + 'px';
+  el.appendMenu.style.top = (btnRect.bottom - viewRect.top + 4) + 'px';
+});
+
+el.appendMenuUpload.addEventListener('click', () => {
+  closeAppendMenu();
+  el.appendFileInput.click();
+});
+
+el.appendMenuRecord.addEventListener('click', () => {
+  closeAppendMenu();
+  state.appendOnStop = true;
+  startRecording();
+});
+
+el.appendFileInput.addEventListener('change', (e) => {
+  const input = /** @type {HTMLInputElement} */ (e.target);
+  const file = input.files[0];
+  if (file) appendUploadedFile(file);
+  input.value = '';
+});
+
 el.exportClose.addEventListener('click', closeExportModal);
 el.exportConfirm.addEventListener('click', executeExport);
 el.exportModal.addEventListener('click', (e) => {
@@ -124,6 +157,12 @@ document.addEventListener('pointerdown', (e) => {
     const target = /** @type {Node} */ (e.target);
     if (el.waveformContainer.contains(target) || target === el.segmentTrash || el.segmentTrash.contains(target)) return;
     hideSegmentTrash();
+  }
+  if (!el.appendMenu.hidden) {
+    const target = /** @type {Node} */ (e.target);
+    if (target !== el.appendButton && !el.appendMenu.contains(target) && target !== el.appendFileInput) {
+      closeAppendMenu();
+    }
   }
 });
 
@@ -226,10 +265,11 @@ document.addEventListener('keydown', (e) => {
     if (state.micCapabilities && !state.isRecording) { e.preventDefault(); startRecording(); }
     else if (state.isRecording) { e.preventDefault(); stopRecording(); }
   } else if (e.code === 'Escape') {
-    if (el.exportModal.classList.contains('visible')) {
+    if (!el.appendMenu.hidden) {
+      closeAppendMenu();
+    } else if (el.exportModal.classList.contains('visible')) {
       closeExportModal();
-    }
-    if (el.qualityModal.classList.contains('visible')) {
+    } else if (el.qualityModal.classList.contains('visible')) {
       el.qualityModal.classList.remove('visible');
     }
   }

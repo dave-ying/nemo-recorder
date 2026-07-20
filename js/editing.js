@@ -104,10 +104,6 @@ export function splitAtPlayhead() {
 export function deleteSegmentByIndex(index) {
   if (!state.recordedBuffer || !state.originalBuffer) return;
   if (state.isPlaying) pausePlayback();
-  if (state.segments.length <= 1) {
-    showToast('Cannot delete the only remaining segment', true);
-    return;
-  }
   if (index < 0 || index >= state.segments.length) return;
 
   const sr = state.originalBuffer.sampleRate;
@@ -141,16 +137,17 @@ export function deleteSegmentByIndex(index) {
   rebuildPlaybackBuffer();
 
   if (!state.recordedBuffer) {
-    showToast('All audio deleted', true);
     hideSegmentTrash();
     clearSegmentHover();
     el.playheadScissors.classList.remove('visible');
     state.hoverRatio = -1;
-
     el.playButton.classList.remove('playing');
     el.timeCurrent.textContent = '00:00.000';
     el.timeTotal.textContent = '00:00.000';
     setTransportDisabled(true);
+    updateSegmentCountDisplay();
+    animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, 0, deletedSnap);
+    showToast('All audio deleted', true);
     return;
   }
 
@@ -192,6 +189,10 @@ function applyHistorySnapshot(snapshot, render) {
     el.timeTotal.textContent = '00:00.000';
     setTransportDisabled(true);
     updateSegmentCountDisplay();
+    render(0);
+    // The delete animation reveals the empty state in its onComplete; for
+    // a plain redraw (non-animated transition), do it now.
+    if (render === drawPlaybackWaveform) updateEmptyState();
     return;
   }
 
@@ -200,6 +201,7 @@ function applyHistorySnapshot(snapshot, render) {
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   updateSegmentCountDisplay();
+  updateEmptyState();
   render(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
 }
 
@@ -253,4 +255,48 @@ export function redo() {
   const render = pickHistoryRenderer(before.segments, before.totalSamples, before.ratio, snapshot.segments, true) || drawPlaybackWaveform;
   applyHistorySnapshot(snapshot, render);
   showToast('Redo');
+}
+
+async function adaptBuffer(buffer, targetSampleRate, targetChannels) {
+  if (buffer.sampleRate === targetSampleRate && buffer.numberOfChannels === targetChannels) {
+    return buffer;
+  }
+  const duration = buffer.duration;
+  const totalLen = Math.max(1, Math.ceil(duration * targetSampleRate));
+  const ctx = new OfflineAudioContext(targetChannels, totalLen, targetSampleRate);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  src.start();
+  return ctx.startRendering();
+}
+
+export async function appendBufferToRecording(buffer, toastMessage) {
+  if (state.isPlaying) pausePlayback();
+  if (!state.originalBuffer) return;
+  const adapted = await adaptBuffer(buffer, state.originalBuffer.sampleRate, state.originalBuffer.numberOfChannels);
+  const oldLen = state.originalBuffer.length;
+  const newLen = adapted.length;
+  const orig = state.originalBuffer;
+  const nch = orig.numberOfChannels;
+  const combined = state.audioContext.createBuffer(nch, oldLen + newLen, orig.sampleRate);
+  for (let c = 0; c < nch; c++) {
+    const dst = combined.getChannelData(c);
+    dst.set(orig.getChannelData(c), 0);
+    dst.set(adapted.getChannelData(c), oldLen);
+  }
+  pushHistory();
+  state.originalBuffer = combined;
+  state.segments.push({ start: oldLen, end: oldLen + newLen });
+  rebuildPlaybackBuffer();
+  if (state.recordedBuffer) {
+    el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
+  }
+  updateSegmentCountDisplay();
+  updateEmptyState();
+  const ratio = state.recordedBuffer && state.recordedBuffer.duration > 0
+    ? state.playbackOffset / state.recordedBuffer.duration
+    : 0;
+  drawPlaybackWaveform(ratio);
+  showToast(toastMessage);
 }

@@ -3,6 +3,7 @@ import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
 import { pushHistory } from './history.js';
+import { updateEmptyState } from './ui.js';
 
 // ===== Segment helpers (moved here to avoid circular deps with editing.js) =====
 
@@ -196,7 +197,6 @@ export function clearSegmentHover() {
 
 export function showSegmentTrash(index) {
   if (index < 0 || index >= state.segments.length) return;
-  if (state.segments.length < 2) return;
   clearTimeout(state.trashHideTimer);
   state.hoveredSegmentIndex = index;
   el.segmentTrash.classList.add('visible');
@@ -345,6 +345,23 @@ export function positionDivisionHandles() {
     bottomHandles[i].style.left = leftPx + 'px';
     bottomHandles[i].style.top = bottomPx + 'px';
   }
+}
+
+export function positionAppendButton() {
+  if (!state.recordedBuffer || state.isRecording || el.playbackView.hidden) {
+    el.appendButton.classList.remove('visible');
+    el.appendMenu.hidden = true;
+    return;
+  }
+  const viewRect = el.playbackView.getBoundingClientRect();
+  const canvasRect = el.waveformCanvas.getBoundingClientRect();
+  const btnW = 30;
+  const padPx = 16;
+  let leftPx = viewRect.width - btnW - padPx;
+  const midY = (canvasRect.top - viewRect.top) + canvasRect.height / 2;
+  el.appendButton.style.left = leftPx + 'px';
+  el.appendButton.style.top = (midY - btnW / 2) + 'px';
+  el.appendButton.classList.add('visible');
 }
 
 export function addDraggingClass(index) {
@@ -689,8 +706,9 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     ensureDivisionHandles();
   }
   positionDivisionHandles();
+  positionAppendButton();
 
-  if (state.hoveredSegmentIndex >= 0 && state.segments.length >= 2) {
+  if (state.hoveredSegmentIndex >= 0) {
     positionSegmentTrash();
   }
 
@@ -699,19 +717,35 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
 
 // ===== Segment delete animation =====
 //
-// The deleted card shatters into small waveform-derived fragments that burst
-// outward and fade, tinted the same red used for the trash-hover highlight.
+// The deleted card disintegrates as the exact image the user was looking at:
+// right before the segments are spliced, the card is rendered once in its
+// delete-red state through the normal renderer and its pixels are copied off
+// the live canvas into an offscreen snapshot. That snapshot is then cut into
+// a grid of tiles which tile seamlessly at frame zero (the first frame IS
+// the red card, pixel-for-pixel) before drifting apart, rotating, and fading.
 // The surviving cards slide/reflow from their old positions into their final
 // ones — each keeps rendering its own (unchanged) audio via a local waveform
-// path, stretched to its animated width, so the shapes stay correct mid-slide
-// instead of morphing through unrelated content. DOM chrome (playhead caret,
-// scissors, split handles) rides a matching temporary CSS transition so the
-// whole editor glides in lockstep rather than just the canvas.
+// path, stretched to its animated width, so the shapes stay correct
+// mid-slide instead of morphing through unrelated content. DOM chrome
+// (playhead caret, scissors, split handles) rides a matching temporary CSS
+// transition so the whole editor glides in lockstep rather than just the
+// canvas.
 
-const SHATTER_SPACING_CSS_PX = 9;
-const SHATTER_MAX_PARTICLES = 26;
+const SHATTER_TILE_CSS_PX = 12;
+const SHATTER_MAX_TILES = 500;
 const SHATTER_MAX_DRIFT_CSS_PX = 44;
-const SHATTER_STAGGER_MS = 90;
+const SHATTER_STAGGER_MS = 110;
+// Extra margin captured around the card so its glow/shadow travels with the tiles.
+const SNAPSHOT_PAD_CSS_PX = 16;
+
+/**
+ * @typedef {Object} SegmentSnapshot
+ * @property {HTMLCanvasElement} canvas - offscreen copy of the card's pixels
+ * @property {number} sx - x of the captured region on the waveform canvas (device px)
+ * @property {number} sy - y of the captured region on the waveform canvas (device px)
+ * @property {number} W - waveform canvas width at capture time (device px)
+ * @property {number} H - waveform canvas height at capture time (device px)
+ */
 
 let deleteAnim = null;
 
@@ -730,63 +764,146 @@ function clearDomSlideTransitions() {
   for (const h of bottomHandles) h.style.transition = '';
 }
 
-function buildShatterParticles(delSb, delSeg, channelData, H, dpr) {
-  if (!delSb || !delSeg) return [];
-  const width = delSb.drawEnd - delSb.drawStart;
-  if (width <= 0) return [];
-
-  const spacing = SHATTER_SPACING_CSS_PX * dpr;
-  const count = Math.max(1, Math.min(SHATTER_MAX_PARTICLES, Math.round(width / spacing)));
-  const peaks = computePeaksForRange(channelData, delSeg.start, delSeg.end, count);
-  const midY = H / 2;
-  const segCenterX = (delSb.drawStart + delSb.drawEnd) / 2;
-  const colStep = width / count;
-  const barW = Math.max(2 * dpr, colStep * 0.62);
-
-  const particles = [];
-  for (let i = 0; i < count; i++) {
-    const min = peaks[i * 2], max = peaks[i * 2 + 1];
-    const topY = midY - max * midY * WAVEFORM_SCALE;
-    const botY = midY - min * midY * WAVEFORM_SCALE;
-    const cx = delSb.drawStart + (i + 0.5) * colStep;
-    const cy = (topY + botY) / 2;
-    const barH = Math.max(3 * dpr, botY - topY);
-
-    const dirX = cx === segCenterX ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(cx - segCenterX);
-    const dirY = cy === midY ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(cy - midY);
-
-    particles.push({
-      cx, cy, w: barW, h: barH,
-      vx: dirX * (0.5 + Math.random() * 0.5),
-      vy: dirY * (0.5 + Math.random() * 0.5) - 0.25,
-      rot0: (Math.random() - 0.5) * 0.3,
-      rotSpeed: (Math.random() - 0.5) * 2.4,
-      delay: Math.random() * SHATTER_STAGGER_MS,
-      warm: Math.random() > 0.5
-    });
-  }
-  return particles;
+// The canvas rectangle a snapshot of card sb covers: the card itself plus
+// padding for its glow/shadow, clamped to [minX, maxX] (so a live capture
+// never lifts pixels belonging to a neighboring card) and to the canvas.
+function snapshotRegion(sb, W, H, dpr, minX, maxX) {
+  const pad = Math.round(SNAPSHOT_PAD_CSS_PX * dpr);
+  const insetY = Math.round(SEGMENT_VERTICAL_INSET_CSS_PX * dpr);
+  const sx = Math.max(0, minX, Math.floor(sb.drawStart - pad));
+  const ex = Math.min(W, maxX, Math.ceil(sb.drawEnd + pad));
+  const sy = Math.max(0, insetY - pad);
+  const ey = Math.min(H, H - insetY + pad);
+  if (ex <= sx || ey <= sy) return null;
+  return { sx, sy, w: ex - sx, h: ey - sy };
 }
 
-function drawShatterParticles(ctx, particles, elapsedMs, dpr, colorA, colorB) {
+/** @returns {{ off: HTMLCanvasElement, ctx: CanvasRenderingContext2D, sx: number, sy: number } | null} */
+function makeSnapshotCanvas(sb, W, H, dpr, minX, maxX) {
+  const region = sb ? snapshotRegion(sb, W, H, dpr, minX, maxX) : null;
+  if (!region) return null;
+  const off = document.createElement('canvas');
+  off.width = region.w;
+  off.height = region.h;
+  const ctx = off.getContext('2d');
+  if (!ctx) return null;
+  return { off, ctx, sx: region.sx, sy: region.sy };
+}
+
+// Copies the card region around segBound sb (plus glow/shadow padding, but
+// never past the neighboring cards' edges) from the live waveform canvas
+// into an offscreen canvas. Must be called while the canvas still shows the
+// frame the region should be lifted from.
+/** @returns {SegmentSnapshot | null} */
+function captureCanvasRegion(sb, W, H, dpr, minX, maxX) {
+  const snap = makeSnapshotCanvas(sb, W, H, dpr, minX, maxX);
+  if (!snap) return null;
+  snap.ctx.drawImage(el.waveformCanvas, snap.sx, snap.sy, snap.off.width, snap.off.height, 0, 0, snap.off.width, snap.off.height);
+  return { canvas: snap.off, sx: snap.sx, sy: snap.sy, W, H };
+}
+
+// Renders card sb into an offscreen snapshot without touching the live
+// canvas or DOM chrome — used by the restore animation, where the restored
+// card isn't on screen yet. Draws exactly what the final frame will show for
+// that card (normal, unselected style) via the same path the slides use.
+/** @returns {SegmentSnapshot | null} */
+function renderCardSnapshot(sb, seg, channelData, W, H, dpr, playheadX) {
+  const snap = makeSnapshotCanvas(sb, W, H, dpr, 0, W);
+  if (!snap) return null;
+  snap.ctx.translate(-snap.sx, -snap.sy);
+  const slide = buildSlide(sb, sb, seg, channelData, H);
+  drawSlideCard(snap.ctx, slide, sb.drawStart, sb.drawEnd, playheadX, H, dpr, SEGMENT_EDGE_WIDTH_CSS_PX * dpr);
+  return { canvas: snap.off, sx: snap.sx, sy: snap.sy, W, H };
+}
+
+/**
+ * Captures the to-be-deleted segment card as an image, exactly as the
+ * renderer draws it in its delete-red (trash-hover) state. Call this BEFORE
+ * splicing state.segments — it re-renders the current frame with the segment
+ * forced into the red marked-for-delete style via the normal drawing path,
+ * then lifts that card's pixels off the canvas. The returned snapshot is what
+ * animateSegmentDelete disintegrates.
+ *
+ * @param {number} index - segment index about to be deleted
+ * @returns {SegmentSnapshot | null}
+ */
+export function captureSegmentBitmap(index) {
+  if (!state.recordedBuffer || el.playbackView.hidden) return null;
+
+  const prevHovered = state.hoveredSegmentIndex;
+  const prevTrash = state.isHoveringTrash;
+  state.hoveredSegmentIndex = index;
+  state.isHoveringTrash = true;
+  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  drawPlaybackWaveform(ratio);
+  state.hoveredSegmentIndex = prevHovered;
+  state.isHoveringTrash = prevTrash;
+
+  const dpr = window.devicePixelRatio || 1;
+  const W = el.waveformCanvas.width, H = el.waveformCanvas.height;
+  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const segBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+  if (!segBounds[index]) return null;
+  const minX = index > 0 ? Math.ceil(segBounds[index - 1].drawEnd) + 1 : 0;
+  const maxX = index < segBounds.length - 1 ? Math.floor(segBounds[index + 1].drawStart) - 1 : W;
+  return captureCanvasRegion(segBounds[index], W, H, dpr, minX, maxX);
+}
+
+// Cuts the snapshot into a grid of roughly SHATTER_TILE_CSS_PX-square tiles
+// (grown as needed to stay under SHATTER_MAX_TILES). The tiles cover the
+// snapshot edge-to-edge, so at elapsed=0 (zero drift, zero rotation, full
+// alpha) drawing them reproduces the captured card pixel-for-pixel — it's
+// the rendered image itself that then crumbles apart.
+function buildShatterTiles(snap, dpr) {
+  if (!snap) return [];
+  const sw = snap.canvas.width, sh = snap.canvas.height;
+  let tile = SHATTER_TILE_CSS_PX * dpr;
+  if ((sw / tile) * (sh / tile) > SHATTER_MAX_TILES) {
+    tile = Math.sqrt((sw * sh) / SHATTER_MAX_TILES);
+  }
+  const cols = Math.max(1, Math.round(sw / tile));
+  const rows = Math.max(1, Math.round(sh / tile));
+  const tw = sw / cols, th = sh / rows;
+  const centerX = snap.sx + sw / 2;
+  const midY = snap.H / 2;
+
+  const tiles = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cx = snap.sx + (c + 0.5) * tw;
+      const cy = snap.sy + (r + 0.5) * th;
+      const dirX = cx === centerX ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(cx - centerX);
+      const dirY = cy === midY ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(cy - midY);
+      tiles.push({
+        sx: c * tw, sy: r * th, w: tw, h: th, cx, cy,
+        vx: dirX * (0.25 + Math.random() * 0.6),
+        vy: dirY * (0.3 + Math.random() * 0.7) - 0.25,
+        rotSpeed: (Math.random() - 0.5) * 1.6,
+        delay: Math.random() * SHATTER_STAGGER_MS
+      });
+    }
+  }
+  return tiles;
+}
+
+function drawShatterTiles(ctx, snap, tiles, elapsedMs, dpr) {
   const maxDrift = SHATTER_MAX_DRIFT_CSS_PX * dpr;
-  for (const p of particles) {
-    const localDuration = Math.max(60, SEGMENT_DELETE_ANIM_MS - p.delay);
-    const pt = Math.max(0, Math.min(1, (elapsedMs - p.delay) / localDuration));
+  for (const t of tiles) {
+    const localDuration = Math.max(60, SEGMENT_DELETE_ANIM_MS - t.delay);
+    const pt = Math.max(0, Math.min(1, (elapsedMs - t.delay) / localDuration));
     const eased = 1 - Math.pow(1 - pt, 2);
     const alpha = 1 - Math.pow(pt, 1.6);
     if (alpha <= 0.01) continue;
 
-    ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(p.cx + p.vx * maxDrift * eased, p.cy + p.vy * maxDrift * eased);
-    ctx.rotate(p.rot0 + p.rotSpeed * eased);
     const scale = 1 - 0.4 * eased;
-    ctx.scale(scale, scale);
-    ctx.fillStyle = p.warm ? colorA : colorB;
-    ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-    ctx.restore();
+    const rot = t.rotSpeed * eased;
+    const cos = Math.cos(rot) * scale, sin = Math.sin(rot) * scale;
+    ctx.setTransform(cos, sin, -sin, cos, t.cx + t.vx * maxDrift * eased, t.cy + t.vy * maxDrift * eased);
+    ctx.drawImage(snap.canvas, t.sx, t.sy, t.w, t.h, -t.w / 2, -t.h / 2, t.w, t.h);
   }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
 }
 
 function buildSlide(oldSb, newSb, seg, channelData, H) {
@@ -797,8 +914,66 @@ function buildSlide(oldSb, newSb, seg, channelData, H) {
   return { oldSb, newSb, finalWidth, localPath };
 }
 
+// Draws one sliding card (background, midline, playhead-split waveform,
+// edge stroke) at its current interpolated position. Also reused to render
+// a card into an offscreen snapshot (renderCardSnapshot).
+function drawSlideCard(ctx, s, curStart, curEnd, playheadX, H, dpr, edgeWidth) {
+  const curWidth = curEnd - curStart;
+  const cardPath = buildOneCardPath(curStart, curWidth, H, dpr);
+  if (!cardPath) return;
+
+  ctx.save();
+  ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
+  ctx.shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
+  ctx.shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
+  ctx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
+  ctx.fill(cardPath);
+  ctx.restore();
+
+  ctx.save();
+  ctx.clip(cardPath);
+
+  ctx.strokeStyle = WAVEFORM_STYLE.midlineColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(curStart, H / 2);
+  ctx.lineTo(curEnd, H / 2);
+  ctx.stroke();
+
+  const scaleX = curWidth / s.finalWidth;
+  const midX = Math.min(curEnd, Math.max(curStart, playheadX));
+  if (midX > curStart) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(curStart, 0, midX - curStart, H);
+    ctx.clip();
+    ctx.translate(curStart, 0);
+    ctx.scale(scaleX, 1);
+    ctx.fillStyle = WAVEFORM_STYLE.playedColor;
+    ctx.fill(s.localPath);
+    ctx.restore();
+  }
+  if (midX < curEnd) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(midX, 0, curEnd - midX, H);
+    ctx.clip();
+    ctx.translate(curStart, 0);
+    ctx.scale(scaleX, 1);
+    ctx.fillStyle = WAVEFORM_STYLE.unplayedColor;
+    ctx.fill(s.localPath);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
+  ctx.lineWidth = edgeWidth;
+  ctx.stroke(cardPath);
+}
+
 function drawDeleteAnimFrame(anim, now) {
-  const { slides, particles, W, H, dpr } = anim;
+  const { slides, snap, tiles, W, H, dpr } = anim;
   const elapsedMs = now - anim.startTime;
   const t = Math.max(0, Math.min(1, elapsedMs / SEGMENT_DELETE_ANIM_MS));
   const eased = easeOutCubic(t);
@@ -811,75 +986,21 @@ function drawDeleteAnimFrame(anim, now) {
   for (const s of slides) {
     const curStart = s.oldSb.drawStart + (s.newSb.drawStart - s.oldSb.drawStart) * eased;
     const curEnd = s.oldSb.drawEnd + (s.newSb.drawEnd - s.oldSb.drawEnd) * eased;
-    const curWidth = curEnd - curStart;
-    const cardPath = buildOneCardPath(curStart, curWidth, H, dpr);
-    if (!cardPath) continue;
-
-    waveCtx.save();
-    waveCtx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
-    waveCtx.shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
-    waveCtx.shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
-    waveCtx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
-    waveCtx.fill(cardPath);
-    waveCtx.restore();
-
-    waveCtx.save();
-    waveCtx.clip(cardPath);
-
-    waveCtx.strokeStyle = WAVEFORM_STYLE.midlineColor;
-    waveCtx.lineWidth = 1;
-    waveCtx.beginPath();
-    waveCtx.moveTo(curStart, H / 2);
-    waveCtx.lineTo(curEnd, H / 2);
-    waveCtx.stroke();
-
-    const scaleX = curWidth / s.finalWidth;
-    const midX = Math.min(curEnd, Math.max(curStart, curPlayheadX));
-    if (midX > curStart) {
-      waveCtx.save();
-      waveCtx.beginPath();
-      waveCtx.rect(curStart, 0, midX - curStart, H);
-      waveCtx.clip();
-      waveCtx.translate(curStart, 0);
-      waveCtx.scale(scaleX, 1);
-      waveCtx.fillStyle = WAVEFORM_STYLE.playedColor;
-      waveCtx.fill(s.localPath);
-      waveCtx.restore();
-    }
-    if (midX < curEnd) {
-      waveCtx.save();
-      waveCtx.beginPath();
-      waveCtx.rect(midX, 0, curEnd - midX, H);
-      waveCtx.clip();
-      waveCtx.translate(curStart, 0);
-      waveCtx.scale(scaleX, 1);
-      waveCtx.fillStyle = WAVEFORM_STYLE.unplayedColor;
-      waveCtx.fill(s.localPath);
-      waveCtx.restore();
-    }
-
-    waveCtx.restore();
-
-    waveCtx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
-    waveCtx.lineWidth = edgeWidth;
-    waveCtx.stroke(cardPath);
+    drawSlideCard(waveCtx, s, curStart, curEnd, curPlayheadX, H, dpr, edgeWidth);
   }
 
-  // Restore plays the exact same particle trajectory backwards in time, so
-  // fragments converge into solid form instead of bursting apart from it —
-  // tinted teal (the "selected/restored" color) rather than delete's red,
-  // since a restore isn't a destructive action.
-  const particleElapsedMs = anim.reverseParticles ? SEGMENT_DELETE_ANIM_MS - elapsedMs : elapsedMs;
-  const [colorA, colorB] = anim.reverseParticles
-    ? [WAVEFORM_STYLE.selectedPlayedColor, WAVEFORM_STYLE.selectedEdgeColor]
-    : [WAVEFORM_STYLE.deletePlayedColor, WAVEFORM_STYLE.deleteEdgeColor];
-  drawShatterParticles(waveCtx, particles, particleElapsedMs, dpr, colorA, colorB);
+  // Restore plays the exact same tile trajectories backwards in time, so the
+  // card image reassembles from fragments instead of crumbling into them.
+  if (snap && tiles.length > 0) {
+    const tileElapsedMs = anim.reverseTiles ? SEGMENT_DELETE_ANIM_MS - elapsedMs : elapsedMs;
+    drawShatterTiles(waveCtx, snap, tiles, tileElapsedMs, dpr);
+  }
 }
 
 // Shared setup for both directions: hands the DOM chrome (caret, scissors,
 // split handles) a temporary CSS transition to their final spot so they glide
 // in lockstep with the canvas, then drives the canvas animation via rAF.
-function beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlayheadRatio, reverseParticles, dpr, W, H) {
+function beginSegmentAnim(slides, snap, tiles, oldPlayheadX, newPlayheadX, newPlayheadRatio, reverseTiles, dpr, W, H, onComplete) {
   cancelSegmentDeleteAnimation();
 
   const domTransition = `left ${SEGMENT_DELETE_ANIM_MS}ms ease-out, top ${SEGMENT_DELETE_ANIM_MS}ms ease-out`;
@@ -891,7 +1012,7 @@ function beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlay
   for (const h of bottomHandles) h.style.transition = `${domTransition}, opacity 0.15s, transform 0.15s, color 0.15s`;
   positionDivisionHandles();
 
-  deleteAnim = { startTime: performance.now(), slides, particles, W, H, dpr, oldPlayheadX, newPlayheadX, reverseParticles, raf: null };
+  deleteAnim = { startTime: performance.now(), slides, snap, tiles, W, H, dpr, oldPlayheadX, newPlayheadX, reverseTiles, raf: null };
 
   const tick = (now) => {
     drawDeleteAnimFrame(deleteAnim, now);
@@ -900,7 +1021,8 @@ function beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlay
     } else {
       clearDomSlideTransitions();
       deleteAnim = null;
-      drawPlaybackWaveform(newPlayheadRatio);
+      if (onComplete) onComplete();
+      else drawPlaybackWaveform(newPlayheadRatio);
     }
   };
   deleteAnim.raf = requestAnimationFrame(tick);
@@ -917,9 +1039,10 @@ function prepareCanvasForAnim() {
 }
 
 /**
- * Animates a segment deletion: the removed card's waveform shatters into
- * fragments that burst outward and fade, while the surviving cards slide
- * from their old layout into their final one. Call this in place of
+ * Animates a segment deletion: the removed card's red waveform disintegrates
+ * in place — its captured image (see captureSegmentBitmap) cut into tiles
+ * that drift apart, rotate, and fade — as the surviving cards slide from
+ * their old layout into their final one. Call this in place of
  * drawPlaybackWaveform right after splicing state.segments and rebuilding
  * state.recordedBuffer for a delete (including a redo that replays one).
  *
@@ -928,9 +1051,10 @@ function prepareCanvasForAnim() {
  * @param {number} deletedIndex - index removed from oldSegments
  * @param {number} oldPlayheadRatio - playback ratio before the delete
  * @param {number} newPlayheadRatio - playback ratio after the delete (current state)
+ * @param {SegmentSnapshot | null} snap - the deleted card's image, captured via captureSegmentBitmap before the splice
  */
-export function animateSegmentDelete(oldSegments, oldTotalSamples, deletedIndex, oldPlayheadRatio, newPlayheadRatio) {
-  if (!state.originalBuffer || !state.recordedBuffer) {
+export function animateSegmentDelete(oldSegments, oldTotalSamples, deletedIndex, oldPlayheadRatio, newPlayheadRatio, snap) {
+  if (!state.originalBuffer) {
     cancelSegmentDeleteAnimation();
     drawPlaybackWaveform(newPlayheadRatio);
     return;
@@ -939,31 +1063,43 @@ export function animateSegmentDelete(oldSegments, oldTotalSamples, deletedIndex,
   const { dpr, W, H } = prepareCanvasForAnim();
   const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
   const oldSegBounds = computeSegmentBoundsPure(W, oldSegments, oldTotalSamples, gapPx);
-  const newSegBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
-  const channelData = state.originalBuffer.getChannelData(0);
 
-  const slides = [];
-  for (let i = 0; i < oldSegments.length; i++) {
-    if (i === deletedIndex) continue;
-    const newIndex = i < deletedIndex ? i : i - 1;
-    const oldSb = oldSegBounds[i];
-    const newSb = newSegBounds[newIndex];
-    if (!oldSb || !newSb) continue;
-    slides.push(buildSlide(oldSb, newSb, oldSegments[i], channelData, H));
+  let slides, newPlayheadX, onComplete;
+  if (!state.recordedBuffer) {
+    // Last segment deleted — no surviving cards to slide, just disintegrate
+    // the captured card, then reveal the empty-state placeholder.
+    slides = [];
+    newPlayheadX = 0;
+    onComplete = () => { drawPlaybackWaveform(0); updateEmptyState(); };
+  } else {
+    const channelData = state.originalBuffer.getChannelData(0);
+    const newSegBounds = computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+    slides = [];
+    for (let i = 0; i < oldSegments.length; i++) {
+      if (i === deletedIndex) continue;
+      const newIndex = i < deletedIndex ? i : i - 1;
+      const oldSb = oldSegBounds[i];
+      const newSb = newSegBounds[newIndex];
+      if (!oldSb || !newSb) continue;
+      slides.push(buildSlide(oldSb, newSb, oldSegments[i], channelData, H));
+    }
+    newPlayheadX = audioRatioToVisualRatio(newPlayheadRatio, W, newSegBounds) * W;
   }
 
-  const particles = buildShatterParticles(oldSegBounds[deletedIndex], oldSegments[deletedIndex], channelData, H, dpr);
+  // A snapshot captured at a different canvas size can't line up — drop it
+  // and let the surviving cards' slide carry the animation alone.
+  const validSnap = snap && snap.W === W && snap.H === H ? snap : null;
+  const tiles = buildShatterTiles(validSnap, dpr);
   const oldPlayheadX = audioRatioToVisualRatio(oldPlayheadRatio, W, oldSegBounds) * W;
-  const newPlayheadX = audioRatioToVisualRatio(newPlayheadRatio, W, newSegBounds) * W;
 
-  beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlayheadRatio, false, dpr, W, H);
+  beginSegmentAnim(slides, validSnap, tiles, oldPlayheadX, newPlayheadX, newPlayheadRatio, false, dpr, W, H, onComplete);
 }
 
 /**
  * The reverse of animateSegmentDelete, for undoing a delete: the restored
- * card's fragments converge inward and solidify (the same particle motion as
- * a delete's shatter, played backwards in time) while the other cards slide
- * apart from their current layout to make room. Call this in place of
+ * card's image reassembles from converging tiles (the same trajectories as
+ * a delete's disintegration, played backwards in time) while
+ * the other cards slide apart from their current layout to make room. Call this in place of
  * drawPlaybackWaveform right after restoring state.segments/recordedBuffer
  * to the pre-delete snapshot.
  *
@@ -996,17 +1132,22 @@ export function animateSegmentRestore(beforeSegments, beforeTotalSamples, restor
     slides.push(buildSlide(oldSb, newSb, state.segments[k], channelData, H));
   }
 
-  const particles = buildShatterParticles(newSegBounds[restoredIndex], state.segments[restoredIndex], channelData, H, dpr);
   const oldPlayheadX = audioRatioToVisualRatio(oldPlayheadRatio, W, oldSegBounds) * W;
   const newPlayheadX = audioRatioToVisualRatio(newPlayheadRatio, W, newSegBounds) * W;
+  // The restored card isn't on screen to capture, so render its final look
+  // into the snapshot instead.
+  const snap = newSegBounds[restoredIndex]
+    ? renderCardSnapshot(newSegBounds[restoredIndex], state.segments[restoredIndex], channelData, W, H, dpr, newPlayheadX)
+    : null;
+  const tiles = buildShatterTiles(snap, dpr);
 
-  beginSegmentAnim(slides, particles, oldPlayheadX, newPlayheadX, newPlayheadRatio, true, dpr, W, H);
+  beginSegmentAnim(slides, snap, tiles, oldPlayheadX, newPlayheadX, newPlayheadRatio, true, dpr, W, H);
 }
 
 // ===== Segment click-to-select =====
 
 function findSegmentAtX(x, width) {
-  if (state.segments.length < 2 || !state.recordedBuffer) return -1;
+  if (!state.recordedBuffer) return -1;
   const gapPx = SEGMENT_GAP_CSS_PX;
   const segBounds = computeSegmentBounds(width, state.recordedBuffer.length, gapPx);
   for (let i = 0; i < segBounds.length; i++) {
@@ -1017,7 +1158,7 @@ function findSegmentAtX(x, width) {
 }
 
 el.waveformContainer.addEventListener('pointerdown', (e) => {
-  if (state.segments.length < 2 || !state.recordedBuffer) return;
+  if (!state.recordedBuffer) return;
   const rect = el.waveformContainer.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
@@ -1049,7 +1190,7 @@ function scheduleHoverRedraw() {
 }
 
 el.waveformContainer.addEventListener('mousemove', (e) => {
-  if (state.segments.length < 2 || !state.recordedBuffer) return;
+  if (!state.recordedBuffer) return;
   const rect = el.waveformContainer.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;

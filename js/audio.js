@@ -5,7 +5,7 @@ import { showToast, renderQualityOptions, updateBitrate, updateSegmentCountDispl
 import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
 import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
-import { loadBufferAsRecording } from './editing.js';
+import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
 
 let liveRafId;
 
@@ -375,7 +375,7 @@ export function stopRecordingNodes() {
   state.isRecording = false;
 }
 
-export function stopRecording() {
+export async function stopRecording() {
   if (!state.isRecording) return;
   state.isRecording = false;
   if (liveRafId) cancelAnimationFrame(liveRafId);
@@ -392,6 +392,7 @@ export function stopRecording() {
   if (state.recordedChunks.length === 0) {
     setRecordingUI(false);
     updateEmptyState();
+    state.appendOnStop = false;
     showToast('No audio captured', true);
     return;
   }
@@ -412,38 +413,13 @@ export function stopRecording() {
   const buffer = state.audioContext.createBuffer(numChannels, totalLength, state.audioContext.sampleRate);
   for (let c = 0; c < numChannels; c++) buffer.copyToChannel(combined[c], c);
 
-  loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
   setRecordingUI(false);
-}
-
-export function rerecord() {
-  if (state.isPlaying) pausePlayback();
-  setRecordingUI(false);
-  stopRecordingNodes();
-  releaseMicStream();
-  if (state.audioContext) {
-    try { state.audioContext.close(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
-    state.audioContext = null;
-    state.workletLoaded = false;
+  if (state.appendOnStop) {
+    state.appendOnStop = false;
+    await appendBufferToRecording(buffer, 'Appended new recording');
+  } else {
+    loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
   }
-  state.recordedChunks = [];
-  state.originalBuffer = null;
-  state.recordedBuffer = null;
-  state.segments = [];
-  state.playbackOffset = 0;
-  state.cachedPeaks = null;
-  state.cachedPath = null;
-  state.hoverRatio = -1;
-  state.hoveredSegmentIndex = -1;
-  resetHistory();
-  clearSegmentHover();
-  hideSegmentTrash();
-  el.playheadScissors.classList.remove('visible');
-
-  resetReadouts();
-  updateSegmentCountDisplay();
-  setTransportDisabled(true);
-  updateHeaderState();
-  updateEmptyState();
-  showToast('Ready for next take');
 }
+
+

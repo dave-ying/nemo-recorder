@@ -212,6 +212,60 @@ body::after {
   transform: translate(-50%, -50%) scale(0.92);
 }
 
+.append-button {
+  position: absolute;
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--border-bright);
+  color: var(--fg-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; z-index: 10;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  transition: opacity 0.18s ease, background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  pointer-events: none; opacity: 0;
+}
+.append-button svg { width: 16px; height: 16px; }
+.append-button.visible { opacity: 1; pointer-events: auto; }
+.append-button:hover {
+  color: var(--accent); border-color: var(--accent);
+  background: rgba(255, 140, 66, 0.08);
+  box-shadow: 0 4px 16px rgba(255, 140, 66, 0.25);
+}
+
+.append-menu {
+  position: absolute;
+  z-index: 20;
+  min-width: 200px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.append-menu[hidden] { display: none; }
+.append-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 10px 14px;
+  background: transparent; border: none;
+  color: var(--fg); cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border-radius: 6px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.append-menu-item svg {
+  width: 14px; height: 14px;
+  flex-shrink: 0;
+}
+.append-menu-item:first-child svg { stroke: currentColor; fill: none; }
+.append-menu-item:last-child svg { fill: currentColor; }
+.append-menu-item:hover {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
 .playhead {
   position: absolute;
   z-index: 8;
@@ -499,6 +553,10 @@ body::after {
   .segment-trash { width: 26px; height: 26px; margin-left: -13px; }
   .segment-trash svg { width: 12px; height: 12px; }
   .playhead-scissors { width: 26px; height: 26px; padding: 4px; }
+  .append-button { width: 26px; height: 26px; }
+  .append-button svg { width: 14px; height: 14px; }
+  .append-menu { min-width: 170px; }
+  .append-menu-item { padding: 8px 12px; font-size: 10px; gap: 8px; }
   .division-handle { width: 20px; height: 18px; padding: 1px; }
   .division-handle svg { width: 16px; height: 16px; }
   .playhead-grip { width: 22px; height: 22px; }

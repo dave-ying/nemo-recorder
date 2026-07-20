@@ -29,7 +29,7 @@ export const updateBitrate = () => {
 };
 
 export const updateSegmentCountDisplay = () => {
-  if (!state.recordedBuffer || state.segments.length <= 1) {
+  if (!state.recordedBuffer) {
     el.segmentCountEl.classList.add('hidden');
   } else {
     el.segmentCountEl.classList.remove('hidden');
@@ -54,6 +54,8 @@ export const setRecordingUI = (active) => {
   el.playheadCaretTop.style.display = active ? 'none' : '';
   el.playheadScissors.classList.remove('visible');
   el.segmentTrash.classList.remove('visible');
+  el.appendButton.classList.remove('visible');
+  el.appendMenu.hidden = true;
   if (active) {
     el.emptyState.hidden = true;
     setTransportDisabled(true);

@@ -83,6 +83,7 @@ export const SEGMENT_DELETE_ANIM_MS = 480;
  * @property {number} draggingHandleIndex
  * @property {Object|null} _dragSnapshot
  * @property {boolean} draggingPlayhead
+ * @property {boolean} appendOnStop
  */
 
 /** @type {AppState} */
@@ -125,7 +126,8 @@ export const state = {
   exportSettings: { format: 'wav', quality: 32 },
   trashHideTimer: null,
   mouseMoveRaf: null,
-  draggingPlayhead: false
+  draggingPlayhead: false,
+  appendOnStop: false
 };
 
 

@@ -50,6 +50,11 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} exportSize
  * @property {HTMLSpanElement} exportDetail
  * @property {HTMLButtonElement} exportConfirm
+ * @property {HTMLButtonElement} appendButton
+ * @property {HTMLDivElement} appendMenu
+ * @property {HTMLButtonElement} appendMenuUpload
+ * @property {HTMLButtonElement} appendMenuRecord
+ * @property {HTMLInputElement} appendFileInput
  */
 
 // Element IDs are static in index.html, so a single cast here gives every
@@ -74,7 +79,10 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   qualityModal: $('qualityModal'), qualityModalClose: $('qualityModalClose'),
   exportModal: $('exportModal'), exportClose: $('exportClose'),
   exportQualityGrid: $('exportQualityGrid'), exportSize: $('exportSize'),
-  exportDetail: $('exportDetail'), exportConfirm: $('exportConfirm')
+  exportDetail: $('exportDetail'), exportConfirm: $('exportConfirm'),
+  appendButton: $('appendButton'), appendMenu: $('appendMenu'),
+  appendMenuUpload: $('appendMenuUpload'), appendMenuRecord: $('appendMenuRecord'),
+  appendFileInput: $('appendFileInput')
 }));
 
 export const liveCtx = /** @type {CanvasRenderingContext2D} */ (el.liveCanvas.getContext('2d'));
