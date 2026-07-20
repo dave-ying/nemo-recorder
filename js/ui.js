@@ -54,7 +54,6 @@ export const setRecordingUI = (active) => {
   el.playheadCaretTop.style.display = active ? 'none' : '';
   el.playheadScissors.classList.remove('visible');
   el.segmentTrash.classList.remove('visible');
-  el.retryButton.hidden = active;
   if (active) {
     el.emptyState.hidden = true;
     setTransportDisabled(true);
@@ -67,6 +66,7 @@ export const updateEmptyState = () => {
   const empty = !state.recordedBuffer && !state.isRecording;
   el.emptyState.hidden = !empty;
   el.downloadButton.hidden = !state.recordedBuffer;
+  el.playheadCaretTop.style.display = empty ? 'none' : '';
 };
 
 export const renderQualityOptions = () => {
