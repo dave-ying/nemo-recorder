@@ -32,7 +32,6 @@ el.playButton.addEventListener('click', () => { state.isPlaying ? pausePlayback(
 
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
-el.deleteButton.addEventListener('click', deleteSegmentAtPlayhead);
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
 el.transportUploadButton.addEventListener('click', () => el.appendFileInput.click());

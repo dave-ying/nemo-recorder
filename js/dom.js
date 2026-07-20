@@ -11,7 +11,6 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} playButton
  * @property {HTMLButtonElement} downloadButton
  * @property {HTMLButtonElement} splitButton
- * @property {HTMLButtonElement} deleteButton
  * @property {HTMLButtonElement} undoButton
  * @property {HTMLButtonElement} redoButton
  * @property {HTMLButtonElement} transportUploadButton
@@ -89,7 +88,7 @@ const $ = (id) => document.getElementById(id);
 export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   emptyState: $('emptyState'), emptyStateRecordButton: $('emptyStateRecordButton'), emptyStateUploadButton: $('emptyStateUploadButton'), fileInput: $('fileInput'),
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), downloadButton: $('downloadButton'),
-  splitButton: $('splitButton'), deleteButton: $('deleteButton'),
+  splitButton: $('splitButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   transportUploadButton: $('transportUploadButton'), transportRecordButton: $('transportRecordButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'), segmentTrash: $('segmentTrash'),
