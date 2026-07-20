@@ -69,7 +69,10 @@ export async function connectMicrophone() {
     state.settings.channels = supportedChannels[supportedChannels.length - 1];
     state.settings.bitDepth = 32;
 
-    state.mediaStream = stream;
+    // Capabilities and label are captured above; release the mic immediately so
+    // the tab doesn't hold a live capture stream (and show Chrome's recording
+    // indicator) while idle. ensureMediaStream() re-acquires it on record.
+    stream.getTracks().forEach(t => t.stop());
     el.micName.textContent = state.micLabel;
 
     renderQualityOptions();
@@ -87,12 +90,16 @@ export async function connectMicrophone() {
   }
 }
 
-export function disconnectMicrophone() {
-  stopRecordingNodes();
+export function releaseMicStream() {
   if (state.mediaStream) {
     state.mediaStream.getTracks().forEach(t => t.stop());
     state.mediaStream = null;
   }
+}
+
+export function disconnectMicrophone() {
+  stopRecordingNodes();
+  releaseMicStream();
   if (state.audioContext) {
     try { state.audioContext.close(); } catch (e) { console.warn('[nemo-record]', e.message); }
     state.audioContext = null;
@@ -235,6 +242,7 @@ export async function startRecording() {
     console.error(err);
     showToast(err.name === 'NotAllowedError' ? 'Microphone permission denied' : (err.message || 'Failed to start recording'), true);
     stopRecordingNodes();
+    releaseMicStream();
     showView('ready');
   } finally {
     el.recordButton.disabled = false;
@@ -371,6 +379,12 @@ export function stopRecording() {
   if (liveRafId) cancelAnimationFrame(liveRafId);
   if (state.liveResizeHandler) window.removeEventListener('resize', state.liveResizeHandler);
   stopRecordingNodes();
+  // Release the capture stream and park the audio thread: a live mic track or a
+  // running AudioContext keeps Chrome's tab-recording indicator on and exempts
+  // the tab from throttling, degrading the whole browser while we sit idle in
+  // the editor. Playback resumes the context on demand.
+  releaseMicStream();
+  if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-record]', e.message));
 
   if (state.recordedChunks.length === 0) {
     showToast('No audio captured', true);
@@ -420,6 +434,7 @@ export function stopRecording() {
 export function rerecord() {
   if (state.isPlaying) pausePlayback();
   stopRecordingNodes();
+  releaseMicStream();
   if (state.audioContext) {
     try { state.audioContext.close(); } catch (e) { console.warn('[nemo-record]', e.message); }
     state.audioContext = null;

@@ -7,9 +7,17 @@ const PLAYBACK_END_THRESHOLD = 0.01;
 const PLAYBACK_END_TOLERANCE = 0.05;
 let playbackRafId;
 
-export function startPlayback() {
+// The context is suspended whenever nothing is audible (see suspendWhenIdle),
+// so a running state here always means audio is actually flowing.
+function suspendWhenIdle() {
+  if (state.audioContext && state.audioContext.state === 'running') {
+    state.audioContext.suspend().catch(e => console.warn('[nemo-record]', e.message));
+  }
+}
+
+export async function startPlayback() {
   if (!state.recordedBuffer || !state.audioContext) return;
-  if (state.audioContext.state === 'suspended') state.audioContext.resume();
+  if (state.audioContext.state === 'suspended') await state.audioContext.resume();
   if (state.playbackOffset >= state.recordedBuffer.duration - PLAYBACK_END_THRESHOLD) state.playbackOffset = 0;
 
   state.playbackSource = state.audioContext.createBufferSource();
@@ -25,6 +33,7 @@ export function startPlayback() {
         el.playButton.classList.remove('playing');
         drawPlaybackWaveform(0);
         el.timeCurrent.textContent = '00:00.000';
+        suspendWhenIdle();
       }
     }
   };
@@ -48,6 +57,7 @@ export function pausePlayback() {
   if (playbackRafId) cancelAnimationFrame(playbackRafId);
   const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
   drawPlaybackWaveform(ratio);
+  suspendWhenIdle();
 }
 
 export function animatePlayback() {
@@ -59,6 +69,7 @@ export function animatePlayback() {
     el.playButton.classList.remove('playing');
     drawPlaybackWaveform(0);
     el.timeCurrent.textContent = '00:00.000';
+    suspendWhenIdle();
     return;
   }
   const ratio = elapsed / state.recordedBuffer.duration;
