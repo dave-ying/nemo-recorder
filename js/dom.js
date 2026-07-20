@@ -4,8 +4,8 @@ export const $ = (id) => document.getElementById(id);
  * @typedef {Object} AppElements
  * @property {HTMLButtonElement} connectButton
  * @property {HTMLButtonElement} disconnectButton
- * @property {HTMLButtonElement} uploadButtonConnect
- * @property {HTMLButtonElement} uploadButtonReady
+ * @property {HTMLDivElement} emptyState
+ * @property {HTMLButtonElement} emptyStateUploadButton
  * @property {HTMLInputElement} fileInput
  * @property {HTMLButtonElement} recordButton
  * @property {HTMLButtonElement} stopButton
@@ -22,10 +22,10 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} playheadCaretTop
  * @property {HTMLSpanElement} playheadLine
  * @property {HTMLButtonElement} segmentTrash
- * @property {HTMLDivElement} connectView
- * @property {HTMLDivElement} readyView
- * @property {HTMLDivElement} recordingView
  * @property {HTMLDivElement} playbackView
+ * @property {HTMLDivElement} headerMicInfo
+ * @property {HTMLDivElement} liveMeterBar
+ * @property {HTMLButtonElement} settingsButton
  * @property {HTMLCanvasElement} liveCanvas
  * @property {HTMLCanvasElement} waveformCanvas
  * @property {HTMLCanvasElement} timelineRulerCanvas
@@ -42,6 +42,8 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} bitrateReadout
  * @property {HTMLDivElement} toast
  * @property {HTMLSpanElement} toastMessage
+ * @property {HTMLDivElement} qualityModal
+ * @property {HTMLButtonElement} qualityModalClose
  * @property {HTMLDivElement} exportModal
  * @property {HTMLButtonElement} exportClose
  * @property {HTMLDivElement} exportQualityGrid
@@ -54,14 +56,14 @@ export const $ = (id) => document.getElementById(id);
 // consumer precise element types instead of `HTMLElement | null` everywhere.
 export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   connectButton: $('connectButton'), disconnectButton: $('disconnectButton'),
-  uploadButtonConnect: $('uploadButtonConnect'), uploadButtonReady: $('uploadButtonReady'), fileInput: $('fileInput'),
+  emptyState: $('emptyState'), emptyStateUploadButton: $('emptyStateUploadButton'), fileInput: $('fileInput'),
   recordButton: $('recordButton'), stopButton: $('stopButton'),
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), retryButton: $('retryButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteButton: $('deleteButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'), segmentTrash: $('segmentTrash'),
-  connectView: $('connectView'), readyView: $('readyView'),
-  recordingView: $('recordingView'), playbackView: $('playbackView'),
+  headerMicInfo: $('headerMicInfo'), settingsButton: $('settingsButton'),
+  liveMeterBar: $('liveMeterBar'), playbackView: $('playbackView'),
   liveCanvas: $('liveCanvas'), waveformCanvas: $('waveformCanvas'), timelineRulerCanvas: $('timelineRulerCanvas'),
   waveformContainer: $('waveformContainer'), segmentCountEl: $('segmentCount'),
   liveTimer: $('liveTimer'), levelFill: $('levelFill'),
@@ -69,6 +71,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   micName: $('micName'),
   rateOptions: $('rateOptions'), bitOptions: $('bitOptions'), chOptions: $('chOptions'),
   bitrateReadout: $('bitrateReadout'), toast: $('toast'), toastMessage: $('toastMessage'),
+  qualityModal: $('qualityModal'), qualityModalClose: $('qualityModalClose'),
   exportModal: $('exportModal'), exportClose: $('exportClose'),
   exportQualityGrid: $('exportQualityGrid'), exportSize: $('exportSize'),
   exportDetail: $('exportDetail'), exportConfirm: $('exportConfirm')

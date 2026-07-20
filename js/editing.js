@@ -1,8 +1,8 @@
 import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
-import { updateSegmentCountDisplay, setTransportDisabled, showToast, showView } from './ui.js';
-import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore } from './waveform.js';
+import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
+import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap } from './waveform.js';
 import { findSingleSegmentRemoval } from './waveform-math.js';
 import { pausePlayback } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
@@ -30,7 +30,7 @@ export function loadBufferAsRecording(buffer, toastMessage) {
   setTransportDisabled(false);
   requestAnimationFrame(() => drawPlaybackWaveform(0));
 
-  showView('playback');
+  updateEmptyState();
   showToast(toastMessage);
 }
 
@@ -132,6 +132,9 @@ export function deleteSegmentByIndex(index) {
   const oldSegments = state.segments.map(s => ({ start: s.start, end: s.end }));
   const oldTotalSamples = state.recordedBuffer.length;
   const oldPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  // Lift the doomed card's rendered pixels (in delete-red) off the canvas
+  // while it's still part of the layout — this image is what disintegrates.
+  const deletedSnap = captureSegmentBitmap(index);
 
   pushHistory();
   state.segments.splice(index, 1);
@@ -159,7 +162,7 @@ export function deleteSegmentByIndex(index) {
   clearSegmentHover();
   state.hoverRatio = -1;
   const newPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
-  animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, newPlayheadRatio);
+  animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, newPlayheadRatio, deletedSnap);
   updateSegmentCountDisplay();
   showToast(`Deleted segment ${index + 1} · ${state.segments.length} remaining`);
 }
@@ -206,7 +209,10 @@ function pickHistoryRenderer(beforeSegments, beforeTotalSamples, beforeRatio, ta
   if (isRedo && targetSegments.length === beforeSegments.length - 1) {
     const deletedIndex = findSingleSegmentRemoval(beforeSegments, targetSegments);
     if (deletedIndex >= 0) {
-      return (newRatio) => animateSegmentDelete(beforeSegments, beforeTotalSamples, deletedIndex, beforeRatio, newRatio);
+      // Capture now, while the doomed segment is still rendered on screen —
+      // by the time the renderer runs, the state has already been spliced.
+      const deletedSnap = captureSegmentBitmap(deletedIndex);
+      return (newRatio) => animateSegmentDelete(beforeSegments, beforeTotalSamples, deletedIndex, beforeRatio, newRatio, deletedSnap);
     }
   } else if (!isRedo && targetSegments.length === beforeSegments.length + 1) {
     const restoredIndex = findSingleSegmentRemoval(targetSegments, beforeSegments);

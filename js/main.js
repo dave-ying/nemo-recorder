@@ -1,6 +1,6 @@
 import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
-import { showToast, showView, updateSegmentCountDisplay, setTransportDisabled } from './ui.js';
+import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateHeaderState, updateEmptyState } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
 import { loadUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
@@ -16,8 +16,7 @@ const RESIZE_DEBOUNCE_MS = 120;
 
 el.connectButton.addEventListener('click', connectMicrophone);
 el.disconnectButton.addEventListener('click', disconnectMicrophone);
-el.uploadButtonConnect.addEventListener('click', () => el.fileInput.click());
-el.uploadButtonReady.addEventListener('click', () => el.fileInput.click());
+el.emptyStateUploadButton.addEventListener('click', () => el.fileInput.click());
 el.fileInput.addEventListener('change', (e) => {
   const file = /** @type {HTMLInputElement} */ (e.target).files[0];
   if (file) loadUploadedFile(file);
@@ -86,6 +85,18 @@ el.playheadScissors.addEventListener('click', (e) => {
   splitAtPlayhead();
 });
 el.playheadScissors.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
+el.settingsButton.addEventListener('click', () => {
+  el.qualityModal.classList.add('visible');
+});
+
+el.qualityModalClose.addEventListener('click', () => {
+  el.qualityModal.classList.remove('visible');
+});
+
+el.qualityModal.addEventListener('click', (e) => {
+  if (e.target === el.qualityModal) el.qualityModal.classList.remove('visible');
+});
 
 el.timelineRulerCanvas.addEventListener('pointerdown', (e) => {
   if (!state.recordedBuffer) return;
@@ -207,11 +218,14 @@ document.addEventListener('keydown', (e) => {
     if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
     else deleteSegmentAtPlayhead();
   } else if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey) {
-    if (!el.readyView.hidden) { e.preventDefault(); startRecording(); }
-    else if (!el.recordingView.hidden) { e.preventDefault(); stopRecording(); }
+    if (state.micCapabilities && !state.isRecording) { e.preventDefault(); startRecording(); }
+    else if (state.isRecording) { e.preventDefault(); stopRecording(); }
   } else if (e.code === 'Escape') {
     if (el.exportModal.classList.contains('visible')) {
       closeExportModal();
+    }
+    if (el.qualityModal.classList.contains('visible')) {
+      el.qualityModal.classList.remove('visible');
     }
   }
 });
@@ -238,7 +252,8 @@ window.addEventListener('resize', () => {
 });
 
 // ===== Init =====
-showView('connect');
+updateHeaderState();
+updateEmptyState();
 updateSegmentCountDisplay();
 setTransportDisabled(true);
 

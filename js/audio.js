@@ -1,7 +1,7 @@
 import { state, LIVE_SECONDS, WAVEFORM_SCALE, WAVEFORM_STYLE } from './state.js';
 import { el, liveCtx } from './dom.js';
 import { formatTime } from './utils.js';
-import { showToast, showView, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled } from './ui.js';
+import { showToast, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled, updateHeaderState, setRecordingUI, updateEmptyState } from './ui.js';
 import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
 import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
@@ -78,7 +78,7 @@ export async function connectMicrophone() {
 
     renderQualityOptions();
     updateBitrate();
-    showView('ready');
+    updateHeaderState();
     showToast(`Connected: ${state.micLabel}`);
   } catch (err) {
     console.error(err);
@@ -118,7 +118,8 @@ export function disconnectMicrophone() {
   state.hoverRatio = -1;
   resetReadouts();
   updateSegmentCountDisplay();
-  showView('connect');
+  updateHeaderState();
+  updateEmptyState();
 }
 
 export async function ensureAudioContext() {
@@ -236,7 +237,7 @@ export async function startRecording() {
     state.recordStartTime = performance.now();
     state.isRecording = true;
 
-    showView('recording');
+    setRecordingUI(true);
     startLiveAnimation();
 
   } catch (err) {
@@ -244,7 +245,7 @@ export async function startRecording() {
     showToast(err.name === 'NotAllowedError' ? 'Microphone permission denied' : (err.message || 'Failed to start recording'), true);
     stopRecordingNodes();
     releaseMicStream();
-    showView('ready');
+    updateHeaderState();
   } finally {
     el.recordButton.disabled = false;
   }
@@ -388,8 +389,9 @@ export function stopRecording() {
   if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
 
   if (state.recordedChunks.length === 0) {
+    setRecordingUI(false);
+    updateEmptyState();
     showToast('No audio captured', true);
-    showView('ready');
     return;
   }
 
@@ -410,10 +412,12 @@ export function stopRecording() {
   for (let c = 0; c < numChannels; c++) buffer.copyToChannel(combined[c], c);
 
   loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
+  setRecordingUI(false);
 }
 
 export function rerecord() {
   if (state.isPlaying) pausePlayback();
+  setRecordingUI(false);
   stopRecordingNodes();
   releaseMicStream();
   if (state.audioContext) {
@@ -438,13 +442,7 @@ export function rerecord() {
   resetReadouts();
   updateSegmentCountDisplay();
   setTransportDisabled(true);
-
-  if (state.micCapabilities) {
-    renderQualityOptions();
-    updateBitrate();
-    showView('ready');
-  } else {
-    showView('connect');
-  }
+  updateHeaderState();
+  updateEmptyState();
   showToast('Ready for next take');
 }

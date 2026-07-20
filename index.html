@@ -21,31 +21,10 @@
           </div>
         </div>
       </div>
-      <button class="btn btn-primary" id="downloadButton" hidden>
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-        Export Audio
-      </button>
-    </header>
-
-    <section class="stage">
-      <input type="file" id="fileInput" accept="audio/*" hidden>
-
-      <div class="view connect-view" id="connectView">
-        <button class="connect-button" id="connectButton" aria-label="Connect microphone">
-          <div class="btn-bg"></div>
-          <div class="btn-ring"></div>
-          <div class="btn-ring delay"></div>
-          <span class="btn-label">CONNECT</span>
-        </button>
-        <div class="connect-hint">
-          Click Connect, choose your microphone, then click Allow
-        </div>
-        <button class="btn" id="uploadButtonConnect">Upload Audio File</button>
-      </div>
-
-      <div class="view ready-view" id="readyView" hidden>
-        <div class="mic-info">
-          <div class="mic-info-icon">
+      <div class="header-right">
+        <button class="btn btn-primary" id="connectButton">Connect</button>
+        <div class="header-mic-info" id="headerMicInfo" hidden>
+          <div class="header-mic-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -53,47 +32,34 @@
               <line x1="8" y1="23" x2="16" y2="23"/>
             </svg>
           </div>
-          <div class="mic-info-content">
-            <div class="mic-info-label">Connected Device</div>
-            <div class="mic-info-name" id="micName">—</div>
-          </div>
-          <button class="mic-disconnect" id="disconnectButton">Disconnect</button>
-        </div>
-
-        <div class="quality-config">
-          <div class="quality-header">
-            <span class="quality-title">Capture Configuration</span>
-            <span class="quality-bitrate" id="bitrateReadout">— kbps</span>
-          </div>
-          <div class="quality-grid">
-            <div class="quality-setting">
-              <span class="quality-label">Sample Rate <span class="quality-label-hint">from mic</span></span>
-              <div class="quality-options" id="rateOptions"></div>
-            </div>
-            <div class="quality-setting">
-              <span class="quality-label">Bit Depth <span class="quality-label-hint">estimate only</span></span>
-              <div class="quality-options" id="bitOptions"></div>
-            </div>
-            <div class="quality-setting">
-              <span class="quality-label">Channels <span class="quality-label-hint">from mic</span></span>
-              <div class="quality-options" id="chOptions"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="ready-actions">
-          <button class="record-button" id="recordButton" aria-label="Start recording">
-            <div class="btn-bg"></div>
-            <div class="btn-ring"></div>
-            <div class="btn-ring delay"></div>
-            <span class="btn-label">REC</span>
+          <span class="header-mic-name" id="micName">—</span>
+          <button class="header-settings-btn" id="settingsButton" title="Capture settings" aria-label="Capture settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+          <button class="header-disconnect-btn" id="disconnectButton" title="Disconnect microphone" aria-label="Disconnect microphone">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
           </button>
         </div>
-        <button class="btn" id="uploadButtonReady">Upload Audio File Instead</button>
+        <button class="btn" id="recordButton" hidden>
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
+          Record
+        </button>
+        <button class="btn btn-primary" id="downloadButton" hidden>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Export Audio
+        </button>
       </div>
+    </header>
 
-      <div class="view recording-view" id="recordingView" hidden>
-        <div class="live-meter-bar">
+    <section class="stage">
+      <input type="file" id="fileInput" accept="audio/*" hidden>
+
+      <div class="view playback-view" id="playbackView">
+        <div class="live-meter-bar" id="liveMeterBar" hidden>
           <div class="rec-indicator">
             <span class="rec-indicator-dot"></span>
             <span>REC</span>
@@ -101,18 +67,20 @@
           <div class="level-meter"><div class="level-meter-fill" id="levelFill"></div></div>
           <div class="live-timer" id="liveTimer">00:00.000</div>
         </div>
-        <div class="live-canvas-wrap">
-          <canvas id="liveCanvas"></canvas>
-        </div>
-        <button class="stop-button" id="stopButton" aria-label="Stop recording">
-          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-        </button>
-      </div>
-
-      <div class="view playback-view" id="playbackView" hidden>
         <div class="waveform-container" id="waveformContainer">
           <canvas class="timeline-ruler-canvas" id="timelineRulerCanvas" aria-hidden="true"></canvas>
           <canvas class="waveform-canvas" id="waveformCanvas"></canvas>
+          <canvas id="liveCanvas"></canvas>
+          <div class="empty-state" id="emptyState">
+            <div class="empty-state-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 18V5l12-2v13"/>
+                <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+              </svg>
+            </div>
+            <div class="empty-state-text">Connect a microphone and press Record, or upload an audio file to begin</div>
+            <button class="btn" id="emptyStateUploadButton">Upload Audio File</button>
+          </div>
           <div class="waveform-segment-count hidden" id="segmentCount">1 segment</div>
         </div>
         <button class="segment-trash" id="segmentTrash" title="Delete this segment" aria-label="Delete this segment">
@@ -140,6 +108,9 @@
           <button class="play-button" id="playButton" aria-label="Play or pause" disabled>
             <svg class="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
             <svg class="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg>
+          </button>
+          <button class="stop-button" id="stopButton" aria-label="Stop recording" hidden>
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
           </button>
           <button class="skip-forward-button" id="skipForwardButton" aria-label="Skip to end" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4v16"/><path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/></svg>
@@ -229,6 +200,36 @@
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
         Export & Download
       </button>
+    </div>
+  </div>
+
+  <!-- Quality Settings Modal -->
+  <div class="quality-modal-overlay" id="qualityModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Capture Settings</span>
+        <button class="modal-close" id="qualityModalClose">&times;</button>
+      </div>
+      <div class="quality-config">
+        <div class="quality-header">
+          <span class="quality-title">Configuration</span>
+          <span class="quality-bitrate" id="bitrateReadout">— kbps</span>
+        </div>
+        <div class="quality-grid">
+          <div class="quality-setting">
+            <span class="quality-label">Sample Rate <span class="quality-label-hint">from mic</span></span>
+            <div class="quality-options" id="rateOptions"></div>
+          </div>
+          <div class="quality-setting">
+            <span class="quality-label">Bit Depth <span class="quality-label-hint">estimate only</span></span>
+            <div class="quality-options" id="bitOptions"></div>
+          </div>
+          <div class="quality-setting">
+            <span class="quality-label">Channels <span class="quality-label-hint">from mic</span></span>
+            <div class="quality-options" id="chOptions"></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

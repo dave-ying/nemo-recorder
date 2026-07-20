@@ -36,16 +36,21 @@ All modules communicate through one shared mutable `state` object (`js/state.js`
 - **`scrub.js`** — held-arrow-key scrubbing with acceleration (ramps from `SCRUB_MIN_SPEED` to `SCRUB_MAX_SPEED` the longer a key is held).
 - **`export.js`** — export modal UI + lazily-created Web Workers for encoding (one worker per format, created on first use). Talks to `worker-code.js` for the actual worker source.
 - **`worker-code.js`** — WAV and MP3 encoder source, kept as **template-literal strings** (not real worker files) so they can be spun up from Blob URLs and also imported directly into Node tests via `vm.runInContext`. This file is intentionally DOM-free — don't add browser-only APIs to the worker source strings.
-- **`ui.js`** — small generic DOM helpers: toasts, view switching (`showView`), transport button enable/disable, quality-option rendering.
+- **`ui.js`** — small generic DOM helpers: toasts, header state management (`updateHeaderState`), recording UI mode (`setRecordingUI`), empty-state display (`updateEmptyState`), transport button enable/disable, quality-option rendering.
 - **`utils.js`** — pure formatting helpers (`formatTime`, `formatSize`).
 
 ### Vendored dependencies
 
 `vendor/lame.min.js` is a vendored copy of lamejs (MIT) for client-side MP3 encoding, loaded via `importScripts` inside the MP3 worker (resolved to an absolute URL since Blob-URL workers can't resolve relative `importScripts` paths). There are no npm runtime dependencies — `typescript` is the only devDependency, used solely for `npm run check`.
 
-### View state machine
+### Editor modes (single view)
 
-The UI is four mutually-exclusive views toggled by `showView()` in `ui.js`: `connect` → `ready` → `recording` → `playback`. Segment editing (split/delete/drag/trash/scissors) only applies in `playback`. `state.originalBuffer` holds the untouched capture; `state.segments` (array of `{start, end}` sample ranges into `originalBuffer`) plus `rebuildPlaybackBuffer()` in `editing.js` produce `state.recordedBuffer`, which is what's actually played back and exported.
+The app has a single view (the editor). Three modes are driven by state, not DOM views:
+- **Empty** — no `state.recordedBuffer` and not recording. Shows the empty-state placeholder with an upload button. Transport is disabled.
+- **Recording** — `state.isRecording` is true. Live meter bar replaces the timeline ruler, live canvas overlays the waveform, stop button replaces the play button.
+- **Editing** — `state.recordedBuffer` is set. Full waveform rendering, segment editing (split/delete/drag/trash/scissors), playback transport.
+
+Mode transitions are handled by `setRecordingUI()` and `updateEmptyState()` in `ui.js`, not by toggling view containers. `state.originalBuffer` holds the untouched capture; `state.segments` (array of `{start, end}` sample ranges into `originalBuffer`) plus `rebuildPlaybackBuffer()` in `editing.js` produce `state.recordedBuffer`, which is what's actually played back and exported.
 
 ### Segment card rendering
 

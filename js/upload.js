@@ -4,8 +4,7 @@ import { showToast } from './ui.js';
 import { loadBufferAsRecording } from './editing.js';
 
 export async function loadUploadedFile(file) {
-  el.uploadButtonConnect.disabled = true;
-  el.uploadButtonReady.disabled = true;
+  el.emptyStateUploadButton.disabled = true;
 
   try {
     if (!state.audioContext || state.audioContext.state === 'closed') {
@@ -21,8 +20,7 @@ export async function loadUploadedFile(file) {
     showToast('Could not read that file — unsupported or corrupt audio', true);
     console.warn('[nemo-recorder]', err.message);
   } finally {
-    el.uploadButtonConnect.disabled = false;
-    el.uploadButtonReady.disabled = false;
+    el.emptyStateUploadButton.disabled = false;
     el.fileInput.value = '';
   }
 }
