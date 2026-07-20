@@ -577,7 +577,15 @@ body::after {
 .toast.error .toast-icon { color: var(--rec); }
 .toast.error { border-color: rgba(255, 58, 92, 0.4); }
 
-.app-footer { text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-dim); letter-spacing: 0.18em; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-footer { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.app-footer-text { flex: 1 1 auto; min-width: 0; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-dim); letter-spacing: 0.18em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.github-link { flex-shrink: 0; display: inline-flex; align-items: center; color: var(--fg-dim); transition: color 0.18s, transform 0.18s; }
+.github-link:hover { color: var(--fg); transform: translateY(-1px); }
+.github-link:active { transform: translateY(0); }
+.github-icon { width: 22px; height: 22px; display: block; }
+.github-icon-light { display: none; }
+[data-theme="light"] .github-icon-dark { display: none; }
+[data-theme="light"] .github-icon-light { display: block; }
 
 @media (max-width: 768px) {
   .app { padding: 12px 14px; gap: 10px; }
@@ -620,7 +628,8 @@ body::after {
   .playhead-line { margin-top: -5px; }
   .readout { padding: 8px 6px; gap: 2px; }
 
-  .app-footer { font-size: 9px; letter-spacing: 0.1em; }
+  .app-footer-text { font-size: 9px; letter-spacing: 0.1em; }
+  .github-icon { width: 18px; height: 18px; }
 }
 @media (max-height: 500px) {
   .app { gap: 8px; padding: 8px 12px; }
