@@ -22,6 +22,15 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="btn btn-primary" id="downloadButton" hidden>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Export Audio
+        </button>
+      </div>
+    </header>
+
+    <section class="source-bar">
+      <div class="source-bar-left">
         <button class="btn btn-primary" id="connectButton">Connect</button>
         <div class="header-mic-info" id="headerMicInfo" hidden>
           <div class="header-mic-icon">
@@ -44,29 +53,27 @@
             </svg>
           </button>
         </div>
+      </div>
+      <div class="live-meter-bar" id="liveMeterBar" hidden>
+        <div class="rec-indicator">
+          <span class="rec-indicator-dot"></span>
+          <span>REC</span>
+        </div>
+        <div class="level-meter"><div class="level-meter-fill" id="levelFill"></div></div>
+        <div class="live-timer" id="liveTimer">00:00.000</div>
+      </div>
+      <div class="source-bar-right">
         <button class="btn" id="recordButton" hidden>
           <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
           Record
         </button>
-        <button class="btn btn-primary" id="downloadButton" hidden>
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-          Export Audio
-        </button>
       </div>
-    </header>
+    </section>
 
     <section class="stage">
       <input type="file" id="fileInput" accept="audio/*" hidden>
 
       <div class="view playback-view" id="playbackView">
-        <div class="live-meter-bar" id="liveMeterBar" hidden>
-          <div class="rec-indicator">
-            <span class="rec-indicator-dot"></span>
-            <span>REC</span>
-          </div>
-          <div class="level-meter"><div class="level-meter-fill" id="levelFill"></div></div>
-          <div class="live-timer" id="liveTimer">00:00.000</div>
-        </div>
         <div class="waveform-container" id="waveformContainer">
           <canvas class="timeline-ruler-canvas" id="timelineRulerCanvas" aria-hidden="true"></canvas>
           <canvas class="waveform-canvas" id="waveformCanvas"></canvas>
