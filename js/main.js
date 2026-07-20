@@ -1,13 +1,12 @@
-import { state, SEGMENT_GAP_CSS_PX } from './state.js';
+import { state } from './state.js';
 import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState } from './ui.js';
 import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
-import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer, undo, redo } from './editing.js';
-import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
+import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash } from './waveform.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, applySplitHandleDrag, finishSplitHandleDrag, seekFromClientX } from './editing.js';
+import { startPlayback, pausePlayback } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
-import { formatTime } from './utils.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 
@@ -23,37 +22,11 @@ el.fileInput.addEventListener('change', (e) => {
 });
 el.restartButton.addEventListener('click', () => {
   if (state.isPlaying) pausePlayback();
-  const sr = state.originalBuffer.sampleRate;
-  const editedSample = Math.round(state.playbackOffset * sr);
-  const target = findSegmentAtSample(editedSample);
-  if (!target) return;
-  let acc = 0;
-  for (let i = 0; i < target.index; i++) acc += state.segments[i].end - state.segments[i].start;
-  if (target.offsetInSeg === 0 && target.index > 0) {
-    acc = 0;
-    for (let i = 0; i < target.index - 1; i++) acc += state.segments[i].end - state.segments[i].start;
-  }
-  state.playbackOffset = acc / sr;
-  el.timeCurrent.textContent = formatTime(state.playbackOffset);
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  jumpToSegmentStart();
 });
 el.skipForwardButton.addEventListener('click', () => {
   if (state.isPlaying) pausePlayback();
-  const sr = state.originalBuffer.sampleRate;
-  const editedSample = Math.round(state.playbackOffset * sr);
-  const target = findSegmentAtSample(editedSample);
-  if (!target) return;
-  if (target.index === state.segments.length - 1) {
-    state.playbackOffset = state.recordedBuffer.duration;
-    el.timeCurrent.textContent = formatTime(state.playbackOffset);
-    drawPlaybackWaveform(1);
-    return;
-  }
-  let acc = 0;
-  for (let i = 0; i <= target.index; i++) acc += state.segments[i].end - state.segments[i].start;
-  state.playbackOffset = acc / sr;
-  el.timeCurrent.textContent = formatTime(state.playbackOffset);
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  jumpToSegmentEnd();
 });
 el.playButton.addEventListener('click', () => { state.isPlaying ? pausePlayback() : startPlayback(); });
 
@@ -131,19 +104,16 @@ el.timelineRulerCanvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   e.stopPropagation();
   hideSegmentTrash();
-  const rect = el.waveformContainer.getBoundingClientRect();
-  const visualRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  const ratio = visualRatioToAudioRatioWithState(visualRatio, rect.width, SEGMENT_GAP_CSS_PX);
-  seekToRatio(ratio);
+  seekFromClientX(e.clientX);
 });
 
 el.segmentTrash.addEventListener('click', (e) => {
   e.stopPropagation();
-  if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
+  if (state.selectedSegmentIndex >= 0) deleteSegmentByIndex(state.selectedSegmentIndex);
 });
 
 document.addEventListener('pointerdown', (e) => {
-  if (!el.playbackView.hidden && state.hoveredSegmentIndex >= 0) {
+  if (!el.playbackView.hidden && state.selectedSegmentIndex >= 0) {
     const target = /** @type {Node} */ (e.target);
     if (el.waveformContainer.contains(target) || target === el.segmentTrash || el.segmentTrash.contains(target)) return;
     hideSegmentTrash();
@@ -158,17 +128,7 @@ document.addEventListener('pointerdown', (e) => {
 
 window.addEventListener('mouseup', () => {
   if (state.draggingHandleIndex >= 0) {
-    const idx = state.draggingHandleIndex;
-    removeDraggingClass(idx);
-    state.draggingHandleIndex = -1;
-    state._dragSnapshot = null;
-    rebuildPlaybackBuffer();
-    updateSegmentCountDisplay();
-    const ratio = state.recordedBuffer.duration > 0
-      ? state.playbackOffset / state.recordedBuffer.duration
-      : 0;
-    drawPlaybackWaveform(ratio);
-    showToast('Split line repositioned');
+    finishSplitHandleDrag();
     return;
   }
   if (state.draggingPlayhead) {
@@ -187,35 +147,17 @@ window.addEventListener('touchend', () => {
 
 window.addEventListener('mousemove', (e) => {
   if (state.draggingHandleIndex >= 0) {
-    const snap = state._dragSnapshot;
-    if (!snap) return;
-    const rect = el.waveformContainer.getBoundingClientRect();
-    const ratio = (e.clientX - rect.left) / rect.width;
-    let newAcc = ratio * snap.totalSamples;
-    newAcc = Math.max(snap.minAcc, Math.min(snap.maxAcc, newAcc));
-    const newSegIEnd = snap.segIStart + (newAcc - snap.accBeforeSegI);
-    state.segments[snap.handleIndex].end = newSegIEnd;
-    state.segments[snap.handleIndex + 1].start = newSegIEnd;
-    const playheadRatio = state.recordedBuffer.duration > 0
-      ? state.playbackOffset / state.recordedBuffer.duration
-      : 0;
-    drawPlaybackWaveform(playheadRatio);
+    applySplitHandleDrag(e.clientX);
     return;
   }
-  if (state.draggingPlayhead && state.recordedBuffer) {
-    const rect = el.waveformContainer.getBoundingClientRect();
-    const visualRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const ratio = visualRatioToAudioRatioWithState(visualRatio, rect.width, SEGMENT_GAP_CSS_PX);
-    seekToRatio(ratio);
+  if (state.draggingPlayhead) {
+    seekFromClientX(e.clientX);
   }
 });
 
 window.addEventListener('touchmove', (e) => {
-  if (state.draggingPlayhead && state.recordedBuffer) {
-    const rect = el.waveformContainer.getBoundingClientRect();
-    const visualRatio = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width));
-    const ratio = visualRatioToAudioRatioWithState(visualRatio, rect.width, SEGMENT_GAP_CSS_PX);
-    seekToRatio(ratio);
+  if (state.draggingPlayhead) {
+    seekFromClientX(e.touches[0].clientX);
   }
 }, { passive: true });
 
@@ -266,7 +208,7 @@ document.addEventListener('keydown', (e) => {
     el.skipForwardButton.click();
   } else if (e.code === 'Delete' && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
-    if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
+    if (state.selectedSegmentIndex >= 0) deleteSegmentByIndex(state.selectedSegmentIndex);
     else deleteSegmentAtPlayhead();
   } else if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey) {
     e.preventDefault();

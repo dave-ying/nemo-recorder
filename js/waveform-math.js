@@ -12,6 +12,115 @@
  * scissors, time ticks, and drag handling.
  */
 
+export const PEAK_STEP_DIVISOR = 100;
+
+/**
+ * Compute min/max peak pairs per pixel column for a range of samples.
+ * Returns a Float32Array of length (pixelWidth * 2) with [min, max, min, max, ...].
+ *
+ * @param {Float32Array} data - channel data
+ * @param {number} startSample - first sample index (inclusive)
+ * @param {number} endSample - last sample index (exclusive)
+ * @param {number} pixelWidth - number of pixel columns
+ * @returns {Float32Array}
+ */
+export function computePeaksForRange(data, startSample, endSample, pixelWidth) {
+  const w = Math.max(1, pixelWidth);
+  const peaks = new Float32Array(w * 2);
+  const totalSamples = endSample - startSample;
+  if (totalSamples <= 0) return peaks;
+
+  const samplesPerPixel = totalSamples / w;
+  const step = Math.max(1, (samplesPerPixel / PEAK_STEP_DIVISOR) | 0);
+
+  for (let x = 0; x < w; x++) {
+    const start = startSample + ((x * samplesPerPixel) | 0);
+    const end = Math.min(endSample, startSample + (((x + 1) * samplesPerPixel) | 0));
+    let min = 0, max = 0;
+    if (start < end) {
+      min = 1; max = -1;
+      for (let i = start; i < end; i += step) {
+        const v = data[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      const v = data[end - 1];
+      if (v < min) min = v;
+      if (v > max) max = v;
+      if (min > max) { min = 0; max = 0; }
+    }
+    peaks[x * 2] = min;
+    peaks[x * 2 + 1] = max;
+  }
+  return peaks;
+}
+
+// ===== Shared waveform path building =====
+
+function roundedRectPath(path, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  if (r === 0) {
+    path.rect(x, y, w, h);
+    return;
+  }
+  path.moveTo(x + r, y);
+  path.lineTo(x + w - r, y);
+  path.arcTo(x + w, y, x + w, y + r, r);
+  path.lineTo(x + w, y + h - r);
+  path.arcTo(x + w, y + h, x + w - r, y + h, r);
+  path.lineTo(x + r, y + h);
+  path.arcTo(x, y + h, x, y + h - r, r);
+  path.lineTo(x, y + r);
+  path.arcTo(x, y, x + r, y, r);
+  path.closePath();
+}
+
+export function buildOneCardPath(x, w, H, dpr, cornerRadius, insetY) {
+  if (w <= 0) return null;
+  const cardH = H - 2 * insetY;
+  const baseR = cornerRadius * dpr;
+  const r = Math.min(baseR, w / 2, cardH / 2);
+  const cardPath = new Path2D();
+  roundedRectPath(cardPath, x, insetY, w, cardH, r);
+  return cardPath;
+}
+
+export function buildWaveformPath(path, peaks, startIdx, endIdx, midY, scale) {
+  if (startIdx >= endIdx) return;
+  path.moveTo(startIdx, midY - peaks[startIdx * 2 + 1] * midY * scale);
+  for (let x = startIdx + 1; x < endIdx; x++) {
+    path.lineTo(x, midY - peaks[x * 2 + 1] * midY * scale);
+  }
+  for (let x = endIdx - 1; x >= startIdx; x--) {
+    path.lineTo(x, midY - peaks[x * 2] * midY * scale);
+  }
+  path.closePath();
+}
+
+/**
+ * Given a sample position in the edited (concatenated) buffer, find which
+ * segment it falls in.
+ *
+ * Returns the last segment for samples past the end (used by callers to
+ * handle the playhead at the very end of the recording).
+ *
+ * @param {Array<{start: number, end: number}>} segments
+ * @param {number} editedSample - sample index into the edited (concatenated) buffer
+ * @returns {{ index: number, offsetInSeg: number, seg: {start: number, end: number} } | null}
+ */
+export function findSegmentAtSamplePure(segments, editedSample) {
+  let acc = 0;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const segLen = seg.end - seg.start;
+    if (editedSample < acc + segLen || i === segments.length - 1) {
+      return { index: i, offsetInSeg: editedSample - acc, seg };
+    }
+    acc += segLen;
+  }
+  return null;
+}
+
 /**
  * Compute the pixel bounds for each segment card.
  *

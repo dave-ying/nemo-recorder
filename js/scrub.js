@@ -4,7 +4,7 @@ import { drawPlaybackWaveform } from './waveform.js';
 import { formatTime } from './utils.js';
 import { pausePlayback } from './playback.js';
 
-export const FRAME_SECONDS = 1 / 60;
+const FRAME_SECONDS = 1 / 60;
 
 const SCRUB_HOLD_DELAY_MS = 180;
 const SCRUB_MIN_SPEED = 0.1;
@@ -84,7 +84,4 @@ export function arrowKeyUp(code) {
   }
 }
 
-export function stopArrowScrub() {
-  heldArrows.clear();
-  stopScrub();
-}
+

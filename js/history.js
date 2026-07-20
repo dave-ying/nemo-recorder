@@ -14,10 +14,10 @@ const cloneSegments = (segments) => segments.map(s => ({ start: s.start, end: s.
 
 const snapshotCurrent = () => ({ segments: cloneSegments(state.segments), playbackOffset: state.playbackOffset });
 
-export const canUndo = () => undoStack.length > 0;
-export const canRedo = () => redoStack.length > 0;
+const canUndo = () => undoStack.length > 0;
+const canRedo = () => redoStack.length > 0;
 
-export function updateHistoryButtons() {
+function updateHistoryButtons() {
   el.undoButton.disabled = !canUndo();
   el.redoButton.disabled = !canRedo();
 }

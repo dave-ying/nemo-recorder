@@ -2,7 +2,7 @@ import { state, LIVE_SECONDS, WAVEFORM_SCALE, WAVEFORM_STYLE } from './state.js'
 import { el, liveCtx } from './dom.js';
 import { formatTime } from './utils.js';
 import { showToast, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled, updateEmptyState } from './ui.js';
-import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
+import { fillWaveformPathLive, hideSegmentTrash } from './waveform.js';
 import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
 import { loadBufferAsRecording } from './editing.js';
@@ -86,7 +86,7 @@ export async function connectMicrophone() {
   }
 }
 
-export function releaseMicStream() {
+function releaseMicStream() {
   if (state.mediaStream) {
     state.mediaStream.getTracks().forEach(t => t.stop());
     state.mediaStream = null;
@@ -94,6 +94,7 @@ export function releaseMicStream() {
 }
 
 export function disconnectMicrophone() {
+  if (state.isPlaying) pausePlayback();
   stopRecordingNodes();
   releaseMicStream();
   if (state.audioContext) {
@@ -110,13 +111,12 @@ export function disconnectMicrophone() {
   resetHistory();
   hideSegmentTrash();
   el.playheadScissors.classList.remove('visible');
-  state.hoverRatio = -1;
   resetReadouts();
   updateSegmentCountDisplay();
   updateEmptyState();
 }
 
-export async function ensureAudioContext() {
+async function ensureAudioContext() {
   if (state.audioContext && state.audioContext.state !== 'closed') {
       if (state.audioContext.sampleRate === state.settings.sampleRate) {
         if (state.audioContext.state === 'suspended') await state.audioContext.resume();
@@ -240,19 +240,23 @@ export async function startRecording() {
   }
 }
 
-// Abort an in-progress capture without building a take: used when the record
-// modal closes mid-recording. Mirrors stopRecording's cleanup minus the buffer.
-export function cancelRecordingCapture() {
+function teardownCaptureSession() {
   state.isRecording = false;
   if (liveRafId) cancelAnimationFrame(liveRafId);
   if (state.liveResizeHandler) window.removeEventListener('resize', state.liveResizeHandler);
   stopRecordingNodes();
   releaseMicStream();
-  state.recordedChunks = [];
   if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
 }
 
-export function processLiveAudio(channels) {
+// Abort an in-progress capture without building a take: used when the record
+// modal closes mid-recording. Mirrors stopRecording's cleanup minus the buffer.
+export function cancelRecordingCapture() {
+  teardownCaptureSession();
+  state.recordedChunks = [];
+}
+
+function processLiveAudio(channels) {
   const len = channels[0].length;
   const nch = channels.length;
   const buf = state.liveBuffer;
@@ -281,7 +285,7 @@ export function processLiveAudio(channels) {
   state.liveLevel = Math.max(maxLevel, state.liveLevel * LEVEL_DECAY);
 }
 
-export function startLiveAnimation() {
+function startLiveAnimation() {
   if (liveRafId) cancelAnimationFrame(liveRafId);
   const dpr = window.devicePixelRatio || 1;
 
@@ -370,7 +374,7 @@ export function startLiveAnimation() {
   draw();
 }
 
-export function stopRecordingNodes() {
+function stopRecordingNodes() {
   if (state.sourceNode) { try { state.sourceNode.disconnect(); } catch(e) { console.warn('[nemo-recorder]', e.message); } state.sourceNode = null; }
   if (state.workletNode) { try { state.workletNode.disconnect(); } catch(e) { console.warn('[nemo-recorder]', e.message); } state.workletNode = null; }
   state.isRecording = false;
@@ -378,17 +382,8 @@ export function stopRecordingNodes() {
 
 export async function stopRecording() {
   if (!state.isRecording) return;
-  state.isRecording = false;
-  if (liveRafId) cancelAnimationFrame(liveRafId);
+  teardownCaptureSession();
   liveCtx.clearRect(0, 0, el.liveCanvas.width, el.liveCanvas.height);
-  if (state.liveResizeHandler) window.removeEventListener('resize', state.liveResizeHandler);
-  stopRecordingNodes();
-  // Release the capture stream and park the audio thread: a live mic track or a
-  // running AudioContext keeps Chrome's tab-recording indicator on and exempts
-  // the tab from throttling, degrading the whole browser while we sit idle in
-  // the editor. Playback resumes the context on demand.
-  releaseMicStream();
-  if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
 
   if (state.recordedChunks.length === 0) {
     updateEmptyState();

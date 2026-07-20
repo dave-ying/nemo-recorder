@@ -30,20 +30,20 @@ function getExportWorker(format) {
   if (format === 'wav') {
     if (!wavWorker) {
       wavWorker = new Worker(URL.createObjectURL(new Blob([wavWorkerCode], { type: 'application/javascript' })));
-      wavWorker.onmessage = (e) => handleExportResult(e, { ext: 'wav', label: `${state.recordedBuffer.sampleRate}hz_${state.exportSettings.quality}bit` });
+      wavWorker.onmessage = (e) => handleExportResult(e, 'wav');
       wavWorker.onerror = () => failExport('Export failed — try again');
     }
     return wavWorker;
   }
   if (!mp3Worker) {
     mp3Worker = new Worker(URL.createObjectURL(new Blob([mp3WorkerCode], { type: 'application/javascript' })));
-    mp3Worker.onmessage = (e) => handleExportResult(e, { ext: 'mp3', label: `${state.exportSettings.quality}kbps` });
+    mp3Worker.onmessage = (e) => handleExportResult(e, 'mp3');
     mp3Worker.onerror = () => failExport('Export failed — try again');
   }
   return mp3Worker;
 }
 
-function handleExportResult(e, { ext, label }) {
+function handleExportResult(e, format) {
   if (e.data.error) {
     failExport(`Export failed: ${e.data.error}`);
     return;
@@ -54,6 +54,10 @@ function handleExportResult(e, { ext, label }) {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const ts = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const ext = format;
+  const label = format === 'wav'
+    ? `${state.recordedBuffer.sampleRate}hz_${state.exportSettings.quality}bit`
+    : `${state.exportSettings.quality}kbps`;
   const chLabel = state.recordedBuffer.numberOfChannels === 1 ? 'mono' : 'stereo';
   a.href = url;
   a.download = `audio_${ts}_${label}_${chLabel}.${ext}`;

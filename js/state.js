@@ -35,6 +35,23 @@ export const SELECTION_PULSE_PERIOD_SEC = 2;
 export const DELETE_PULSE_PERIOD_SEC = 0.55;
 export const SEGMENT_DELETE_ANIM_MS = 480;
 
+export const TRASH_HALF_WIDTH_CSS_PX = 15;
+export const TRASH_ABOVE_CARD_CSS_PX = 34;
+export const APPEND_BUTTON_SIZE_CSS_PX = 30;
+export const APPEND_BUTTON_PAD_CSS_PX = 16;
+
+/**
+ * @typedef {Object} DragSnapshot
+ * @property {number} handleIndex
+ * @property {number} totalSamples
+ * @property {number} startClientX
+ * @property {number} accBeforeSegI
+ * @property {number} segIStart
+ * @property {number} segIP1End
+ * @property {number} minAcc
+ * @property {number} maxAcc
+ */
+
 /**
  * @typedef {Object} MicCapabilities
  * @property {number[]} supportedRates
@@ -61,8 +78,7 @@ export const SEGMENT_DELETE_ANIM_MS = 480;
  * @property {number} playbackStartTime
  * @property {number} playbackOffset
  * @property {number} recordStartTime - performance.now() at recording start (drives live timer)
- * @property {number} hoverRatio
- * @property {number} hoveredSegmentIndex
+ * @property {number} selectedSegmentIndex
  * @property {number} hoverSegmentIndex - segment currently under the mouse cursor (hover, distinct from selected)
  * @property {boolean} isHoveringTrash
  * @property {Float32Array|null} liveBuffer
@@ -79,9 +95,8 @@ export const SEGMENT_DELETE_ANIM_MS = 480;
  * @property {{sampleRate: number, bitDepth: number, channels: number}} settings
  * @property {{format: string, quality: number}} exportSettings
  * @property {number|null} trashHideTimer
- * @property {number|null} mouseMoveRaf
  * @property {number} draggingHandleIndex
- * @property {Object|null} _dragSnapshot
+ * @property {DragSnapshot|null} _dragSnapshot
  * @property {boolean} draggingPlayhead
  * @property {AudioBuffer|null} pendingTakeBuffer
  * @property {'fresh'|'append'|null} recordModalContext
@@ -110,8 +125,7 @@ export const state = {
   playbackStartTime: 0,
   playbackOffset: 0,
   recordStartTime: 0,
-  hoverRatio: -1,
-  hoveredSegmentIndex: -1,
+  selectedSegmentIndex: -1,
   hoverSegmentIndex: -1,
   isHoveringTrash: false,
   liveBuffer: null,
@@ -130,7 +144,6 @@ export const state = {
   settings: { sampleRate: 48000, bitDepth: 24, channels: 1 },
   exportSettings: { format: 'wav', quality: 32 },
   trashHideTimer: null,
-  mouseMoveRaf: null,
   draggingPlayhead: false,
   pendingTakeBuffer: null,
   recordModalContext: null,

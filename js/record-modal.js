@@ -4,6 +4,7 @@ import { formatTime } from './utils.js';
 import { updateEmptyState, setTransportDisabled } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, cancelRecordingCapture } from './audio.js';
 import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
+import { computePeaksForRange } from './waveform-math.js';
 
 let reviewRafId = null;
 let previewSeeking = false;
@@ -237,31 +238,22 @@ function computeReviewPeaks(width) {
 
   const nch = state.pendingTakeBuffer.numberOfChannels;
   const len = state.pendingTakeBuffer.length;
-  const chans = [];
-  for (let c = 0; c < nch; c++) chans.push(state.pendingTakeBuffer.getChannelData(c));
 
-  const peaks = new Float32Array(width * 2);
-  const samplesPerPx = len / width;
-
-  for (let x = 0; x < width; x++) {
-    const start = Math.floor(x * samplesPerPx);
-    const end = Math.min(len, Math.floor((x + 1) * samplesPerPx));
-    let min = 0, max = 0;
-    if (end > start) {
-      min = 1; max = -1;
-      for (let i = start; i < end; i++) {
-        let s = chans[0][i];
-        for (let c = 1; c < nch; c++) s += chans[c][i];
-        if (nch > 1) s /= nch;
-        if (s < min) min = s;
-        if (s > max) max = s;
-      }
-      if (min > max) { min = 0; max = 0; }
+  let data;
+  if (nch === 1) {
+    data = state.pendingTakeBuffer.getChannelData(0);
+  } else {
+    data = new Float32Array(len);
+    const chans = [];
+    for (let c = 0; c < nch; c++) chans.push(state.pendingTakeBuffer.getChannelData(c));
+    for (let i = 0; i < len; i++) {
+      let s = chans[0][i];
+      for (let c = 1; c < nch; c++) s += chans[c][i];
+      data[i] = s / nch;
     }
-    peaks[x * 2] = min;
-    peaks[x * 2 + 1] = max;
   }
 
+  const peaks = computePeaksForRange(data, 0, len, width);
   cachedReviewPeaks = peaks;
   cachedReviewWidth = width;
   return peaks;
@@ -290,24 +282,13 @@ function renderReviewWaveform() {
 
   reviewCtx.clearRect(0, 0, W, H);
 
-  reviewCtx.fillStyle = 'rgba(77, 216, 200, 0.22)';
   for (let x = 0; x < W; x++) {
     const min = peaks[x * 2];
     const max = peaks[x * 2 + 1];
     const top = midY - max * midY * scale;
     const h = Math.max(1, (max - min) * midY * scale);
+    reviewCtx.fillStyle = x < playheadX ? 'rgba(77, 216, 200, 0.95)' : 'rgba(77, 216, 200, 0.22)';
     reviewCtx.fillRect(x, top, 1, h);
-  }
-
-  if (playheadX > 0) {
-    reviewCtx.fillStyle = 'rgba(77, 216, 200, 0.95)';
-    for (let x = 0; x < playheadX && x < W; x++) {
-      const min = peaks[x * 2];
-      const max = peaks[x * 2 + 1];
-      const top = midY - max * midY * scale;
-      const h = Math.max(1, (max - min) * midY * scale);
-      reviewCtx.fillRect(x, top, 1, h);
-    }
   }
 
   el.rmPlayhead.style.left = `${ratio * rect.width}px`;

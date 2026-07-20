@@ -41,7 +41,6 @@ body::after {
 .brand-logo::after { content: ''; position: absolute; inset: -4px; border: 1px solid rgba(255, 140, 66, 0.2); border-radius: 8px; animation: ring-breathe 3s ease-in-out infinite; }
 @keyframes ring-breathe { 0%, 100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.15); opacity: 0; } }
 .brand-name { font-size: 13px; font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; }
-.brand-sub { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--fg-muted); letter-spacing: 0.05em; margin-top: 4px; }
 .stage {
   background: linear-gradient(180deg, rgba(28, 28, 36, 0.7), rgba(20, 20, 26, 0.4));
   border: 1px solid var(--border); border-radius: 14px; padding: 18px 18px 26px; position: relative; 
@@ -382,12 +381,6 @@ body::after {
 @keyframes spin { 100% { transform: rotate(360deg); } }
 
 
-.info-note { padding: 10px 14px; background: rgba(77, 216, 200, 0.04); border: 1px solid rgba(77, 216, 200, 0.18); border-radius: 10px; display: flex; gap: 12px; align-items: center; flex-shrink: 0; overflow: hidden; }
-.info-note-icon { width: 16px; height: 16px; color: var(--teal); flex-shrink: 0; margin-top: 2px; }
-.info-note-text { font-size: 12px; color: var(--fg-muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.info-note-text strong { color: var(--fg); font-weight: 500; }
-.info-note-text code { font-family: 'JetBrains Mono', monospace; background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 3px; color: var(--teal); font-size: 11px; }
-
 /* Export Modal Styles */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(10, 10, 12, 0.85); backdrop-filter: blur(12px);
@@ -589,9 +582,7 @@ body::after {
   .playhead-grip { width: 22px; height: 22px; }
   .playhead-line { margin-top: -5px; }
   .readout { padding: 8px 6px; gap: 2px; }
-  .readout-label { font-size: 8px; letter-spacing: 0.1em; }
-  .readout-value { font-size: 12px; }
-  .readout-value .unit { font-size: 9px; }
+
   .app-footer { font-size: 9px; letter-spacing: 0.1em; }
 }
 @media (max-height: 500px) {

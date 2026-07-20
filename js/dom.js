@@ -1,4 +1,4 @@
-export const $ = (id) => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
 /**
  * @typedef {Object} AppElements

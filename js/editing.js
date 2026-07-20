@@ -2,10 +2,46 @@ import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
-import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap } from './waveform.js';
+import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, removeDraggingClass, visualRatioToAudioRatioWithState } from './waveform.js';
 import { findSingleSegmentRemoval } from './waveform-math.js';
-import { pausePlayback } from './playback.js';
+import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
+
+export function jumpToSegmentStart() {
+  if (!state.recordedBuffer) return;
+  const sr = state.originalBuffer.sampleRate;
+  const editedSample = Math.round(state.playbackOffset * sr);
+  const target = findSegmentAtSample(editedSample);
+  if (!target) return;
+  let acc = 0;
+  for (let i = 0; i < target.index; i++) acc += state.segments[i].end - state.segments[i].start;
+  if (target.offsetInSeg === 0 && target.index > 0) {
+    acc = 0;
+    for (let i = 0; i < target.index - 1; i++) acc += state.segments[i].end - state.segments[i].start;
+  }
+  state.playbackOffset = acc / sr;
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+}
+
+export function jumpToSegmentEnd() {
+  if (!state.recordedBuffer) return;
+  const sr = state.originalBuffer.sampleRate;
+  const editedSample = Math.round(state.playbackOffset * sr);
+  const target = findSegmentAtSample(editedSample);
+  if (!target) return;
+  if (target.index === state.segments.length - 1) {
+    state.playbackOffset = state.recordedBuffer.duration;
+    el.timeCurrent.textContent = formatTime(state.playbackOffset);
+    drawPlaybackWaveform(1);
+    return;
+  }
+  let acc = 0;
+  for (let i = 0; i <= target.index; i++) acc += state.segments[i].end - state.segments[i].start;
+  state.playbackOffset = acc / sr;
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+}
 
 // Shared tail for both mic capture (stopRecording) and file upload
 // (loadUploadedFile): both produce a full-length AudioBuffer that becomes the
@@ -22,8 +58,7 @@ export function loadBufferAsRecording(buffer, toastMessage) {
   state.cachedPeaks = null;
   state.cachedPath = null;
   state.playbackOffset = 0;
-  state.hoverRatio = -1;
-  state.hoveredSegmentIndex = -1;
+  state.selectedSegmentIndex = -1;
   state.hoverSegmentIndex = -1;
   hideSegmentTrash();
   updateSegmentCountDisplay();
@@ -140,7 +175,6 @@ export function deleteSegmentByIndex(index) {
     hideSegmentTrash();
     clearSegmentHover();
     el.playheadScissors.classList.remove('visible');
-    state.hoverRatio = -1;
     el.playButton.classList.remove('playing');
     el.timeCurrent.textContent = '00:00.000';
     el.timeTotal.textContent = '00:00.000';
@@ -157,7 +191,6 @@ export function deleteSegmentByIndex(index) {
 
   hideSegmentTrash();
   clearSegmentHover();
-  state.hoverRatio = -1;
   const newPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
   animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, newPlayheadRatio, deletedSnap);
   updateSegmentCountDisplay();
@@ -180,7 +213,6 @@ function applyHistorySnapshot(snapshot, render) {
   hideSegmentTrash();
   clearSegmentHover();
   el.playheadScissors.classList.remove('visible');
-  state.hoverRatio = -1;
 
   if (!state.recordedBuffer) {
     el.playButton.classList.remove('playing');
@@ -299,4 +331,42 @@ export async function appendBufferToRecording(buffer, toastMessage) {
     : 0;
   drawPlaybackWaveform(ratio);
   showToast(toastMessage);
+}
+
+export function applySplitHandleDrag(clientX) {
+  const snap = state._dragSnapshot;
+  if (!snap) return;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const ratio = (clientX - rect.left) / rect.width;
+  let newAcc = ratio * snap.totalSamples;
+  newAcc = Math.max(snap.minAcc, Math.min(snap.maxAcc, newAcc));
+  const newSegIEnd = snap.segIStart + (newAcc - snap.accBeforeSegI);
+  state.segments[snap.handleIndex].end = newSegIEnd;
+  state.segments[snap.handleIndex + 1].start = newSegIEnd;
+  const playheadRatio = state.recordedBuffer.duration > 0
+    ? state.playbackOffset / state.recordedBuffer.duration
+    : 0;
+  drawPlaybackWaveform(playheadRatio);
+}
+
+export function finishSplitHandleDrag() {
+  const idx = state.draggingHandleIndex;
+  removeDraggingClass(idx);
+  state.draggingHandleIndex = -1;
+  state._dragSnapshot = null;
+  rebuildPlaybackBuffer();
+  updateSegmentCountDisplay();
+  const ratio = state.recordedBuffer.duration > 0
+    ? state.playbackOffset / state.recordedBuffer.duration
+    : 0;
+  drawPlaybackWaveform(ratio);
+  showToast('Split line repositioned');
+}
+
+export function seekFromClientX(clientX) {
+  if (!state.recordedBuffer) return;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const visualRatio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const ratio = visualRatioToAudioRatioWithState(visualRatio, rect.width, SEGMENT_GAP_CSS_PX);
+  seekToRatio(ratio);
 }

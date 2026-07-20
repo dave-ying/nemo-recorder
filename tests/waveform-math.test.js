@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, findSingleSegmentRemoval } from '../js/waveform-math.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, findSingleSegmentRemoval, computePeaksForRange, findSegmentAtSamplePure } from '../js/waveform-math.js';
 
 // Two equal segments, each 500 samples of a 1000-sample edited buffer.
 // On a 1000px canvas with a 20px gap, each segment's linear range is 500px,
@@ -186,4 +186,114 @@ test('returns -1 when a kept segment also changed boundaries (not a clean remova
 
 test('a single-segment array reduced to empty reports the removal at index 0', () => {
   assert.equal(findSingleSegmentRemoval([{ start: 0, end: 10 }], []), 0);
+});
+
+// ===== computePeaksForRange =====
+
+test('computePeaksForRange returns correct min/max for a constant signal', () => {
+  const data = new Float32Array(1000).fill(0.5);
+  const peaks = computePeaksForRange(data, 0, data.length, 10);
+  for (let x = 0; x < 10; x++) {
+    assert.equal(peaks[x * 2], 0.5, `min at pixel ${x}`);
+    assert.equal(peaks[x * 2 + 1], 0.5, `max at pixel ${x}`);
+  }
+});
+
+test('computePeaksForRange returns correct min/max for alternating extreme signal', () => {
+  const data = new Float32Array(1000);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = i % 2 === 0 ? -1.0 : 1.0;
+  }
+  const peaks = computePeaksForRange(data, 0, data.length, 10);
+  for (let x = 0; x < 10; x++) {
+    assert.equal(peaks[x * 2], -1, `min at pixel ${x}`);
+    assert.equal(peaks[x * 2 + 1], 1, `max at pixel ${x}`);
+  }
+});
+
+test('computePeaksForRange with pixelWidth larger than sample count', () => {
+  const data = new Float32Array([-0.7, 0.3, 0.9, -0.2]);
+  const peaks = computePeaksForRange(data, 0, data.length, 8);
+  for (let x = 0; x < 8; x++) {
+    const min = peaks[x * 2];
+    const max = peaks[x * 2 + 1];
+    assert.ok(min <= max, `pixel ${x}: min=${min}, max=${max}`);
+  }
+  // The 4 samples get distributed across 8 pixels; values must appear somewhere in the peaks
+  const allPeaks = Array.from(peaks);
+  const hasNeg07 = allPeaks.some(v => Math.abs(v - (-0.7)) < 0.001);
+  const has03   = allPeaks.some(v => Math.abs(v - 0.3) < 0.001);
+  const has09   = allPeaks.some(v => Math.abs(v - 0.9) < 0.001);
+  const hasNeg02 = allPeaks.some(v => Math.abs(v - (-0.2)) < 0.001);
+  assert.ok(hasNeg07 && has03 && has09 && hasNeg02, 'all data values appear in peaks');
+});
+
+test('computePeaksForRange with empty range returns zero-filled peaks', () => {
+  const data = new Float32Array([0.5, 0.5]);
+  const peaks = computePeaksForRange(data, 0, 0, 5);
+  for (let x = 0; x < 5; x++) {
+    assert.equal(peaks[x * 2], 0);
+    assert.equal(peaks[x * 2 + 1], 0);
+  }
+});
+
+test('computePeaksForRange with slice in the middle of data', () => {
+  const data = new Float32Array(1000);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = Math.sin(i * 0.1);
+  }
+  const peaks = computePeaksForRange(data, 200, 800, 20);
+  for (let x = 0; x < 20; x++) {
+    const min = peaks[x * 2];
+    const max = peaks[x * 2 + 1];
+    assert.ok(min <= max);
+    assert.ok(min >= -1 && min <= 1);
+    assert.ok(max >= -1 && max <= 1);
+  }
+  // Verify min/max span covers the slice range
+  const globalMin = Math.min(...Array.from({ length: 20 }, (_, x) => peaks[x * 2]));
+  const globalMax = Math.max(...Array.from({ length: 20 }, (_, x) => peaks[x * 2 + 1]));
+  assert.ok(globalMax > globalMin);
+});
+
+// ===== findSegmentAtSamplePure =====
+
+test('finds the first segment at sample 0', () => {
+  const segs = [{ start: 0, end: 500 }, { start: 500, end: 1000 }];
+  const r = findSegmentAtSamplePure(segs, 0);
+  assert.deepEqual(r, { index: 0, offsetInSeg: 0, seg: segs[0] });
+});
+
+test('finds the last segment for an exact last-segment sample', () => {
+  const segs = [{ start: 0, end: 300 }, { start: 300, end: 600 }];
+  const r = findSegmentAtSamplePure(segs, 599);
+  assert.deepEqual(r, { index: 1, offsetInSeg: 299, seg: segs[1] });
+});
+
+test('finds the correct segment near the middle', () => {
+  const segs = [{ start: 0, end: 100 }, { start: 100, end: 200 }, { start: 200, end: 300 }];
+  const r = findSegmentAtSamplePure(segs, 150);
+  assert.deepEqual(r, { index: 1, offsetInSeg: 50, seg: segs[1] });
+});
+
+test('lookup on an exact segment boundary returns the start of the next segment', () => {
+  const segs = [{ start: 0, end: 100 }, { start: 100, end: 200 }];
+  const r = findSegmentAtSamplePure(segs, 100);
+  assert.deepEqual(r, { index: 1, offsetInSeg: 0, seg: segs[1] });
+});
+
+test('past-the-end sample returns the last segment by design', () => {
+  const segs = [{ start: 0, end: 100 }, { start: 100, end: 200 }];
+  const r = findSegmentAtSamplePure(segs, 999);
+  assert.deepEqual(r, { index: 1, offsetInSeg: 899, seg: segs[1] });
+});
+
+test('single segment: any valid sample returns that segment', () => {
+  const segs = [{ start: 10, end: 500 }];
+  const r = findSegmentAtSamplePure(segs, 200);
+  assert.deepEqual(r, { index: 0, offsetInSeg: 200, seg: segs[0] });
+});
+
+test('empty segments array returns null', () => {
+  assert.equal(findSegmentAtSamplePure([], 0), null);
 });

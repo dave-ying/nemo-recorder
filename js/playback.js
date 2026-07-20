@@ -60,8 +60,8 @@ export function pausePlayback() {
   suspendWhenIdle();
 }
 
-export function animatePlayback() {
-  if (!state.isPlaying) return;
+function animatePlayback() {
+  if (!state.isPlaying || !state.audioContext || !state.recordedBuffer) return;
   const elapsed = state.audioContext.currentTime - state.playbackStartTime + state.playbackOffset;
   if (elapsed >= state.recordedBuffer.duration) {
     state.isPlaying = false;
