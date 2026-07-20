@@ -1,10 +1,10 @@
-import { state } from './state.js';
+import { state, SEGMENT_DRAG_THRESHOLD_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState } from './ui.js';
 import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, applySplitHandleDrag, finishSplitHandleDrag, seekFromClientX } from './editing.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, applySplitHandleDrag, finishSplitHandleDrag, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag } from './editing.js';
 import { startPlayback, pausePlayback } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
@@ -127,6 +127,14 @@ document.addEventListener('pointerdown', (e) => {
 });
 
 window.addEventListener('mouseup', () => {
+  if (state.pendingSegmentDrag) {
+    cancelSegmentReorderDrag();
+    return;
+  }
+  if (state.draggingSegmentIndex >= 0) {
+    finishSegmentReorderDrag();
+    return;
+  }
   if (state.draggingHandleIndex >= 0) {
     finishSplitHandleDrag();
     return;
@@ -139,6 +147,14 @@ window.addEventListener('mouseup', () => {
 });
 
 window.addEventListener('touchend', () => {
+  if (state.pendingSegmentDrag) {
+    cancelSegmentReorderDrag();
+    return;
+  }
+  if (state.draggingSegmentIndex >= 0) {
+    finishSegmentReorderDrag();
+    return;
+  }
   if (state.draggingPlayhead) {
     state.draggingPlayhead = false;
     removePlayheadCaretDraggingClass();
@@ -146,6 +162,18 @@ window.addEventListener('touchend', () => {
 });
 
 window.addEventListener('mousemove', (e) => {
+  if (state.pendingSegmentDrag) {
+    const dx = e.clientX - state.pendingSegmentDrag.startClientX;
+    const dy = e.clientY - state.pendingSegmentDrag.startClientY;
+    if (dx * dx + dy * dy >= SEGMENT_DRAG_THRESHOLD_CSS_PX * SEGMENT_DRAG_THRESHOLD_CSS_PX) {
+      beginSegmentReorderDrag(e.clientX, e.clientY);
+    }
+    return;
+  }
+  if (state.draggingSegmentIndex >= 0) {
+    applySegmentReorderDrag(e.clientX);
+    return;
+  }
   if (state.draggingHandleIndex >= 0) {
     applySplitHandleDrag(e.clientX);
     return;
@@ -156,8 +184,22 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('touchmove', (e) => {
+  const t = e.touches[0];
+  if (!t) return;
+  if (state.pendingSegmentDrag) {
+    const dx = t.clientX - state.pendingSegmentDrag.startClientX;
+    const dy = t.clientY - state.pendingSegmentDrag.startClientY;
+    if (dx * dx + dy * dy >= SEGMENT_DRAG_THRESHOLD_CSS_PX * SEGMENT_DRAG_THRESHOLD_CSS_PX) {
+      beginSegmentReorderDrag(t.clientX, t.clientY);
+    }
+    return;
+  }
+  if (state.draggingSegmentIndex >= 0) {
+    applySegmentReorderDrag(t.clientX);
+    return;
+  }
   if (state.draggingPlayhead) {
-    seekFromClientX(e.touches[0].clientX);
+    seekFromClientX(t.clientX);
   }
 }, { passive: true });
 

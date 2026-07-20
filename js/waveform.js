@@ -140,7 +140,7 @@ export function clearSegmentHover() {
   el.waveformContainer.style.cursor = 'default';
 }
 
-function showSegmentTrash(index) {
+export function showSegmentTrash(index) {
   if (index < 0 || index >= state.segments.length) return;
   clearTimeout(state.trashHideTimer);
   state.selectedSegmentIndex = index;
@@ -375,7 +375,13 @@ function renderBaseLayer(segBounds, cardPaths, W, H, dpr) {
     ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
     ctx.shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
     ctx.shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
-    ctx.fillStyle = (i === selectedIdx || i === hoverIdx) ? WAVEFORM_STYLE.hoverCardBg : WAVEFORM_STYLE.segmentCardBg;
+    if (i === state.draggingSegmentIndex) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
+    } else if (i === selectedIdx || i === hoverIdx) {
+      ctx.fillStyle = WAVEFORM_STYLE.hoverCardBg;
+    } else {
+      ctx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
+    }
     ctx.fill(cardPath);
     ctx.restore();
   }
@@ -417,9 +423,12 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
     const x = sb.drawStart;
     const w = sb.drawEnd - sb.drawStart;
     const isSelected = i === selectedIdx;
+    const isDragged = i === state.draggingSegmentIndex;
 
     ctx.save();
     ctx.clip(cardPath);
+
+    if (isDragged) ctx.globalAlpha = 0.35;
 
     const midX = Math.min(sb.drawEnd, Math.max(sb.drawStart, playheadX));
     if (isSelected) {
@@ -468,7 +477,14 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
 
     ctx.restore();
 
-    if (isSelected) {
+    if (isDragged) {
+      ctx.save();
+      ctx.setLineDash([5 * dpr, 4 * dpr]);
+      ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
+      ctx.lineWidth = edgeWidth;
+      ctx.stroke(cardPath);
+      ctx.restore();
+    } else if (isSelected) {
       const glowBlur = (6 + pulse * 8) * dpr;
       ctx.save();
       ctx.strokeStyle = isMarkedForDelete ? WAVEFORM_STYLE.deleteEdgeColor : WAVEFORM_STYLE.selectedEdgeColor;
@@ -604,6 +620,37 @@ function beginSegmentAnim(slides, snap, tiles, oldPlayheadX, newPlayheadX, newPl
   deleteAnim.raf = requestAnimationFrame(tick);
 }
 
+function drawDropIndicator(ctx, x, H, dpr) {
+  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX * dpr;
+  const top = insetY;
+  const bottom = H - insetY;
+  const cs = 5 * dpr;
+  ctx.save();
+  ctx.strokeStyle = WAVEFORM_STYLE.selectedEdgeColor;
+  ctx.lineWidth = 2 * dpr;
+  ctx.shadowColor = WAVEFORM_STYLE.selectedGlowColor;
+  ctx.shadowBlur = 10 * dpr;
+  ctx.beginPath();
+  ctx.moveTo(x, top);
+  ctx.lineTo(x, bottom);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = WAVEFORM_STYLE.selectedEdgeColor;
+  ctx.beginPath();
+  ctx.moveTo(x - cs, top - cs);
+  ctx.lineTo(x + cs, top - cs);
+  ctx.lineTo(x, top);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x - cs, bottom + cs);
+  ctx.lineTo(x + cs, bottom + cs);
+  ctx.lineTo(x, bottom);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 export function drawPlaybackWaveform(playheadRatio = 0) {
   cancelSegmentDeleteAnimation();
   const dpr = window.devicePixelRatio || 1;
@@ -647,13 +694,25 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     cachedCardPaths = buildSegmentCardPaths(segBounds, H, dpr);
     cardPathsKey = geomKey;
   }
-  const baseKey = geomKey + '#' + state.selectedSegmentIndex + '#' + state.hoverSegmentIndex;
+  const baseKey = geomKey + '#' + state.selectedSegmentIndex + '#' + state.hoverSegmentIndex + '#' + state.draggingSegmentIndex;
   if (baseKey !== baseLayerKey) {
     renderBaseLayer(segBounds, cachedCardPaths, W, H, dpr);
     baseLayerKey = baseKey;
   }
 
   drawSegmentCards(waveCtx, path, segBounds, cachedCardPaths, playheadX, H, dpr);
+
+  if (state.draggingSegmentIndex >= 0 && state._segmentDragSnapshot) {
+    const snap = state._segmentDragSnapshot;
+    const isNoOp = snap.dropInsertIndex === snap.srcIndex || snap.dropInsertIndex === snap.srcIndex + 1;
+    if (!isNoOp) {
+      let indicatorX;
+      if (snap.dropInsertIndex === 0) indicatorX = segBounds[0].drawStart;
+      else if (snap.dropInsertIndex === segBounds.length) indicatorX = segBounds[segBounds.length - 1].drawEnd;
+      else indicatorX = (segBounds[snap.dropInsertIndex - 1].drawEnd + segBounds[snap.dropInsertIndex].drawStart) / 2;
+      drawDropIndicator(waveCtx, indicatorX, H, dpr);
+    }
+  }
 
   if (state.draggingHandleIndex < 0) {
     ensureDivisionHandles();
@@ -784,6 +843,13 @@ el.waveformContainer.addEventListener('pointerdown', (e) => {
   if (y < cardTop || y > cardBottom) { hideSegmentTrash(); return; }
   const i = findSegmentAtX(x, rect.width);
   if (i >= 0) {
+    // With 2+ segments, defer the click decision: record a pending drag so
+    // pointermove past the threshold promotes to a reorder drag, and pointerup
+    // before that falls back to the existing click-to-(de)select-trash behavior.
+    if (state.segments.length >= 2) {
+      state.pendingSegmentDrag = { index: i, startClientX: e.clientX, startClientY: e.clientY };
+      return;
+    }
     if (i === state.selectedSegmentIndex) hideSegmentTrash();
     else showSegmentTrash(i);
   } else {
@@ -808,6 +874,7 @@ function scheduleHoverRedraw() {
 
 el.waveformContainer.addEventListener('mousemove', (e) => {
   if (!state.recordedBuffer) return;
+  if (state.draggingSegmentIndex >= 0 || state.pendingSegmentDrag) return;
   const rect = el.waveformContainer.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
@@ -816,7 +883,7 @@ el.waveformContainer.addEventListener('mousemove', (e) => {
   const i = (y >= cardTop && y <= cardBottom) ? findSegmentAtX(x, rect.width) : -1;
   if (i !== state.hoverSegmentIndex) {
     state.hoverSegmentIndex = i;
-    el.waveformContainer.style.cursor = i >= 0 ? 'pointer' : 'default';
+    el.waveformContainer.style.cursor = i >= 0 ? (state.segments.length >= 2 ? 'grab' : 'pointer') : 'default';
     scheduleHoverRedraw();
   }
 });

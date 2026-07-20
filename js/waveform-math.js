@@ -180,6 +180,50 @@ function segRangesEqual(a, b) {
 }
 
 /**
+ * Compute where a dragged segment should insert based on the pointer's X
+ * position over the segment cards. Returns an insert index in
+ * [0, segments.length]: "insert before segment k" for k in [0, length-1],
+ * or "append at end" for length.
+ *
+ * The pointer is compared against each card's midpoint: the first segment
+ * whose midpoint is past the pointer dictates the insert position. Pointer
+ * in the left half of card k → insert before k; right half → insert before k+1.
+ *
+ * The result is a *raw* index in terms of the pre-reorder array (the dragged
+ * segment is still counted). Use `computeReorderTarget` to convert it to the
+ * actual splice target after removal, or to detect a no-op drop.
+ *
+ * @param {Array<{drawStart: number, drawEnd: number}>} segBounds
+ * @param {number} pointerX - pointer position in the same unit as segBounds
+ * @returns {number}
+ */
+export function computeDropInsertIndexPure(segBounds, pointerX) {
+  for (let k = 0; k < segBounds.length; k++) {
+    const sb = segBounds[k];
+    const mid = (sb.drawStart + sb.drawEnd) / 2;
+    if (pointerX < mid) return k;
+  }
+  return segBounds.length;
+}
+
+/**
+ * Given the source segment's index and a raw drop insert index (both in terms
+ * of the pre-reorder array), return the adjusted splice target for the moved
+ * segment, or -1 if the drop is a no-op (dropping back where it came from).
+ *
+ * After `splice(srcIndex, 1)`, indices greater than srcIndex shift down by one,
+ * so a raw insert index above srcIndex must be decremented.
+ *
+ * @param {number} srcIndex
+ * @param {number} rawInsertIndex
+ * @returns {number} splice target in [0, length-1], or -1 for no-op
+ */
+export function computeReorderTarget(srcIndex, rawInsertIndex) {
+  if (rawInsertIndex === srcIndex || rawInsertIndex === srcIndex + 1) return -1;
+  return rawInsertIndex > srcIndex ? rawInsertIndex - 1 : rawInsertIndex;
+}
+
+/**
  * Map an audio-time ratio (fraction of edited duration) to a visual ratio
  * (fraction of canvas width), so the result always lands inside a segment card.
  *

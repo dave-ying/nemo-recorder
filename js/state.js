@@ -2,6 +2,7 @@ export const LIVE_SECONDS = 4;
 export const WAVEFORM_SCALE = 0.88;
 
 export const MIN_SEGMENT_SAMPLES = 500;
+export const SEGMENT_DRAG_THRESHOLD_CSS_PX = 4;
 export const SEGMENT_GAP_CSS_PX = 8;
 export const SEGMENT_CORNER_RADIUS_CSS_PX = 6;
 export const SEGMENT_VERTICAL_INSET_CSS_PX = 3;
@@ -53,6 +54,23 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  */
 
 /**
+ * @typedef {Object} SegmentDragSnapshot
+ * @property {number} srcIndex - index of the segment being reordered
+ * @property {number} currentClientX - last pointer client X (updated each move)
+ * @property {number} dropInsertIndex - raw insert index in [0, segments.length] computed from currentClientX
+ * @property {number} playheadSegStart - {start} of the segment the playhead was in at drag-begin (for audio-content preservation), or -1
+ * @property {number} playheadSegEnd - {end} of the same segment, or -1
+ * @property {number} playheadOffsetInSeg - sample offset within that segment
+ */
+
+/**
+ * @typedef {Object} PendingSegmentDrag
+ * @property {number} index - segment index under the pointerdown
+ * @property {number} startClientX
+ * @property {number} startClientY
+ */
+
+/**
  * @typedef {Object} MicCapabilities
  * @property {number[]} supportedRates
  * @property {number[]} supportedChannels
@@ -98,6 +116,9 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} draggingHandleIndex
  * @property {DragSnapshot|null} _dragSnapshot
  * @property {boolean} draggingPlayhead
+ * @property {number} draggingSegmentIndex - segment being reordered via drag-and-drop (-1 when not dragging)
+ * @property {PendingSegmentDrag|null} pendingSegmentDrag - tracks pointerdown on a segment before the drag threshold is crossed; if pointerup fires first, it is treated as a click (show/hide trash)
+ * @property {SegmentDragSnapshot|null} _segmentDragSnapshot
  * @property {AudioBuffer|null} pendingTakeBuffer
  * @property {'fresh'|'append'|null} recordModalContext
  * @property {AudioBufferSourceNode|null} previewSource
@@ -145,6 +166,9 @@ export const state = {
   exportSettings: { format: 'wav', quality: 32 },
   trashHideTimer: null,
   draggingPlayhead: false,
+  draggingSegmentIndex: -1,
+  pendingSegmentDrag: null,
+  _segmentDragSnapshot: null,
   pendingTakeBuffer: null,
   recordModalContext: null,
   previewSource: null,

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, findSingleSegmentRemoval, computePeaksForRange, findSegmentAtSamplePure } from '../js/waveform-math.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, findSingleSegmentRemoval, computePeaksForRange, findSegmentAtSamplePure, computeDropInsertIndexPure, computeReorderTarget } from '../js/waveform-math.js';
 
 // Two equal segments, each 500 samples of a 1000-sample edited buffer.
 // On a 1000px canvas with a 20px gap, each segment's linear range is 500px,
@@ -296,4 +296,89 @@ test('single segment: any valid sample returns that segment', () => {
 
 test('empty segments array returns null', () => {
   assert.equal(findSegmentAtSamplePure([], 0), null);
+});
+
+// ===== computeDropInsertIndexPure =====
+
+// Three equal segments on a 1000px canvas with 20px gaps.
+// segBounds (from computeSegmentBoundsPure): [0,300,290] [310,600,590] [610,1000,1000]
+// Card midpoints: 145, 450, 805.
+const DROP_BOUNDS = computeSegmentBoundsPure(1000, [{ start: 0, end: 300 }, { start: 300, end: 600 }, { start: 600, end: 1000 }], 1000, 20);
+
+test('computeDropInsertIndexPure: pointer before the first midpoint → insert at 0', () => {
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 0), 0);
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 100), 0);
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 144), 0);
+});
+
+test('computeDropInsertIndexPure: pointer in the right half of card 0 → insert before 1', () => {
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 146), 1);
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 300), 1);
+});
+
+test('computeDropInsertIndexPure: pointer in the left half of card 1 → still insert before 1', () => {
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 400), 1);
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 449), 1);
+});
+
+test('computeDropInsertIndexPure: pointer in the right half of card 1 → insert before 2', () => {
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 451), 2);
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 600), 2);
+});
+
+test('computeDropInsertIndexPure: pointer past the last midpoint → append at end', () => {
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 806), 3);
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 1000), 3);
+  assert.equal(computeDropInsertIndexPure(DROP_BOUNDS, 9999), 3);
+});
+
+test('computeDropInsertIndexPure: empty segBounds → 0', () => {
+  assert.equal(computeDropInsertIndexPure([], 500), 0);
+});
+
+// ===== computeReorderTarget =====
+
+test('computeReorderTarget: raw === src or raw === src + 1 is a no-op (-1)', () => {
+  assert.equal(computeReorderTarget(0, 0), -1);
+  assert.equal(computeReorderTarget(0, 1), -1);
+  assert.equal(computeReorderTarget(1, 1), -1);
+  assert.equal(computeReorderTarget(1, 2), -1);
+  assert.equal(computeReorderTarget(2, 2), -1);
+  assert.equal(computeReorderTarget(2, 3), -1);
+});
+
+test('computeReorderTarget: moving forward (raw > src+1) decrements after removal', () => {
+  // 3 segments [A,B,C]; move A (src=0) to the end (raw=3) → after removing A, insert at 2.
+  assert.equal(computeReorderTarget(0, 3), 2);
+  // move A to before C (raw=2) → insert at 1.
+  assert.equal(computeReorderTarget(0, 2), 1);
+  // move B (src=1) to the end (raw=3) → insert at 2.
+  assert.equal(computeReorderTarget(1, 3), 2);
+});
+
+test('computeReorderTarget: moving backward (raw < src) inserts at raw directly', () => {
+  // 3 segments [A,B,C]; move C (src=2) to the front (raw=0) → insert at 0.
+  assert.equal(computeReorderTarget(2, 0), 0);
+  // move C before B (raw=1) → insert at 1.
+  assert.equal(computeReorderTarget(2, 1), 1);
+  // move B (src=1) to the front (raw=0) → insert at 0.
+  assert.equal(computeReorderTarget(1, 0), 0);
+});
+
+test('computeReorderTarget: full round-trip of a forward-then-back move restores order', () => {
+  // [A,B,C] → move A to end (src=0, raw=3, target=2) → [B,C,A]
+  // → move A (now src=2) back to front (raw=0, target=0) → [A,B,C]
+  const segs = [{ start: 0, end: 10 }, { start: 10, end: 20 }, { start: 20, end: 30 }];
+  const t1 = computeReorderTarget(0, 3);
+  assert.equal(t1, 2);
+  const after = segs.slice();
+  const [moved] = after.splice(0, 1);
+  after.splice(t1, 0, moved);
+  assert.deepEqual(after.map(s => s.start), [10, 20, 0]);
+  // A is now at index 2; move it back to the front.
+  const t2 = computeReorderTarget(2, 0);
+  assert.equal(t2, 0);
+  const [moved2] = after.splice(2, 1);
+  after.splice(t2, 0, moved2);
+  assert.deepEqual(after.map(s => s.start), [0, 10, 20]);
 });

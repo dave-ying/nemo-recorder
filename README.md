@@ -8,7 +8,7 @@ Unlike most browser recorders that use `MediaRecorder` (which forces lossy Opus/
 
 - **Lossless PCM capture** — bit-exact audio buffer, bypasses MediaRecorder entirely
 - **Live waveform** — real-time ring-buffer waveform during recording
-- **Interactive playback** — seek, split, and delete segments on the waveform
+- **Interactive playback** — seek, split, delete, and reorder segments on the waveform
 - **Export WAV** — lossless PCM at your chosen quality settings
 - **Export MP3** — compressed, powered by lamejs (client-side only)
 - **Zero tracking** — all processing is local, no uploads, no analytics

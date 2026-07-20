@@ -2,8 +2,8 @@ import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
-import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, removeDraggingClass, visualRatioToAudioRatioWithState } from './waveform.js';
-import { findSingleSegmentRemoval } from './waveform-math.js';
+import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, removeDraggingClass, visualRatioToAudioRatioWithState, showSegmentTrash } from './waveform.js';
+import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure } from './waveform-math.js';
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
 
@@ -361,6 +361,107 @@ export function finishSplitHandleDrag() {
     : 0;
   drawPlaybackWaveform(ratio);
   showToast('Split line repositioned');
+}
+
+// ===== Segment reorder (drag-and-drop) =====
+//
+// Reorder uses a deferred-click pattern: pointerdown on a segment sets
+// `state.pendingSegmentDrag` (see waveform.js). pointermove past
+// SEGMENT_DRAG_THRESHOLD_CSS_PX promotes it to an active drag via
+// beginSegmentReorderDrag; pointerup before that threshold calls
+// cancelSegmentReorderDrag, which falls back to the existing click-to-trash
+// behavior. active drags call applySegmentReorderDrag on each move and
+// finishSegmentReorderDrag on pointerup.
+
+export function beginSegmentReorderDrag(clientX, clientY) {
+  const pending = state.pendingSegmentDrag;
+  if (!pending || !state.recordedBuffer || !state.originalBuffer) return;
+  if (state.isPlaying) pausePlayback();
+
+  const sr = state.originalBuffer.sampleRate;
+  const playheadSample = Math.round(state.playbackOffset * sr);
+  const target = findSegmentAtSample(playheadSample);
+
+  state.draggingSegmentIndex = pending.index;
+  state.pendingSegmentDrag = null;
+  state._segmentDragSnapshot = {
+    srcIndex: pending.index,
+    currentClientX: clientX,
+    dropInsertIndex: pending.index,
+    playheadSegStart: target ? target.seg.start : -1,
+    playheadSegEnd: target ? target.seg.end : -1,
+    playheadOffsetInSeg: target ? target.offsetInSeg : 0
+  };
+
+  hideSegmentTrash();
+  el.waveformContainer.style.cursor = 'grabbing';
+}
+
+export function applySegmentReorderDrag(clientX) {
+  const snap = state._segmentDragSnapshot;
+  if (!snap || !state.recordedBuffer) return;
+  snap.currentClientX = clientX;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const segBounds = computeSegmentBoundsPure(rect.width, state.segments, state.recordedBuffer.length, SEGMENT_GAP_CSS_PX);
+  snap.dropInsertIndex = computeDropInsertIndexPure(segBounds, x);
+  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+}
+
+export function finishSegmentReorderDrag() {
+  const snap = state._segmentDragSnapshot;
+  if (!snap) return;
+  const src = snap.srcIndex;
+  const target = computeReorderTarget(src, snap.dropInsertIndex);
+
+  state.draggingSegmentIndex = -1;
+  state._segmentDragSnapshot = null;
+  el.waveformContainer.style.cursor = 'default';
+
+  if (target < 0 || !state.recordedBuffer) {
+    const ratio = state.recordedBuffer && state.recordedBuffer.duration > 0
+      ? state.playbackOffset / state.recordedBuffer.duration
+      : 0;
+    drawPlaybackWaveform(ratio);
+    return;
+  }
+
+  pushHistory();
+  const [moved] = state.segments.splice(src, 1);
+  state.segments.splice(target, 0, moved);
+  rebuildPlaybackBuffer();
+
+  // Preserve the playhead on the same audio content: find the (now-relocated)
+  // segment by its {start, end} identity and reposition the playhead to the
+  // same offset within it.
+  if (state.recordedBuffer && snap.playheadSegStart >= 0) {
+    const sr = state.originalBuffer.sampleRate;
+    let acc = 0;
+    for (let i = 0; i < state.segments.length; i++) {
+      const s = state.segments[i];
+      if (s.start === snap.playheadSegStart && s.end === snap.playheadSegEnd) {
+        state.playbackOffset = Math.max(0, Math.min((acc + snap.playheadOffsetInSeg) / sr, state.recordedBuffer.duration));
+        break;
+      }
+      acc += s.end - s.start;
+    }
+  }
+
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
+  hideSegmentTrash();
+  clearSegmentHover();
+  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  updateSegmentCountDisplay();
+  showToast(`Moved segment ${src + 1} to position ${target + 1}`);
+}
+
+export function cancelSegmentReorderDrag() {
+  const pending = state.pendingSegmentDrag;
+  state.pendingSegmentDrag = null;
+  if (!pending) return;
+  if (pending.index === state.selectedSegmentIndex) hideSegmentTrash();
+  else showSegmentTrash(pending.index);
 }
 
 export function seekFromClientX(clientX) {
