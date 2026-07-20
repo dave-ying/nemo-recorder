@@ -13,10 +13,15 @@ export const showToast = (message, isError = false) => {
 };
 
 export const updateHeaderState = () => {
-  const connected = !!state.micCapabilities;
-  el.connectButton.hidden = connected;
-  el.headerMicInfo.hidden = !connected;
-  el.recordButton.hidden = !connected;
+  if (state.micCapabilities) {
+    el.connectButton.textContent = state.micLabel || 'Connected';
+    el.connectButton.style.opacity = '0.6';
+    el.connectButton.disabled = true;
+  } else {
+    el.connectButton.textContent = 'Connect';
+    el.connectButton.style.opacity = '';
+    el.connectButton.disabled = false;
+  }
 };
 
 export const resetReadouts = () => {
@@ -47,10 +52,7 @@ export const setTransportDisabled = (disabled) => {
   el.transportRecordButton.disabled = disabled;
 };
 
-export const setRecordingUI = (active) => {
-  el.liveMeterBar.hidden = !active;
-  el.liveCanvas.hidden = !active;
-  el.stopButton.hidden = !active;
+export const setEditorRecordingMode = (active) => {
   el.playButton.hidden = active;
   el.timelineRulerCanvas.hidden = active;
   el.playheadCaretTop.style.display = active ? 'none' : '';
@@ -69,8 +71,10 @@ export const setRecordingUI = (active) => {
 export const updateEmptyState = () => {
   const empty = !state.recordedBuffer && !state.isRecording;
   el.emptyState.hidden = !empty;
+  el.connectButton.hidden = empty;
+  el.recordButton.hidden = empty;
   el.downloadButton.hidden = !state.recordedBuffer;
-  el.playheadCaretTop.style.display = empty ? 'none' : '';
+  el.playheadCaretTop.hidden = empty;
 };
 
 export const renderQualityOptions = () => {

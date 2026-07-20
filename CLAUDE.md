@@ -36,7 +36,7 @@ All modules communicate through one shared mutable `state` object (`js/state.js`
 - **`scrub.js`** — held-arrow-key scrubbing with acceleration (ramps from `SCRUB_MIN_SPEED` to `SCRUB_MAX_SPEED` the longer a key is held).
 - **`export.js`** — export modal UI + lazily-created Web Workers for encoding (one worker per format, created on first use). Talks to `worker-code.js` for the actual worker source.
 - **`worker-code.js`** — WAV and MP3 encoder source, kept as **template-literal strings** (not real worker files) so they can be spun up from Blob URLs and also imported directly into Node tests via `vm.runInContext`. This file is intentionally DOM-free — don't add browser-only APIs to the worker source strings.
-- **`ui.js`** — small generic DOM helpers: toasts, header state management (`updateHeaderState`), recording UI mode (`setRecordingUI`), empty-state display (`updateEmptyState`), transport button enable/disable, quality-option rendering.
+- **`ui.js`** — small generic DOM helpers: toasts, header state management (`updateHeaderState`), recording UI mode (`setEditorRecordingMode`), empty-state display (`updateEmptyState`), transport button enable/disable, quality-option rendering.
 - **`utils.js`** — pure formatting helpers (`formatTime`, `formatSize`).
 
 ### Vendored dependencies
@@ -50,7 +50,7 @@ The app has a single view (the editor). Three modes are driven by state, not DOM
 - **Recording** — `state.isRecording` is true. Live meter bar replaces the timeline ruler, live canvas overlays the waveform, stop button replaces the play button.
 - **Editing** — `state.recordedBuffer` is set. Full waveform rendering, segment editing (split/delete/drag/trash/scissors), playback transport.
 
-Mode transitions are handled by `setRecordingUI()` and `updateEmptyState()` in `ui.js`, not by toggling view containers. `state.originalBuffer` holds the untouched capture; `state.segments` (array of `{start, end}` sample ranges into `originalBuffer`) plus `rebuildPlaybackBuffer()` in `editing.js` produce `state.recordedBuffer`, which is what's actually played back and exported.
+Mode transitions are handled by `setEditorRecordingMode()` and `updateEmptyState()` in `ui.js`, not by toggling view containers. `state.originalBuffer` holds the untouched capture; `state.segments` (array of `{start, end}` sample ranges into `originalBuffer`) plus `rebuildPlaybackBuffer()` in `editing.js` produce `state.recordedBuffer`, which is what's actually played back and exported.
 
 ### Segment card rendering
 
