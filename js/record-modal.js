@@ -4,10 +4,12 @@ import { formatTime } from './utils.js';
 import { updateEmptyState, setTransportDisabled } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, cancelRecordingCapture } from './audio.js';
 import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
-import { computePeaksForRange } from './waveform-math.js';
+import { computePeaksForRange, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
 
 let reviewRafId = null;
 let previewSeeking = false;
+let previewStarting = false;
+let previewGen = 0;
 let cachedReviewPeaks = null;
 let cachedReviewWidth = 0;
 
@@ -147,22 +149,38 @@ export function handleModalRetake() {
 // ===== Preview playback =====
 
 export function togglePreview() {
-  if (state.isPreviewing) pausePreview();
-  else playPreview();
+  if (state.isPreviewing) {
+    pausePreview();
+  } else if (previewStarting) {
+    previewStarting = false;
+  } else {
+    playPreview();
+  }
 }
 
 async function playPreview() {
   if (!state.pendingTakeBuffer || !state.audioContext) return;
-  if (state.audioContext.state === 'suspended') await state.audioContext.resume();
+  if (state.isPreviewing || previewStarting) return;
+  previewStarting = true;
+
+  if (state.audioContext.state === 'suspended') {
+    try { await state.audioContext.resume(); }
+    catch (e) { previewStarting = false; return; }
+  }
+  if (!previewStarting) return;
+
   if (state.previewOffset >= state.pendingTakeBuffer.duration - 0.01) {
     state.previewOffset = 0;
   }
+
+  previewGen++;
+  const currentGen = previewGen;
 
   state.previewSource = state.audioContext.createBufferSource();
   state.previewSource.buffer = state.pendingTakeBuffer;
   state.previewSource.connect(state.audioContext.destination);
   state.previewSource.onended = () => {
-    if (state.isPreviewing) {
+    if (state.isPreviewing && previewGen === currentGen) {
       state.isPreviewing = false;
       state.previewOffset = 0;
       el.rmPlayBtn.classList.remove('playing');
@@ -175,6 +193,7 @@ async function playPreview() {
   state.previewStartTime = state.audioContext.currentTime;
   state.previewSource.start(0, state.previewOffset);
   state.isPreviewing = true;
+  previewStarting = false;
   el.rmPlayBtn.classList.add('playing');
   animateReview();
 }
@@ -183,10 +202,11 @@ function pausePreview() {
   if (!state.isPreviewing) return;
   const elapsed = state.audioContext.currentTime - state.previewStartTime + state.previewOffset;
   state.previewOffset = Math.min(elapsed, state.pendingTakeBuffer.duration);
+  state.isPreviewing = false;
+  previewGen++;
   try { state.previewSource.stop(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
   try { state.previewSource.disconnect(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
   state.previewSource = null;
-  state.isPreviewing = false;
   el.rmPlayBtn.classList.remove('playing');
   if (reviewRafId) cancelAnimationFrame(reviewRafId);
   renderReviewWaveform();
@@ -194,6 +214,7 @@ function pausePreview() {
 
 function stopPreview() {
   if (state.isPreviewing) pausePreview();
+  previewStarting = false;
   state.previewOffset = 0;
   state.previewStartTime = 0;
   if (reviewRafId) cancelAnimationFrame(reviewRafId);
@@ -203,8 +224,11 @@ function stopPreview() {
 function animateReview() {
   if (!state.isPreviewing || !state.pendingTakeBuffer) return;
 
-  const elapsed = state.audioContext.currentTime - state.previewStartTime + state.previewOffset;
-  if (elapsed >= state.pendingTakeBuffer.duration) {
+  const delta = state.audioContext.currentTime - state.previewStartTime;
+  state.previewOffset += delta;
+  state.previewStartTime = state.audioContext.currentTime;
+
+  if (state.previewOffset >= state.pendingTakeBuffer.duration) {
     state.isPreviewing = false;
     state.previewOffset = 0;
     el.rmPlayBtn.classList.remove('playing');
@@ -213,8 +237,7 @@ function animateReview() {
     return;
   }
 
-  state.previewOffset = elapsed;
-  el.rmReviewCurrent.textContent = formatTime(elapsed);
+  el.rmReviewCurrent.textContent = formatTime(state.previewOffset);
   renderReviewWaveform();
   reviewRafId = requestAnimationFrame(animateReview);
 }
@@ -273,14 +296,44 @@ function renderReviewWaveform() {
     cachedReviewPeaks = null;
   }
 
-  const peaks = computeReviewPeaks(W);
-  const midY = H / 2;
+  const RULER_H = 22 * dpr;
+  const waveH = H - RULER_H;
+  const midY = RULER_H + waveH / 2;
   const scale = 0.88;
   const duration = state.pendingTakeBuffer ? state.pendingTakeBuffer.duration : 0;
   const ratio = duration > 0 ? state.previewOffset / duration : 0;
-  const playheadX = Math.round(ratio * W);
 
   reviewCtx.clearRect(0, 0, W, H);
+
+  if (duration > 0) {
+    const intervalSec = pickRulerIntervalSec(duration, rect.width);
+    const minorInterval = intervalSec / 5;
+    const EPS = intervalSec * 1e-6;
+    const majorTickH = 9 * dpr;
+    const minorTickH = 5 * dpr;
+    const labelGap = 4 * dpr;
+    const lineW = Math.max(1, Math.round(dpr));
+
+    reviewCtx.fillStyle = 'rgba(110, 110, 122, 0.35)';
+    for (let t = 0; t <= duration + EPS; t += minorInterval) {
+      const x = (t / duration) * W;
+      reviewCtx.fillRect(x - lineW / 2, RULER_H - minorTickH, lineW, minorTickH);
+    }
+
+    reviewCtx.fillStyle = 'rgba(155, 155, 165, 0.55)';
+    reviewCtx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
+    for (let t = 0; t <= duration + EPS; t += intervalSec) {
+      const x = (t / duration) * W;
+      reviewCtx.fillRect(x - lineW / 2, RULER_H - majorTickH, lineW, majorTickH);
+      const label = formatRulerLabel(t, intervalSec);
+      const tw = reviewCtx.measureText(label).width;
+      const labelX = Math.max(2 * dpr, Math.min(W - tw - 2 * dpr, x - tw / 2));
+      reviewCtx.fillText(label, labelX, RULER_H - majorTickH - labelGap);
+    }
+  }
+
+  const peaks = computeReviewPeaks(W);
+  const playheadX = Math.round(ratio * W);
 
   for (let x = 0; x < W; x++) {
     const min = peaks[x * 2];
