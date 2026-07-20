@@ -73,7 +73,7 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {Float32Array[][]} recordedChunks
  * @property {AudioBuffer|null} originalBuffer
  * @property {AudioBuffer|null} recordedBuffer
- * @property {Array<{start: number, end: number}>} segments
+ * @property {Array<{start: number, end: number, origin: string}>} segments
  * @property {AudioBufferSourceNode|null} playbackSource
  * @property {number} playbackStartTime
  * @property {number} playbackOffset

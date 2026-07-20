@@ -49,7 +49,7 @@ export function jumpToSegmentEnd() {
 export function loadBufferAsRecording(buffer, toastMessage) {
   state.originalBuffer = buffer;
   state.recordedBuffer = buffer;
-  state.segments = [{ start: 0, end: buffer.length }];
+  state.segments = [{ start: 0, end: buffer.length, origin: 'capture' }];
   resetHistory();
 
   el.timeCurrent.textContent = '00:00.000';
@@ -117,8 +117,8 @@ export function splitAtPlayhead() {
   const splitPoint = seg.start + offsetInSeg;
   pushHistory();
   state.segments.splice(index, 1,
-    { start: seg.start, end: splitPoint },
-    { start: splitPoint, end: seg.end }
+    { start: seg.start, end: splitPoint, origin: 'split' },
+    { start: splitPoint, end: seg.end, origin: 'split' }
   );
 
   // Shift playhead to the start of the right card so the split gap stays visible
@@ -160,7 +160,7 @@ export function deleteSegmentByIndex(index) {
     newPlayheadSample = deletedSegStart;
   }
 
-  const oldSegments = state.segments.map(s => ({ start: s.start, end: s.end }));
+  const oldSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
   const oldTotalSamples = state.recordedBuffer.length;
   const oldPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
   // Lift the doomed card's rendered pixels (in delete-red) off the canvas
@@ -207,7 +207,7 @@ export function deleteSegmentAtPlayhead() {
 }
 
 function applyHistorySnapshot(snapshot, render) {
-  state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end }));
+  state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
   rebuildPlaybackBuffer();
 
   hideSegmentTrash();
@@ -259,7 +259,7 @@ function pickHistoryRenderer(beforeSegments, beforeTotalSamples, beforeRatio, ta
 
 function captureBeforeState() {
   return {
-    segments: state.segments.map(s => ({ start: s.start, end: s.end })),
+    segments: state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin })),
     totalSamples: state.recordedBuffer ? state.recordedBuffer.length : 0,
     ratio: state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0
   };
@@ -319,7 +319,7 @@ export async function appendBufferToRecording(buffer, toastMessage) {
   }
   pushHistory();
   state.originalBuffer = combined;
-  state.segments.push({ start: oldLen, end: oldLen + newLen });
+  state.segments.push({ start: oldLen, end: oldLen + newLen, origin: 'append' });
   rebuildPlaybackBuffer();
   if (state.recordedBuffer) {
     el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);

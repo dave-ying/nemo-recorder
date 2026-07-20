@@ -3,14 +3,14 @@ import { el } from './dom.js';
 
 const MAX_HISTORY = 50;
 
-/** @typedef {{segments: Array<{start: number, end: number}>, playbackOffset: number}} HistorySnapshot */
+/** @typedef {{segments: Array<{start: number, end: number, origin: string}>, playbackOffset: number}} HistorySnapshot */
 
 /** @type {HistorySnapshot[]} */
 let undoStack = [];
 /** @type {HistorySnapshot[]} */
 let redoStack = [];
 
-const cloneSegments = (segments) => segments.map(s => ({ start: s.start, end: s.end }));
+const cloneSegments = (segments) => segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
 
 const snapshotCurrent = () => ({ segments: cloneSegments(state.segments), playbackOffset: state.playbackOffset });
 
