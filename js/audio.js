@@ -379,6 +379,7 @@ export function stopRecording() {
   if (!state.isRecording) return;
   state.isRecording = false;
   if (liveRafId) cancelAnimationFrame(liveRafId);
+  liveCtx.clearRect(0, 0, el.liveCanvas.width, el.liveCanvas.height);
   if (state.liveResizeHandler) window.removeEventListener('resize', state.liveResizeHandler);
   stopRecordingNodes();
   // Release the capture stream and park the audio thread: a live mic track or a

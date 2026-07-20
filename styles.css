@@ -5,6 +5,7 @@
   --teal: #4dd8c8; --teal-2: #6ee8d8; --teal-glow: rgba(77, 216, 200, 0.4);
   --rec: #ff3a5c; --rec-glow: rgba(255, 58, 92, 0.45);
 }
+[hidden] { display: none !important; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
 body {
