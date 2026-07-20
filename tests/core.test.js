@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { formatTime, formatSize } from '../js/utils.js';
+import { formatTime, formatSize, unsupportedFormatError } from '../js/utils.js';
 import { wavWorkerCode, mp3WorkerCode } from '../js/worker-code.js';
 
 // ===== utils =====
@@ -23,6 +23,23 @@ test('formatSize picks sensible units', () => {
   assert.equal(formatSize(512), '512 B');
   assert.equal(formatSize(2048), '2.0 KB');
   assert.equal(formatSize(5 * 1048576), '5.00 MB');
+});
+
+test('unsupportedFormatError flags known-undecodable extensions', () => {
+  assert.match(unsupportedFormatError('song.wma'), /^WMA files can't be decoded/i);
+  assert.match(unsupportedFormatError('rec.amr'), /^AMR files can't be decoded/i);
+  assert.match(unsupportedFormatError('podcast.mid'), /^MID files can't be decoded/i);
+});
+
+test('unsupportedFormatError ignores case', () => {
+  assert.match(unsupportedFormatError('clip.WMA'), /^WMA files can't be decoded/i);
+  assert.match(unsupportedFormatError('clip.Mid'), /^MID files can't be decoded/i);
+});
+
+test('unsupportedFormatError shows generic message for unknown extensions', () => {
+  const msg = unsupportedFormatError('recording.mp3');
+  assert.match(msg, /"recording\.mp3"/);
+  assert.match(msg, /couldn't be decoded/i);
 });
 
 // ===== WAV worker =====

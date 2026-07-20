@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { el } from './dom.js';
 import { showToast } from './ui.js';
 import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
+import { unsupportedFormatError } from './utils.js';
 
 async function decodeUploadedAudio(file) {
   if (!state.audioContext || state.audioContext.state === 'closed') {
@@ -19,7 +20,7 @@ export async function loadUploadedFile(file) {
     const buffer = await decodeUploadedAudio(file);
     loadBufferAsRecording(buffer, `Loaded "${file.name}" — lossless PCM ready`);
   } catch (err) {
-    showToast('Could not read that file — unsupported or corrupt audio', true);
+    showToast(unsupportedFormatError(file.name), true);
     console.warn('[nemo-recorder]', err.message);
   } finally {
     el.emptyStateUploadButton.disabled = false;
@@ -32,7 +33,7 @@ export async function appendUploadedFile(file) {
     const buffer = await decodeUploadedAudio(file);
     await appendBufferToRecording(buffer, `Appended "${file.name}"`);
   } catch (err) {
-    showToast('Could not read that file — unsupported or corrupt audio', true);
+    showToast(unsupportedFormatError(file.name), true);
     console.warn('[nemo-recorder]', err.message);
   }
 }

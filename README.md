@@ -11,6 +11,7 @@ Unlike most browser recorders that use `MediaRecorder` (which forces lossy Opus/
 - **Interactive playback** — seek, split, delete, and reorder segments on the waveform
 - **Export WAV** — lossless PCM at your chosen quality settings
 - **Export MP3** — compressed, powered by lamejs (client-side only)
+- **Import audio files** — MP3, WAV, M4A/AAC, FLAC (all browsers); OGG/Opus/WebM (Chrome, Firefox, Edge); AIFF/CAF (Safari); audio tracks extracted from MP4/MOV/WebM video
 - **Zero tracking** — all processing is local, no uploads, no analytics
 
 ## Usage
