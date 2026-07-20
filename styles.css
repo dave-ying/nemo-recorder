@@ -83,12 +83,23 @@ body::after {
 .empty-state-actions { display: flex; gap: 8px; }
 .empty-state-actions .btn { pointer-events: auto; }
 
-.playback-view { gap: 16px; justify-content: space-between; position: relative; overflow: visible; }
-/* Side margins horizontally center the waveform within the view; the right
-   margin doubles as a reserved strip for the append ("+") button so it sits
-   past the end of the waveform instead of overlapping the last segment.
+.playback-view { gap: 0; justify-content: flex-start; overflow: visible; }
+
+.editor-section {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 62px;
+  overflow: visible;
+}
+
+/* The 62px side margins on .editor-section horizontally center the waveform +
+   transport block within the stage. The right margin doubles as reserved space
+   for the append ("+") button so it sits past the waveform edge.
    62px = 30px button + 2×16px gap (APPEND_BUTTON_SIZE_CSS_PX / APPEND_BUTTON_PAD_CSS_PX in state.js). */
-.waveform-container { position: relative; flex: 1 1 0; min-height: 60px; cursor: default; margin: 42px 62px; }
+.waveform-container { position: relative; flex: 1 1 0; min-height: 60px; cursor: default; margin: 42px 0 56px; }
 .waveform-container::before { content: 'WAVEFORM'; position: absolute; top: 8px; left: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--fg-dim); letter-spacing: 0.25em; z-index: 2; pointer-events: none; }
 .waveform-segment-count { position: absolute; top: 8px; right: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--accent); letter-spacing: 0.15em; z-index: 2; pointer-events: none; padding: 2px 8px; background: rgba(255, 140, 66, 0.08); border: 1px solid rgba(255, 140, 66, 0.2); border-radius: 4px; }
 .waveform-segment-count.hidden { display: none; }

@@ -49,7 +49,7 @@ function updatePlayheadScissorsPosition(ratio) {
   }
 
   const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.playbackView.getBoundingClientRect();
+  const viewRect = el.editorSection.getBoundingClientRect();
   const halfBtn = (el.playheadScissors.offsetHeight || SCISSORS_FALLBACK_HEIGHT) / 2;
 
   const gapPx = SEGMENT_GAP_CSS_PX;
@@ -77,7 +77,7 @@ function positionPlayheadCarets(ratio) {
   }
 
   const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.playbackView.getBoundingClientRect();
+  const viewRect = el.editorSection.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const W = Math.floor(canvasRect.width * dpr);
   const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
@@ -174,7 +174,7 @@ function positionSegmentTrash() {
   if (state.selectedSegmentIndex < 0 || !state.recordedBuffer) return;
   if (state.selectedSegmentIndex >= state.segments.length) { hideSegmentTrash(); return; }
   const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.playbackView.getBoundingClientRect();
+  const viewRect = el.editorSection.getBoundingClientRect();
   const gapPx = SEGMENT_GAP_CSS_PX;
   const segBounds = _computeSegmentBounds(canvasRect.width, state.recordedBuffer.length, gapPx);
   const sb = segBounds[state.selectedSegmentIndex];
@@ -254,7 +254,7 @@ function ensureDivisionHandles() {
 
   while (bottomHandles.length < desiredSegIndices.length) {
     const bottomH = createHandleElement();
-    el.playbackView.appendChild(bottomH);
+    el.editorSection.appendChild(bottomH);
     bottomHandles.push(bottomH);
   }
 
@@ -273,7 +273,7 @@ function positionDivisionHandles() {
   }
 
   const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.playbackView.getBoundingClientRect();
+  const viewRect = el.editorSection.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const W = Math.floor(canvasRect.width * dpr);
   const bottomPx = (canvasRect.bottom - viewRect.top) - HANDLE_OVERLAP;
@@ -302,7 +302,7 @@ function positionAppendButton() {
     el.appendMenu.hidden = true;
     return;
   }
-  const viewRect = el.playbackView.getBoundingClientRect();
+  const viewRect = el.editorSection.getBoundingClientRect();
   const canvasRect = el.waveformCanvas.getBoundingClientRect();
   const stageRect = el.stage.getBoundingClientRect();
   // Center the button in the visible empty space between the waveform's right

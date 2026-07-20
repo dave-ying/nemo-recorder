@@ -48,7 +48,7 @@ el.appendButton.addEventListener('click', (e) => {
   }
   el.appendMenu.hidden = false;
   const btnRect = el.appendButton.getBoundingClientRect();
-  const viewRect = el.playbackView.getBoundingClientRect();
+  const viewRect = el.editorSection.getBoundingClientRect();
   el.appendMenu.style.right = (viewRect.right - btnRect.right) + 'px';
   el.appendMenu.style.top = (btnRect.bottom - viewRect.top + 4) + 'px';
 });
