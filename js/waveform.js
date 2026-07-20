@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, TRASH_HALF_WIDTH_CSS_PX, TRASH_ABOVE_CARD_CSS_PX, APPEND_BUTTON_SIZE_CSS_PX, APPEND_BUTTON_PAD_CSS_PX } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, TRASH_HALF_WIDTH_CSS_PX, TRASH_ABOVE_CARD_CSS_PX, APPEND_BUTTON_SIZE_CSS_PX } from './state.js';
 import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure } from './waveform-math.js';
@@ -206,28 +206,28 @@ function createHandleElement() {
   h.addEventListener('mousedown', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const index = parseInt(h.dataset.index);
+    const segIndex = parseInt(h.dataset.segIndex);
     if (state.isPlaying) pausePlayback();
     const totalSamples = state.recordedBuffer.length;
     let accBeforeSegI = 0;
-    for (let j = 0; j < index; j++) {
+    for (let j = 0; j < segIndex; j++) {
       accBeforeSegI += state.segments[j].end - state.segments[j].start;
     }
-    const segILen = state.segments[index].end - state.segments[index].start;
-    const segIP1Len = state.segments[index + 1].end - state.segments[index + 1].start;
+    const segILen = state.segments[segIndex].end - state.segments[segIndex].start;
+    const segIP1Len = state.segments[segIndex + 1].end - state.segments[segIndex + 1].start;
     pushHistory();
-    state.draggingHandleIndex = index;
+    state.draggingHandleIndex = segIndex;
     state._dragSnapshot = {
-      handleIndex: index,
+      handleIndex: segIndex,
       totalSamples,
       startClientX: e.clientX,
       accBeforeSegI,
-      segIStart: state.segments[index].start,
-      segIP1End: state.segments[index + 1].end,
+      segIStart: state.segments[segIndex].start,
+      segIP1End: state.segments[segIndex + 1].end,
       minAcc: accBeforeSegI + MIN_SEGMENT_SAMPLES,
       maxAcc: accBeforeSegI + segILen + segIP1Len - MIN_SEGMENT_SAMPLES
     };
-    addDraggingClass(index);
+    addDraggingClass(segIndex);
     hideSegmentTrash();
     el.playheadScissors.classList.remove('visible');
   });
@@ -240,21 +240,26 @@ function createHandleElement() {
 }
 
 function ensureDivisionHandles() {
-  const needed = Math.max(0, state.segments.length - 1);
+  const segs = state.segments;
+  const desiredSegIndices = [];
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (segs[i].origin === 'split' && segs[i + 1].origin === 'split') {
+      desiredSegIndices.push(i);
+    }
+  }
 
-  while (bottomHandles.length > needed) {
+  while (bottomHandles.length > desiredSegIndices.length) {
     bottomHandles.pop().remove();
   }
 
-  while (bottomHandles.length < needed) {
+  while (bottomHandles.length < desiredSegIndices.length) {
     const bottomH = createHandleElement();
-    bottomH.dataset.index = String(bottomHandles.length);
     el.playbackView.appendChild(bottomH);
     bottomHandles.push(bottomH);
   }
 
   for (let i = 0; i < bottomHandles.length; i++) {
-    bottomHandles[i].dataset.index = String(i);
+    bottomHandles[i].dataset.segIndex = String(desiredSegIndices[i]);
   }
 }
 
@@ -273,18 +278,21 @@ function positionDivisionHandles() {
   const W = Math.floor(canvasRect.width * dpr);
   const bottomPx = (canvasRect.bottom - viewRect.top) - HANDLE_OVERLAP;
   const totalSamples = state.recordedBuffer.length;
-  let acc = 0;
 
-  for (let i = 0; i < bottomHandles.length; i++) {
-    acc += state.segments[i].end - state.segments[i].start;
+  for (const h of bottomHandles) {
+    const segIndex = parseInt(h.dataset.segIndex);
+    let acc = 0;
+    for (let j = 0; j <= segIndex; j++) {
+      acc += state.segments[j].end - state.segments[j].start;
+    }
     const ratio = acc / totalSamples;
     const lineXCssPx = Math.floor(ratio * W) / dpr;
     let leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
     leftPx = Math.max(HANDLE_HALF_W, Math.min(viewRect.width - HANDLE_HALF_W, leftPx));
 
-    bottomHandles[i].style.display = '';
-    bottomHandles[i].style.left = leftPx + 'px';
-    bottomHandles[i].style.top = bottomPx + 'px';
+    h.style.display = '';
+    h.style.left = leftPx + 'px';
+    h.style.top = bottomPx + 'px';
   }
 }
 
@@ -296,23 +304,30 @@ function positionAppendButton() {
   }
   const viewRect = el.playbackView.getBoundingClientRect();
   const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  let leftPx = viewRect.width - APPEND_BUTTON_SIZE_CSS_PX - APPEND_BUTTON_PAD_CSS_PX;
+  const stageRect = el.stage.getBoundingClientRect();
+  // Center the button in the visible empty space between the waveform's right
+  // edge and the master container's (stage's) right edge. That space spans the
+  // waveform container's right margin plus the stage's right padding, so it is
+  // wider than just the margin — measuring against the stage is what makes the
+  // button sit visually centered rather than shifted toward the waveform.
+  const gapLeftPx = canvasRect.right - viewRect.left;
+  const gapRightPx = stageRect.right - viewRect.left;
+  const gapWidthPx = gapRightPx - gapLeftPx;
+  let leftPx = gapLeftPx + Math.max(0, (gapWidthPx - APPEND_BUTTON_SIZE_CSS_PX) / 2);
   const midY = (canvasRect.top - viewRect.top) + canvasRect.height / 2;
   el.appendButton.style.left = leftPx + 'px';
   el.appendButton.style.top = (midY - APPEND_BUTTON_SIZE_CSS_PX / 2) + 'px';
   el.appendButton.classList.add('visible');
 }
 
-function addDraggingClass(index) {
-  if (index >= 0 && index < bottomHandles.length) {
-    bottomHandles[index].classList.add('dragging');
-  }
+function addDraggingClass(segIndex) {
+  const h = bottomHandles.find(el => parseInt(el.dataset.segIndex) === segIndex);
+  if (h) h.classList.add('dragging');
 }
 
-export function removeDraggingClass(index) {
-  if (index >= 0 && index < bottomHandles.length) {
-    bottomHandles[index].classList.remove('dragging');
-  }
+export function removeDraggingClass(segIndex) {
+  const h = bottomHandles.find(el => parseInt(el.dataset.segIndex) === segIndex);
+  if (h) h.classList.remove('dragging');
 }
 
 // ===== Playback waveform rendering =====

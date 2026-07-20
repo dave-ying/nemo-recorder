@@ -20,6 +20,7 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} playheadCaretTop
  * @property {HTMLSpanElement} playheadLine
  * @property {HTMLButtonElement} segmentTrash
+ * @property {HTMLElement} stage
  * @property {HTMLDivElement} playbackView
  * @property {HTMLCanvasElement} liveCanvas
  * @property {HTMLCanvasElement} waveformCanvas
@@ -90,6 +91,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   transportUploadButton: $('transportUploadButton'), transportRecordButton: $('transportRecordButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'), segmentTrash: $('segmentTrash'),
+  stage: $('stage'),
   playbackView: $('playbackView'),
   liveCanvas: $('liveCanvas'), waveformCanvas: $('waveformCanvas'), timelineRulerCanvas: $('timelineRulerCanvas'),
   waveformContainer: $('waveformContainer'), segmentCountEl: $('segmentCount'),
