@@ -169,6 +169,9 @@ document.addEventListener('keydown', (e) => {
   // While the record modal is open it owns the keyboard: editor shortcuts
   // (Space, S, arrows, Delete, undo) must not fire behind the overlay.
   if (el.recordModal.classList.contains('visible')) {
+    // While the confirm dialog is open over the record modal, it owns the
+    // keyboard (Escape/Enter handled by confirmDialog's own listener).
+    if (el.confirmModal.classList.contains('visible')) return;
     if (e.code === 'Space' && noMod) {
       e.preventDefault();
       if (state.isRecording) handleModalStop();

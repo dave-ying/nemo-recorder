@@ -12,6 +12,46 @@ export const showToast = (message, isError = false) => {
   toastTimer = setTimeout(() => el.toast.classList.remove('show'), TOAST_DURATION_MS);
 };
 
+export function confirmDialog({
+  title = 'Confirm',
+  message = '',
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  danger = false,
+} = {}) {
+  return new Promise((resolve) => {
+    el.confirmTitle.textContent = title;
+    el.confirmMessage.textContent = message;
+    el.confirmOk.textContent = confirmLabel;
+    el.confirmCancel.textContent = cancelLabel;
+    el.confirmOk.classList.toggle('btn-danger', danger);
+    el.confirmOk.classList.toggle('btn-primary', !danger);
+    el.confirmModal.classList.add('visible');
+
+    let settled = false;
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      el.confirmModal.classList.remove('visible');
+      el.confirmOk.removeEventListener('click', onOk);
+      el.confirmCancel.removeEventListener('click', onCancel);
+      el.confirmModal.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+    };
+    const onOk = () => { cleanup(); resolve(true); };
+    const onCancel = () => { cleanup(); resolve(false); };
+    const onBackdrop = (e) => { if (e.target === el.confirmModal) onCancel(); };
+    const onKey = (e) => {
+      if (e.code === 'Escape') { e.preventDefault(); onCancel(); }
+    };
+
+    el.confirmOk.addEventListener('click', onOk);
+    el.confirmCancel.addEventListener('click', onCancel);
+    el.confirmModal.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
 export const resetReadouts = () => {
   el.bitrateReadout.textContent = '— kbps';
 };

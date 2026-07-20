@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { el, reviewCtx } from './dom.js';
 import { formatTime } from './utils.js';
-import { updateEmptyState, setTransportDisabled } from './ui.js';
+import { updateEmptyState, setTransportDisabled, confirmDialog } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, cancelRecordingCapture } from './audio.js';
 import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
 import { computePeaksForRange, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
@@ -12,6 +12,7 @@ let previewStarting = false;
 let previewGen = 0;
 let cachedReviewPeaks = null;
 let cachedReviewWidth = 0;
+let closeConfirmOpen = false;
 
 // ===== Modal open / close =====
 
@@ -23,8 +24,21 @@ export function openRecordModal(context) {
   else showDisconnectedState();
 }
 
-export function closeRecordModal() {
+export async function closeRecordModal() {
   if (!el.recordModal.classList.contains('visible')) return;
+  if (state.pendingTakeBuffer) {
+    if (closeConfirmOpen) return;
+    closeConfirmOpen = true;
+    const confirmed = await confirmDialog({
+      title: 'Discard recording?',
+      message: 'You have an unsaved recording. Closing the modal will discard it.',
+      confirmLabel: 'Discard',
+      cancelLabel: 'Cancel',
+      danger: true,
+    });
+    closeConfirmOpen = false;
+    if (!confirmed) return;
+  }
   if (state.isRecording) cancelRecordingCapture();
   stopPreview();
   state.pendingTakeBuffer = null;

@@ -74,6 +74,11 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLDivElement} rmActionsRight
  * @property {HTMLButtonElement} rmRetakeBtn
  * @property {HTMLButtonElement} rmAddBtn
+ * @property {HTMLDivElement} confirmModal
+ * @property {HTMLSpanElement} confirmTitle
+ * @property {HTMLDivElement} confirmMessage
+ * @property {HTMLButtonElement} confirmCancel
+ * @property {HTMLButtonElement} confirmOk
  */
 
 // Element IDs are static in index.html, so a single cast here gives every
@@ -112,7 +117,9 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   rmReviewCurrent: $('rmReviewCurrent'), rmReviewTotal: $('rmReviewTotal'),
   rmRecordBtn: $('rmRecordBtn'), rmStopBtn: $('rmStopBtn'), rmPlayBtn: $('rmPlayBtn'),
   rmActionsRight: $('rmActionsRight'),
-  rmRetakeBtn: $('rmRetakeBtn'), rmAddBtn: $('rmAddBtn')
+  rmRetakeBtn: $('rmRetakeBtn'), rmAddBtn: $('rmAddBtn'),
+  confirmModal: $('confirmModal'), confirmTitle: $('confirmTitle'), confirmMessage: $('confirmMessage'),
+  confirmCancel: $('confirmCancel'), confirmOk: $('confirmOk')
 }));
 
 export const liveCtx = /** @type {CanvasRenderingContext2D} */ (el.liveCanvas.getContext('2d'));
