@@ -36,6 +36,16 @@ export const SELECTION_PULSE_PERIOD_SEC = 2;
 export const DELETE_PULSE_PERIOD_SEC = 0.55;
 export const SEGMENT_DELETE_ANIM_MS = 480;
 
+// Segment reorder drag animation tuning. The live drag uses an exponential
+// approach (segments ease toward their would-be positions every frame); the
+// settle phase (after pointerup) uses a fixed-duration ease-out so the
+// floating card snaps cleanly into its final slot.
+export const SEGMENT_DRAG_LIFT_CSS_PX = 14;
+export const SEGMENT_DRAG_SETTLE_MS = 220;
+export const SEGMENT_DRAG_SHADOW_BLUR_CSS_PX = 20;
+export const SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX = 9;
+export const SEGMENT_DRAG_APPROACH_RATE = 22; // per-second convergence rate for live ease
+
 export const TRASH_HALF_WIDTH_CSS_PX = 15;
 export const TRASH_ABOVE_CARD_CSS_PX = 34;
 export const APPEND_BUTTON_SIZE_CSS_PX = 30;
@@ -61,6 +71,17 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} playheadSegStart - {start} of the segment the playhead was in at drag-begin (for audio-content preservation), or -1
  * @property {number} playheadSegEnd - {end} of the same segment, or -1
  * @property {number} playheadOffsetInSeg - sample offset within that segment
+ * @property {number} playheadSegOriginalIndex - ORIGINAL index of the playhead segment at drag-begin, or -1
+ * @property {number} pointerX - current pointer X over the waveform canvas, in device px (for the floating card)
+ * @property {number} pointerOffsetInCard - device-px offset of the pointer within the dragged card at drag-begin (so the floating card stays pinned to the grab point)
+ * @property {Array<{drawStart: number, drawEnd: number}>} animBounds - per ORIGINAL segment index, current animated card bounds in device px
+ * @property {Array<{drawStart: number, drawEnd: number}>} targetBounds - per ORIGINAL segment index, target card bounds in device px (from the live arrangement)
+ * @property {Array<Path2D>} segPaths - per ORIGINAL segment index, the local waveform Path2D built once at drag-begin (so we can scaleX-render at any animated width)
+ * @property {Array<number>} segPathWidths - per ORIGINAL segment index, the width each path was built for (so scaleX = animWidth / pathWidth)
+ * @property {Array<{start: number, end: number}>} originalSegments - copy of state.segments' {start, end} at drag-begin (so the arrangement can be resolved even after state.segments is reordered at settle start)
+ * @property {number[]} arrangement - current live arrangement as an array of ORIGINAL indices in their would-be order
+ * @property {number} liftPx - current lift offset in device px (eases up during drag start, eases to 0 during settle)
+ * @property {{ startTime: number, fromX: number, fromDrawEnd: number, fromLift: number, toX: number, toDrawEnd: number, toLift: number, duration: number, finalRatio: number } | null} settle - present during the post-release settle animation
  */
 
 /**

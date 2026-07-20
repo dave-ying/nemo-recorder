@@ -1,7 +1,7 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, TRASH_HALF_WIDTH_CSS_PX, TRASH_ABOVE_CARD_CSS_PX, APPEND_BUTTON_SIZE_CSS_PX } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, TRASH_HALF_WIDTH_CSS_PX, TRASH_ABOVE_CARD_CSS_PX, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE } from './state.js';
 import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
-import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure } from './waveform-math.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
 import { pushHistory } from './history.js';
 import { updateEmptyState } from './ui.js';
 import { drawDeleteAnimFrame, prepareCanvasForAnim, buildShatterTiles, buildSlide, drawSlideCard, renderCardSnapshot, captureCanvasRegionForIndex } from './segment-anim.js';
@@ -652,6 +652,10 @@ function drawDropIndicator(ctx, x, H, dpr) {
 }
 
 export function drawPlaybackWaveform(playheadRatio = 0) {
+  // While a segment drag animation is running, it owns the waveform canvas.
+  // External callers (resize, hover, etc.) would clobber the drag frame; bail
+  // and let the drag rAF loop continue rendering.
+  if (dragAnimRaf !== null) return;
   cancelSegmentDeleteAnimation();
   const dpr = window.devicePixelRatio || 1;
   const rect = el.waveformCanvas.getBoundingClientRect();
@@ -725,6 +729,392 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   }
 
   drawTimelineRuler(state.recordedBuffer.duration, segBounds, W, dpr, geomKey);
+}
+
+// ===== Segment reorder drag animation =====
+//
+// While the user drags a segment, a requestAnimationFrame loop owns the
+// waveform canvas and renders:
+//   - non-dragged segments easing toward their would-be positions in the live
+//     arrangement (so the row visually reshuffles as the pointer moves)
+//   - a faint dashed "drop zone" outline where the dragged segment would land
+//   - the dragged segment itself as a floating card that follows the pointer,
+//     lifted up with a deeper shadow
+// On pointerup the loop enters a settle phase: the floating card eases into
+// its final slot, the lift decays to zero, and normal rendering resumes.
+//
+// `drawPlaybackWaveform` bails out while this loop is running (see top of that
+// function), so the drag frame is never clobbered by an external redraw.
+
+let dragAnimRaf = null;
+let dragAnimLastTime = 0;
+
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+/**
+ * Start the drag animation rAF loop if it isn't already running. Safe to call
+ * every pointermove — the loop reads the current `state._segmentDragSnapshot`
+ * each frame, so updates to dropInsertIndex / pointerX are picked up naturally.
+ */
+export function ensureDragAnimRunning() {
+  if (dragAnimRaf !== null) return;
+  dragAnimLastTime = performance.now();
+  const tick = (now) => {
+    if (!state._segmentDragSnapshot) {
+      dragAnimRaf = null;
+      return;
+    }
+    const dt = Math.max(0, (now - dragAnimLastTime) / 1000);
+    dragAnimLastTime = now;
+    stepDragAnim(dt, now);
+    drawDragFrame();
+    const snap = state._segmentDragSnapshot;
+    if (snap && snap.settle && (now - snap.settle.startTime) >= snap.settle.duration) {
+      const finalRatio = snap.settle.finalRatio;
+      state._segmentDragSnapshot = null;
+      state.draggingSegmentIndex = -1;
+      state.hoverSegmentIndex = -1;
+      el.waveformContainer.style.cursor = 'default';
+      dragAnimRaf = null;
+      // Restore normal rendering. cachedPeaks/cachedPath were nulled by
+      // rebuildPlaybackBuffer at settle start, so this rebuilds them too.
+      drawPlaybackWaveform(finalRatio);
+      return;
+    }
+    dragAnimRaf = requestAnimationFrame(tick);
+  };
+  dragAnimRaf = requestAnimationFrame(tick);
+}
+
+/**
+ * Advance the drag animation one tick: ease animated bounds toward target
+ * bounds (live drag) or along the settle trajectory (post-release).
+ */
+function stepDragAnim(dt, now) {
+  const snap = state._segmentDragSnapshot;
+  if (!snap) return;
+  const dpr = window.devicePixelRatio || 1;
+  const maxLift = SEGMENT_DRAG_LIFT_CSS_PX * dpr;
+
+  if (snap.settle) {
+    const t = Math.max(0, Math.min(1, (now - snap.settle.startTime) / snap.settle.duration));
+    const eased = easeOutCubic(t);
+    const ab = snap.animBounds[snap.srcIndex];
+    ab.drawStart = snap.settle.fromX + (snap.settle.toX - snap.settle.fromX) * eased;
+    ab.drawEnd = snap.settle.fromDrawEnd + (snap.settle.toDrawEnd - snap.settle.fromDrawEnd) * eased;
+    snap.liftPx = snap.settle.fromLift + (snap.settle.toLift - snap.settle.fromLift) * eased;
+    return;
+  }
+
+  // Live drag: exponential approach toward target bounds + max lift.
+  const alpha = 1 - Math.exp(-SEGMENT_DRAG_APPROACH_RATE * Math.max(dt, 1 / 1000));
+  for (let i = 0; i < snap.animBounds.length; i++) {
+    const ab = snap.animBounds[i];
+    const tb = snap.targetBounds[i];
+    ab.drawStart += (tb.drawStart - ab.drawStart) * alpha;
+    ab.drawEnd += (tb.drawEnd - ab.drawEnd) * alpha;
+  }
+  snap.liftPx += (maxLift - snap.liftPx) * alpha;
+}
+
+/**
+ * Compute the playhead's animated device-px X for the current drag frame.
+ *
+ * The playhead follows its audio content: it stays on the same segment (by
+ * {start, end} identity) at the same offset within that segment, regardless of
+ * where that segment has been dragged to in the live arrangement. If the
+ * playhead's segment is the dragged one during live drag, the playhead sits on
+ * the floating card (which follows the pointer) rather than the slot.
+ */
+function computeDragPlayheadX(snap, floatStart) {
+  const originalIdx = snap.playheadSegOriginalIndex;
+  if (originalIdx < 0) return -1;
+  const segLen = snap.playheadSegEnd - snap.playheadSegStart;
+  const frac = segLen > 0 ? Math.max(0, Math.min(1, snap.playheadOffsetInSeg / segLen)) : 0;
+
+  if (floatStart != null) {
+    // Playhead is on the floating card.
+    const pathWidth = snap.segPathWidths[originalIdx];
+    return floatStart + frac * pathWidth;
+  }
+  const ab = snap.animBounds[originalIdx];
+  if (!ab) return -1;
+  return ab.drawStart + frac * (ab.drawEnd - ab.drawStart);
+}
+
+/**
+ * Position the playhead carets at a specific device-px X on the waveform
+ * canvas, bypassing the normal audio-ratio-based positioning (which would use
+ * state.segments in its current order and conflict with the live arrangement).
+ */
+function positionPlayheadCaretsAtDeviceX(deviceX) {
+  if (deviceX < 0 || !state.recordedBuffer || el.playbackView.hidden) {
+    el.playheadCaretTop.style.display = 'none';
+    return;
+  }
+  const canvasRect = el.waveformCanvas.getBoundingClientRect();
+  const viewRect = el.editorSection.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const lineXCssPx = deviceX / dpr;
+  const leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
+  el.playheadCaretTop.style.display = '';
+  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX;
+  const lineOffsetTop = el.playheadLine.offsetTop;
+  const topPx = (canvasRect.top - viewRect.top) + insetY - lineOffsetTop;
+  el.playheadLine.style.height = Math.max(0, canvasRect.height - 2 * insetY) + 'px';
+  el.playheadCaretTop.style.left = leftPx + 'px';
+  el.playheadCaretTop.style.top = topPx + 'px';
+}
+
+/**
+ * Render a single segment card at the given animated bounds, using a pre-built
+ * local waveform path (built once at drag-begin) scaled to fit the current
+ * width. Optional `lift`, `shadowBlur`, `shadowOffsetY`, `dashed`, and
+ * `strokeColor` let the caller style the floating dragged card differently
+ * from the in-place cards.
+ */
+function drawDragCard(ctx, segPath, pathWidth, drawStart, drawEnd, playheadX, H, dpr, options) {
+  const curWidth = drawEnd - drawStart;
+  if (curWidth <= 0 || !segPath) return;
+  const cardPath = _buildOneCardPath(drawStart, curWidth, H, dpr);
+  if (!cardPath) return;
+
+  const lift = options.lift || 0;
+  const edgeWidth = options.edgeWidth;
+
+  ctx.save();
+  if (lift > 0) ctx.translate(0, -lift);
+
+  // Card background + drop shadow (deeper for the lifted floating card).
+  // The shadow offset is increased by `lift` so the shadow stays near the
+  // "ground" (the card's un-lifted Y) rather than rising with the card —
+  // that's what conveys the lift visually.
+  ctx.save();
+  ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
+  ctx.shadowBlur = options.shadowBlur != null ? options.shadowBlur : SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
+  ctx.shadowOffsetY = (options.shadowOffsetY != null ? options.shadowOffsetY : SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr) + lift;
+  ctx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
+  ctx.fill(cardPath);
+  ctx.restore();
+
+  // Midline + played/unplayed waveform fill, clipped to the card.
+  ctx.save();
+  ctx.clip(cardPath);
+
+  ctx.strokeStyle = WAVEFORM_STYLE.midlineColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(drawStart, H / 2);
+  ctx.lineTo(drawEnd, H / 2);
+  ctx.stroke();
+
+  const scaleX = curWidth / pathWidth;
+  const midX = Math.min(drawEnd, Math.max(drawStart, playheadX));
+  if (midX > drawStart) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(drawStart, 0, midX - drawStart, H);
+    ctx.clip();
+    ctx.translate(drawStart, 0);
+    ctx.scale(scaleX, 1);
+    ctx.fillStyle = WAVEFORM_STYLE.playedColor;
+    ctx.fill(segPath);
+    ctx.restore();
+  }
+  if (midX < drawEnd) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(midX, 0, drawEnd - midX, H);
+    ctx.clip();
+    ctx.translate(drawStart, 0);
+    ctx.scale(scaleX, 1);
+    ctx.fillStyle = WAVEFORM_STYLE.unplayedColor;
+    ctx.fill(segPath);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // Edge stroke: dashed outline for the floating card while actively dragged,
+  // solid accent edge while settling, normal edge for in-place cards.
+  if (options.dashed) {
+    ctx.save();
+    ctx.setLineDash([5 * dpr, 4 * dpr]);
+    ctx.strokeStyle = options.strokeColor || WAVEFORM_STYLE.selectedEdgeColor;
+    ctx.lineWidth = edgeWidth;
+    ctx.stroke(cardPath);
+    ctx.restore();
+  } else if (options.strokeColor) {
+    ctx.save();
+    ctx.strokeStyle = options.strokeColor;
+    ctx.lineWidth = edgeWidth;
+    ctx.shadowColor = WAVEFORM_STYLE.selectedGlowColor;
+    ctx.shadowBlur = 8 * dpr;
+    ctx.stroke(cardPath);
+    ctx.restore();
+  } else {
+    ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
+    ctx.lineWidth = edgeWidth;
+    ctx.stroke(cardPath);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Draw a faint dashed outline of the dragged segment's slot — the "drop zone"
+ * the card will land in. Replaces the old vertical-line drop indicator with a
+ * shape that matches the card's rounded rectangle.
+ */
+function drawDropZoneOutline(ctx, drawStart, drawEnd, H, dpr) {
+  const w = drawEnd - drawStart;
+  if (w <= 0) return;
+  const cardPath = _buildOneCardPath(drawStart, w, H, dpr);
+  if (!cardPath) return;
+  ctx.save();
+  ctx.setLineDash([6 * dpr, 5 * dpr]);
+  ctx.strokeStyle = WAVEFORM_STYLE.selectedEdgeColor;
+  ctx.lineWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
+  ctx.shadowColor = WAVEFORM_STYLE.selectedGlowColor;
+  ctx.shadowBlur = 6 * dpr;
+  ctx.stroke(cardPath);
+  ctx.fillStyle = 'rgba(77, 216, 200, 0.05)';
+  ctx.fill(cardPath);
+  ctx.restore();
+}
+
+/**
+ * Per-frame render of the full drag state (live drag or settle). Replaces
+ * drawPlaybackWaveform for the duration of the drag.
+ *
+ * The played/unplayed split for each card is computed from the LIVE ARRANGEMENT
+ * order (not a global canvas X), because the floating dragged card can be
+ * anywhere on the canvas — far from its slot — and a global X would misclassify
+ * cards that are before/after the playhead in the arrangement. Each card is
+ * either fully played (before the playhead's segment in the arrangement), fully
+ * unplayed (after it), or split at the playhead offset (if it IS the playhead's
+ * segment).
+ */
+function drawDragFrame() {
+  const snap = state._segmentDragSnapshot;
+  if (!snap || !state.recordedBuffer || !state.originalBuffer) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = el.waveformCanvas.getBoundingClientRect();
+  const W = Math.max(1, Math.floor(rect.width * dpr));
+  const H = Math.max(1, Math.floor(rect.height * dpr));
+  if (el.waveformCanvas.width !== W) el.waveformCanvas.width = W;
+  if (el.waveformCanvas.height !== H) el.waveformCanvas.height = H;
+
+  waveCtx.clearRect(0, 0, W, H);
+
+  const isSettling = !!snap.settle;
+  const srcIdx = snap.srcIndex;
+  const arrangement = snap.arrangement;
+  const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
+  const playheadOrigIdx = snap.playheadSegOriginalIndex;
+  const playheadSegLen = snap.playheadSegEnd - snap.playheadSegStart;
+  const playheadFrac = playheadSegLen > 0
+    ? Math.max(0, Math.min(1, snap.playheadOffsetInSeg / playheadSegLen))
+    : 0;
+
+  // Find the playhead segment's position in the live arrangement so each card
+  // can be classified as before / after / containing the playhead.
+  let kPlayhead = -1;
+  for (let k = 0; k < arrangement.length; k++) {
+    if (arrangement[k] === playheadOrigIdx) { kPlayhead = k; break; }
+  }
+  const srcK = arrangement.indexOf(srcIdx);
+
+  // Compute the floating card's current position (used for the floating render
+  // and for the playhead caret when the playhead is on the dragged segment).
+  const pathWidth = snap.segPathWidths[srcIdx];
+  let floatStart = -1;
+  if (pathWidth > 0) {
+    floatStart = snap.pointerX - snap.pointerOffsetInCard;
+    floatStart = Math.max(0, Math.min(W - pathWidth, floatStart));
+  }
+
+  // For each card, compute the played/unplayed split X from the arrangement.
+  // Cards before the playhead → fully played (drawEnd); after → fully unplayed
+  // (drawStart); the playhead's own card → split at frac.
+  function splitForCard(kInArrangement, drawStart, drawEnd, cardPathWidth) {
+    if (kPlayhead < 0) return drawStart;
+    if (kInArrangement < kPlayhead) return drawEnd;
+    if (kInArrangement > kPlayhead) return drawStart;
+    return drawStart + playheadFrac * cardPathWidth;
+  }
+
+  // Render non-dragged segments in live-arrangement order. The dragged segment
+  // is skipped here — during live drag its slot is a drop zone outline and the
+  // floating card is drawn separately; during settle it's rendered below.
+  for (let k = 0; k < arrangement.length; k++) {
+    const originalIdx = arrangement[k];
+    if (originalIdx === srcIdx) continue;
+    const ab = snap.animBounds[originalIdx];
+    if (!ab) continue;
+    const cardW = ab.drawEnd - ab.drawStart;
+    const splitX = splitForCard(k, ab.drawStart, ab.drawEnd, cardW);
+    drawDragCard(waveCtx, snap.segPaths[originalIdx], snap.segPathWidths[originalIdx],
+      ab.drawStart, ab.drawEnd, splitX, H, dpr, { edgeWidth });
+  }
+
+  if (!isSettling) {
+    // Drop zone outline at the dragged segment's slot (its animated bounds).
+    const slot = snap.animBounds[srcIdx];
+    if (slot && slot.drawEnd > slot.drawStart) {
+      drawDropZoneOutline(waveCtx, slot.drawStart, slot.drawEnd, H, dpr);
+    }
+
+    // Floating dragged card: follows the pointer, lifted, deep shadow, dashed.
+    if (floatStart >= 0) {
+      const floatEnd = floatStart + pathWidth;
+      const splitX = splitForCard(srcK, floatStart, floatEnd, pathWidth);
+      drawDragCard(waveCtx, snap.segPaths[srcIdx], pathWidth,
+        floatStart, floatEnd, splitX, H, dpr, {
+          edgeWidth,
+          lift: snap.liftPx,
+          shadowBlur: SEGMENT_DRAG_SHADOW_BLUR_CSS_PX * dpr,
+          shadowOffsetY: SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX * dpr,
+          dashed: true,
+        });
+    }
+  } else {
+    // Settle: render the dragged segment at its eased position, with lift +
+    // deep shadow fading to normal as it lands.
+    const ab = snap.animBounds[srcIdx];
+    if (ab && ab.drawEnd > ab.drawStart) {
+      const maxLift = SEGMENT_DRAG_LIFT_CSS_PX * dpr;
+      const liftFrac = maxLift > 0 ? Math.max(0, snap.liftPx / maxLift) : 0;
+      const cardW = ab.drawEnd - ab.drawStart;
+      const splitX = splitForCard(srcK, ab.drawStart, ab.drawEnd, cardW);
+      drawDragCard(waveCtx, snap.segPaths[srcIdx], snap.segPathWidths[srcIdx],
+        ab.drawStart, ab.drawEnd, splitX, H, dpr, {
+          edgeWidth,
+          lift: snap.liftPx,
+          shadowBlur: SEGMENT_SHADOW_BLUR_CSS_PX * dpr + (SEGMENT_DRAG_SHADOW_BLUR_CSS_PX - SEGMENT_SHADOW_BLUR_CSS_PX) * dpr * liftFrac,
+          shadowOffsetY: SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr + (SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX - SEGMENT_SHADOW_OFFSET_Y_CSS_PX) * dpr * liftFrac,
+          strokeColor: liftFrac > 0.05 ? WAVEFORM_STYLE.selectedEdgeColor : null,
+        });
+    }
+  }
+
+  // Playhead carets follow the audio content. If the playhead is on the
+  // dragged segment during live drag, the carets sit on the floating card.
+  const playheadOnDragged = playheadOrigIdx === srcIdx;
+  const caretX = playheadOnDragged && !isSettling && floatStart >= 0
+    ? computeDragPlayheadX(snap, floatStart)
+    : computeDragPlayheadX(snap);
+  positionPlayheadCaretsAtDeviceX(caretX);
+  el.playheadScissors.classList.remove('visible');
+
+  // Division handles would be at stale positions during the live rearrange;
+  // hide them for the duration of the drag. drawPlaybackWaveform will
+  // reposition them when normal rendering resumes after settle.
+  for (const h of bottomHandles) h.style.display = 'none';
+
+  // The append button doesn't depend on segment positions, keep it placed.
+  positionAppendButton();
 }
 
 export function captureSegmentBitmap(index) {
@@ -883,7 +1273,7 @@ el.waveformContainer.addEventListener('mousemove', (e) => {
   const i = (y >= cardTop && y <= cardBottom) ? findSegmentAtX(x, rect.width) : -1;
   if (i !== state.hoverSegmentIndex) {
     state.hoverSegmentIndex = i;
-    el.waveformContainer.style.cursor = i >= 0 ? (state.segments.length >= 2 ? 'grab' : 'pointer') : 'default';
+    el.waveformContainer.style.cursor = 'default';
     scheduleHoverRedraw();
   }
 });

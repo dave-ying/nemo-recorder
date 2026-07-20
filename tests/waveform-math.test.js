@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, findSingleSegmentRemoval, computePeaksForRange, findSegmentAtSamplePure, computeDropInsertIndexPure, computeReorderTarget } from '../js/waveform-math.js';
+import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, findSingleSegmentRemoval, computePeaksForRange, findSegmentAtSamplePure, computeDropInsertIndexPure, computeReorderTarget, computeReorderArrangement, computeArrangementBounds } from '../js/waveform-math.js';
 
 // Two equal segments, each 500 samples of a 1000-sample edited buffer.
 // On a 1000px canvas with a 20px gap, each segment's linear range is 500px,
@@ -381,4 +381,112 @@ test('computeReorderTarget: full round-trip of a forward-then-back move restores
   const [moved2] = after.splice(2, 1);
   after.splice(t2, 0, moved2);
   assert.deepEqual(after.map(s => s.start), [0, 10, 20]);
+});
+
+// ===== computeReorderArrangement =====
+
+test('computeReorderArrangement: no-op drops return identity', () => {
+  assert.deepEqual(computeReorderArrangement(3, 0, 0), [0, 1, 2]);
+  assert.deepEqual(computeReorderArrangement(3, 0, 1), [0, 1, 2]);
+  assert.deepEqual(computeReorderArrangement(3, 1, 1), [0, 1, 2]);
+  assert.deepEqual(computeReorderArrangement(3, 1, 2), [0, 1, 2]);
+  assert.deepEqual(computeReorderArrangement(3, 2, 2), [0, 1, 2]);
+  assert.deepEqual(computeReorderArrangement(3, 2, 3), [0, 1, 2]);
+});
+
+test('computeReorderArrangement: moving forward puts the source at rawInsert-1', () => {
+  // [A,B,C]; move A (src=0) to before C (raw=2) → [B,A,C]
+  assert.deepEqual(computeReorderArrangement(3, 0, 2), [1, 0, 2]);
+  // [A,B,C]; move A (src=0) to the end (raw=3) → [B,C,A]
+  assert.deepEqual(computeReorderArrangement(3, 0, 3), [1, 2, 0]);
+  // [A,B,C]; move B (src=1) to the end (raw=3) → [A,C,B]
+  assert.deepEqual(computeReorderArrangement(3, 1, 3), [0, 2, 1]);
+});
+
+test('computeReorderArrangement: moving backward puts the source at rawInsert', () => {
+  // [A,B,C]; move C (src=2) to the front (raw=0) → [C,A,B]
+  assert.deepEqual(computeReorderArrangement(3, 2, 0), [2, 0, 1]);
+  // [A,B,C]; move C (src=2) before B (raw=1) → [A,C,B]
+  assert.deepEqual(computeReorderArrangement(3, 2, 1), [0, 2, 1]);
+  // [A,B,C]; move B (src=1) to the front (raw=0) → [B,A,C]
+  assert.deepEqual(computeReorderArrangement(3, 1, 0), [1, 0, 2]);
+});
+
+test('computeReorderArrangement: round-trip forward then back restores order', () => {
+  const segs = [{ start: 0, end: 10 }, { start: 10, end: 20 }, { start: 20, end: 30 }];
+  // [A,B,C] → move A (src=0) to the end (raw=3) → arrangement [1,2,0] = [B,C,A]
+  const a1 = computeReorderArrangement(3, 0, 3);
+  assert.deepEqual(a1, [1, 2, 0]);
+  // Apply the arrangement to segs. A is now at position 2 in `after`.
+  const after = a1.map(i => segs[i]);
+  assert.deepEqual(after.map(s => s.start), [10, 20, 0]);
+  // Move A back to the front: src=2 (A's current position), raw=0 (before pos 0).
+  const a2 = computeReorderArrangement(3, 2, 0);
+  assert.deepEqual(a2, [2, 0, 1]);
+  // Apply a2 to `after`: after[2], after[0], after[1] = A, B, C
+  const restored = a2.map(i => after[i]);
+  assert.deepEqual(restored.map(s => s.start), [0, 10, 20]);
+});
+
+test('computeReorderArrangement: single-segment array is always identity', () => {
+  assert.deepEqual(computeReorderArrangement(1, 0, 0), [0]);
+  assert.deepEqual(computeReorderArrangement(1, 0, 1), [0]);
+});
+
+// ===== computeArrangementBounds =====
+
+// Two segments of 500 samples each, 1000 total, on a 1000px canvas with 20px gap.
+// Identity arrangement: seg 0 → [0, 490], seg 1 → [510, 1000].
+// Swapped arrangement [1, 0]: seg 1 first → [0, 490], seg 0 second → [510, 1000].
+const ASEG = [{ start: 0, end: 500 }, { start: 500, end: 1000 }];
+const ATOT = 1000;
+const AW = 1000;
+const AGAP = 20;
+
+test('computeArrangementBounds: identity arrangement matches computeSegmentBoundsPure', () => {
+  const id = computeArrangementBounds(AW, ASEG, ATOT, AGAP, [0, 1]);
+  const direct = computeSegmentBoundsPure(AW, ASEG, ATOT, AGAP);
+  assert.deepEqual(id, [
+    { drawStart: direct[0].drawStart, drawEnd: direct[0].drawEnd },
+    { drawStart: direct[1].drawStart, drawEnd: direct[1].drawEnd }
+  ]);
+});
+
+test('computeArrangementBounds: swapped arrangement exchanges the two segments\' positions', () => {
+  // [1, 0] → seg 1 is first, seg 0 is second.
+  // Seg 1 has length 500, seg 0 has length 500 — both equal, so positions are symmetric.
+  const swapped = computeArrangementBounds(AW, ASEG, ATOT, AGAP, [1, 0]);
+  // First slot (drawStart=0, drawEnd=490) now belongs to original seg 1.
+  assert.equal(swapped[1].drawStart, 0);
+  assert.equal(swapped[1].drawEnd, 490);
+  // Second slot (drawStart=510, drawEnd=1000) now belongs to original seg 0.
+  assert.equal(swapped[0].drawStart, 510);
+  assert.equal(swapped[0].drawEnd, 1000);
+});
+
+test('computeArrangementBounds: unequal segments get widths proportional to their audio length', () => {
+  // Seg 0 = 200 samples, seg 1 = 800 samples. Total 1000. On 1000px canvas with 20px gap.
+  // Identity: seg 0 → [0, 190], seg 1 → [210, 1000].
+  // Swapped [1, 0]: seg 1 first → [0, 790], seg 0 second → [810, 1000].
+  const segs = [{ start: 0, end: 200 }, { start: 200, end: 1000 }];
+  const swapped = computeArrangementBounds(1000, segs, 1000, 20, [1, 0]);
+  assert.equal(swapped[1].drawStart, 0);
+  assert.equal(swapped[1].drawEnd, 790);
+  assert.equal(swapped[0].drawStart, 810);
+  assert.equal(swapped[0].drawEnd, 1000);
+});
+
+test('computeArrangementBounds: result is indexed by ORIGINAL segment index, not arrangement position', () => {
+  // Critical property: result[i] is where original segment i should be drawn.
+  // For arrangement [2, 0, 1] of three equal segments, original seg 2 is at slot 0,
+  // original seg 0 is at slot 1, original seg 1 is at slot 2.
+  const segs = [{ start: 0, end: 100 }, { start: 100, end: 200 }, { start: 200, end: 300 }];
+  const r = computeArrangementBounds(900, segs, 300, 20, [2, 0, 1]);
+  const ordered = computeSegmentBoundsPure(900, [segs[2], segs[0], segs[1]], 300, 20);
+  assert.equal(r[2].drawStart, ordered[0].drawStart);
+  assert.equal(r[2].drawEnd, ordered[0].drawEnd);
+  assert.equal(r[0].drawStart, ordered[1].drawStart);
+  assert.equal(r[0].drawEnd, ordered[1].drawEnd);
+  assert.equal(r[1].drawStart, ordered[2].drawStart);
+  assert.equal(r[1].drawEnd, ordered[2].drawEnd);
 });

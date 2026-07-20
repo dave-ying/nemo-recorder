@@ -224,6 +224,59 @@ export function computeReorderTarget(srcIndex, rawInsertIndex) {
 }
 
 /**
+ * Given the source segment's index and a raw drop insert index (both in terms
+ * of the pre-reorder array), return the new order as an array of original
+ * indices. E.g. for src=0 (moving A) and rawInsert=2 (insert before C), the
+ * arrangement is [1, 0, 2] → [B, A, C].
+ *
+ * Returns the identity arrangement [0, 1, ..., n-1] when the drop is a no-op
+ * (rawInsertIndex === srcIndex or rawInsertIndex === srcIndex + 1), so callers
+ * can render the live arrangement unconditionally and get a no-motion result
+ * when the user hasn't actually moved the segment past a swap threshold.
+ *
+ * @param {number} segmentsCount
+ * @param {number} srcIndex
+ * @param {number} rawInsertIndex
+ * @returns {number[]} array of original indices in their new order
+ */
+export function computeReorderArrangement(segmentsCount, srcIndex, rawInsertIndex) {
+  const arr = [];
+  for (let i = 0; i < segmentsCount; i++) arr.push(i);
+  if (rawInsertIndex === srcIndex || rawInsertIndex === srcIndex + 1) return arr;
+  const target = rawInsertIndex > srcIndex ? rawInsertIndex - 1 : rawInsertIndex;
+  const [moved] = arr.splice(srcIndex, 1);
+  arr.splice(target, 0, moved);
+  return arr;
+}
+
+/**
+ * Compute the per-original-index target draw bounds for a live reorder drag.
+ * Returns an array (indexed by ORIGINAL segment index) of
+ * { drawStart, drawEnd } in the same unit as W (device px or CSS px).
+ *
+ * `arrangement` is the new order (from computeReorderArrangement) — an array
+ * of original indices. We compute the segment bounds in the new order, then
+ * invert back to per-original-index so callers can look up "where does
+ * original segment i want to be right now?".
+ *
+ * @param {number} W
+ * @param {Array<{start: number, end: number}>} segments - original segments (unchanged during drag)
+ * @param {number} totalSamples
+ * @param {number} gapPx
+ * @param {number[]} arrangement - new order, as original indices
+ * @returns {Array<{drawStart: number, drawEnd: number}>}
+ */
+export function computeArrangementBounds(W, segments, totalSamples, gapPx, arrangement) {
+  const ordered = arrangement.map(i => segments[i]);
+  const orderedBounds = computeSegmentBoundsPure(W, ordered, totalSamples, gapPx);
+  const result = new Array(segments.length);
+  for (let k = 0; k < arrangement.length; k++) {
+    result[arrangement[k]] = { drawStart: orderedBounds[k].drawStart, drawEnd: orderedBounds[k].drawEnd };
+  }
+  return result;
+}
+
+/**
  * Map an audio-time ratio (fraction of edited duration) to a visual ratio
  * (fraction of canvas width), so the result always lands inside a segment card.
  *

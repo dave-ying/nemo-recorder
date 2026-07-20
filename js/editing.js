@@ -1,9 +1,9 @@
-import { state, SEGMENT_GAP_CSS_PX } from './state.js';
+import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
-import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, removeDraggingClass, visualRatioToAudioRatioWithState, showSegmentTrash } from './waveform.js';
-import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure } from './waveform-math.js';
+import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, removeDraggingClass, visualRatioToAudioRatioWithState, showSegmentTrash, ensureDragAnimRunning } from './waveform.js';
+import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath } from './waveform-math.js';
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
 
@@ -370,17 +370,70 @@ export function finishSplitHandleDrag() {
 // SEGMENT_DRAG_THRESHOLD_CSS_PX promotes it to an active drag via
 // beginSegmentReorderDrag; pointerup before that threshold calls
 // cancelSegmentReorderDrag, which falls back to the existing click-to-trash
-// behavior. active drags call applySegmentReorderDrag on each move and
+// behavior. Active drags call applySegmentReorderDrag on each move and
 // finishSegmentReorderDrag on pointerup.
+//
+// While active, a rAF loop in waveform.js (ensureDragAnimRunning) renders the
+// live arrangement: non-dragged segments ease toward their would-be positions,
+// the dragged segment floats with the pointer (lifted, deep shadow, dashed
+// outline), and a faint drop-zone outline marks the slot. On release the loop
+// enters a settle phase that eases the floating card into its final slot
+// before handing rendering back to drawPlaybackWaveform.
 
 export function beginSegmentReorderDrag(clientX, clientY) {
   const pending = state.pendingSegmentDrag;
   if (!pending || !state.recordedBuffer || !state.originalBuffer) return;
+  if (state._segmentDragSnapshot) return; // re-entrant guard (e.g. during settle)
   if (state.isPlaying) pausePlayback();
 
   const sr = state.originalBuffer.sampleRate;
   const playheadSample = Math.round(state.playbackOffset * sr);
   const target = findSegmentAtSample(playheadSample);
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const W = Math.max(1, Math.floor(rect.width * dpr));
+  const H = Math.max(1, Math.floor(rect.height * dpr));
+  const gapPxDev = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const totalSamples = state.recordedBuffer.length;
+
+  // Initial card bounds in device px — animBounds and targetBounds both start
+  // here so the first frame after pointerdown is a no-op (no motion yet).
+  const initialBounds = computeSegmentBoundsPure(W, state.segments, totalSamples, gapPxDev);
+  const animBounds = initialBounds.map(sb => ({ drawStart: sb.drawStart, drawEnd: sb.drawEnd }));
+  const targetBounds = initialBounds.map(sb => ({ drawStart: sb.drawStart, drawEnd: sb.drawEnd }));
+
+  // Per-original-segment local waveform paths, built once at the segment's
+  // initial card width. Reused every frame via scaleX = animWidth / pathWidth.
+  const channelData = state.originalBuffer.getChannelData(0);
+  const segPaths = new Array(state.segments.length);
+  const segPathWidths = new Array(state.segments.length);
+  for (let i = 0; i < state.segments.length; i++) {
+    const sb = initialBounds[i];
+    const finalWidth = Math.max(1, Math.round(sb.drawEnd - sb.drawStart));
+    const seg = state.segments[i];
+    const peaks = computePeaksForRange(channelData, seg.start, seg.end, finalWidth);
+    const localPath = new Path2D();
+    buildWaveformPath(localPath, peaks, 0, finalWidth, H / 2, WAVEFORM_SCALE);
+    segPaths[i] = localPath;
+    segPathWidths[i] = finalWidth;
+  }
+
+  // Capture the pointer's offset within the dragged card so the floating card
+  // stays pinned to the same grab point as the user drags.
+  const pointerCssX = clientX - rect.left;
+  const pointerX = pointerCssX * dpr;
+  const srcCardDrawStart = initialBounds[pending.index].drawStart;
+  const pointerOffsetInCard = Math.max(0, Math.min(segPathWidths[pending.index], pointerX - srcCardDrawStart));
+
+  // Snapshot the original segments' {start, end} so the live arrangement
+  // (which is in terms of original indices) can be resolved even after
+  // state.segments is reordered at settle start.
+  const originalSegments = state.segments.map(s => ({ start: s.start, end: s.end }));
+
+  // Identity arrangement at drag-begin; updated each pointermove.
+  const arrangement = [];
+  for (let i = 0; i < state.segments.length; i++) arrangement.push(i);
 
   state.draggingSegmentIndex = pending.index;
   state.pendingSegmentDrag = null;
@@ -390,11 +443,22 @@ export function beginSegmentReorderDrag(clientX, clientY) {
     dropInsertIndex: pending.index,
     playheadSegStart: target ? target.seg.start : -1,
     playheadSegEnd: target ? target.seg.end : -1,
-    playheadOffsetInSeg: target ? target.offsetInSeg : 0
+    playheadOffsetInSeg: target ? target.offsetInSeg : 0,
+    playheadSegOriginalIndex: target ? target.index : -1,
+    pointerX,
+    pointerOffsetInCard,
+    animBounds,
+    targetBounds,
+    segPaths,
+    segPathWidths,
+    originalSegments,
+    arrangement,
+    liftPx: 0,
+    settle: null
   };
 
   hideSegmentTrash();
-  el.waveformContainer.style.cursor = 'grabbing';
+  ensureDragAnimRunning();
 }
 
 export function applySegmentReorderDrag(clientX) {
@@ -402,27 +466,38 @@ export function applySegmentReorderDrag(clientX) {
   if (!snap || !state.recordedBuffer) return;
   snap.currentClientX = clientX;
   const rect = el.waveformContainer.getBoundingClientRect();
-  const x = clientX - rect.left;
-  const segBounds = computeSegmentBoundsPure(rect.width, state.segments, state.recordedBuffer.length, SEGMENT_GAP_CSS_PX);
-  snap.dropInsertIndex = computeDropInsertIndexPure(segBounds, x);
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  const dpr = window.devicePixelRatio || 1;
+  const xCss = clientX - rect.left;
+  // computeDropInsertIndexPure compares against card midpoints in the same
+  // unit as the segBounds it receives; use CSS-px bounds here so the math
+  // matches the pointer's CSS-px position.
+  const segBoundsCss = computeSegmentBoundsPure(rect.width, snap.originalSegments, state.recordedBuffer.length, SEGMENT_GAP_CSS_PX);
+  snap.dropInsertIndex = computeDropInsertIndexPure(segBoundsCss, xCss);
+
+  // Recompute the live arrangement + per-original-index target bounds (in
+  // device px). The rAF loop eases animBounds toward these each frame.
+  snap.arrangement = computeReorderArrangement(snap.originalSegments.length, snap.srcIndex, snap.dropInsertIndex);
+  const W = Math.max(1, Math.floor(rect.width * dpr));
+  const gapPxDev = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  snap.targetBounds = computeArrangementBounds(W, snap.originalSegments, state.recordedBuffer.length, gapPxDev, snap.arrangement);
+  snap.pointerX = xCss * dpr;
+
+  ensureDragAnimRunning();
 }
 
 export function finishSegmentReorderDrag() {
   const snap = state._segmentDragSnapshot;
   if (!snap) return;
+  if (snap.settle) return; // already settling — ignore re-entrant pointerup
+
   const src = snap.srcIndex;
   const target = computeReorderTarget(src, snap.dropInsertIndex);
 
-  state.draggingSegmentIndex = -1;
-  state._segmentDragSnapshot = null;
-  el.waveformContainer.style.cursor = 'default';
-
   if (target < 0 || !state.recordedBuffer) {
-    const ratio = state.recordedBuffer && state.recordedBuffer.duration > 0
-      ? state.playbackOffset / state.recordedBuffer.duration
-      : 0;
-    drawPlaybackWaveform(ratio);
+    // No-op drop: animate the floating card back to its original slot.
+    // state.segments is unchanged, so the slot is just snap.targetBounds[src]
+    // (which equals the original position under the identity arrangement).
+    startSettle(snap, snap.targetBounds[src].drawStart, snap.targetBounds[src].drawEnd, state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
     return;
   }
 
@@ -449,17 +524,73 @@ export function finishSegmentReorderDrag() {
 
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
-  hideSegmentTrash();
-  clearSegmentHover();
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+
+  // Compute the dragged segment's final slot in the new state.segments order.
+  const dpr = window.devicePixelRatio || 1;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const W = Math.max(1, Math.floor(rect.width * dpr));
+  const gapPxDev = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+  const newBounds = computeSegmentBoundsPure(W, state.segments, state.recordedBuffer.length, gapPxDev);
+  // The dragged segment's new index in state.segments is `target` (it was
+  // spliced in there). Its final slot is newBounds[target].
+  const finalSlot = newBounds[target];
+  const finalRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+
+  startSettle(snap, finalSlot.drawStart, finalSlot.drawEnd, finalRatio);
   updateSegmentCountDisplay();
   showToast(`Moved segment ${src + 1} to position ${target + 1}`);
+}
+
+/**
+ * Begin the post-release settle animation: ease the floating dragged card from
+ * its current on-screen position into its final slot, decaying the lift to
+ * zero. The rAF loop handles the actual easing and final redraw; this just
+ * records the settle parameters on the snapshot.
+ */
+function startSettle(snap, toX, toDrawEnd, finalRatio) {
+  const dpr = window.devicePixelRatio || 1;
+  // Capture the floating card's current position (where it is on screen now,
+  // following the pointer) so the ease starts from there rather than jumping.
+  const pathWidth = snap.segPathWidths[snap.srcIndex];
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const W = Math.max(1, Math.floor(rect.width * dpr));
+  let fromX = snap.pointerX - snap.pointerOffsetInCard;
+  fromX = Math.max(0, Math.min(W - pathWidth, fromX));
+  const fromDrawEnd = fromX + pathWidth;
+
+  // The user has released the mouse — drop the grabbing cursor immediately,
+  // even though the visual settle is still easing.
+  el.waveformContainer.style.cursor = 'default';
+
+  snap.settle = {
+    startTime: performance.now(),
+    duration: SEGMENT_DRAG_SETTLE_MS,
+    fromX,
+    fromDrawEnd,
+    fromLift: snap.liftPx,
+    toX,
+    toDrawEnd,
+    toLift: 0,
+    finalRatio
+  };
+  // The dragged segment's animBounds currently track its slot (not the
+  // floating position); redirect them to the floating position so the settle
+  // ease starts visually correct.
+  snap.animBounds[snap.srcIndex].drawStart = fromX;
+  snap.animBounds[snap.srcIndex].drawEnd = fromDrawEnd;
+  // Make sure the rAF loop is running (it might have been paused if pointer
+  // events stopped firing before pointerup).
+  ensureDragAnimRunning();
 }
 
 export function cancelSegmentReorderDrag() {
   const pending = state.pendingSegmentDrag;
   state.pendingSegmentDrag = null;
   if (!pending) return;
+  // If a drag or settle is already in progress, a stray click (pointerdown +
+  // pointerup without crossing the drag threshold) shouldn't cancel it — just
+  // discard the pending click and let the active drag/settle continue.
+  if (state._segmentDragSnapshot) return;
   if (pending.index === state.selectedSegmentIndex) hideSegmentTrash();
   else showSegmentTrash(pending.index);
 }
