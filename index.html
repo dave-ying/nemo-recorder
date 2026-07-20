@@ -211,36 +211,6 @@
     </div>
   </div>
 
-  <!-- Quality Settings Modal -->
-  <div class="quality-modal-overlay" id="qualityModal">
-    <div class="modal">
-      <div class="modal-header">
-        <span class="modal-title">Capture Settings</span>
-        <button class="modal-close" id="qualityModalClose">&times;</button>
-      </div>
-      <div class="quality-config">
-        <div class="quality-header">
-          <span class="quality-title">Configuration</span>
-          <span class="quality-bitrate" id="bitrateReadout">— kbps</span>
-        </div>
-        <div class="quality-grid">
-          <div class="quality-setting">
-            <span class="quality-label">Sample Rate <span class="quality-label-hint">from mic</span></span>
-            <div class="quality-options" id="rateOptions"></div>
-          </div>
-          <div class="quality-setting">
-            <span class="quality-label">Bit Depth <span class="quality-label-hint">estimate only</span></span>
-            <div class="quality-options" id="bitOptions"></div>
-          </div>
-          <div class="quality-setting">
-            <span class="quality-label">Channels <span class="quality-label-hint">from mic</span></span>
-            <div class="quality-options" id="chOptions"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Record Modal -->
   <div class="quality-modal-overlay record-modal" id="recordModal">
     <div class="modal">
@@ -269,6 +239,30 @@
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
         </button>
+      </div>
+
+      <!-- Capture settings (collapsible) -->
+      <div class="rm-settings-wrap" id="rmSettingsWrap">
+        <div class="rm-settings-inner">
+          <div class="quality-header">
+            <span class="quality-title">Configuration</span>
+            <span class="quality-bitrate" id="bitrateReadout">— kbps</span>
+          </div>
+          <div class="quality-grid">
+            <div class="quality-setting">
+              <span class="quality-label">Sample Rate <span class="quality-label-hint">from mic</span></span>
+              <div class="quality-options" id="rateOptions"></div>
+            </div>
+            <div class="quality-setting">
+              <span class="quality-label">Bit Depth <span class="quality-label-hint">estimate only</span></span>
+              <div class="quality-options" id="bitOptions"></div>
+            </div>
+            <div class="quality-setting">
+              <span class="quality-label">Channels <span class="quality-label-hint">from mic</span></span>
+              <div class="quality-options" id="chOptions"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Stage: exactly one view visible per state -->

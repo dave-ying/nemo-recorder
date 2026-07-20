@@ -91,14 +91,6 @@ el.playheadScissors.addEventListener('click', (e) => {
 });
 el.playheadScissors.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
-el.qualityModalClose.addEventListener('click', () => {
-  el.qualityModal.classList.remove('visible');
-});
-
-el.qualityModal.addEventListener('click', (e) => {
-  if (e.target === el.qualityModal) el.qualityModal.classList.remove('visible');
-});
-
 el.timelineRulerCanvas.addEventListener('pointerdown', (e) => {
   if (!state.recordedBuffer) return;
   e.preventDefault();
@@ -263,8 +255,6 @@ document.addEventListener('keydown', (e) => {
       closeAppendMenu();
     } else if (el.exportModal.classList.contains('visible')) {
       closeExportModal();
-    } else if (el.qualityModal.classList.contains('visible')) {
-      el.qualityModal.classList.remove('visible');
     }
   }
 });

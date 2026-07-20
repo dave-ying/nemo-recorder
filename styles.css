@@ -483,6 +483,25 @@ body::after {
 .rm-icon-btn svg { width: 15px; height: 15px; }
 #rmDisconnectBtn:hover { color: var(--rec); }
 
+/* Collapsible capture settings inside record modal */
+.rm-settings-wrap {
+  overflow: hidden;
+  max-height: 0;
+  margin-bottom: 0;
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              margin-bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.rm-settings-wrap.expanded {
+  max-height: 220px;
+  margin-bottom: 18px;
+}
+.rm-settings-inner {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
 /* Stage: one view per state, all absolutely fill */
 .rm-stage { position: relative; height: 300px; border-radius: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); overflow: hidden; }
 .rm-ready, .rm-nomic, .rm-live, .rm-review { position: absolute; inset: 0; }

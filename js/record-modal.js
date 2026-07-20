@@ -62,6 +62,7 @@ function showDisconnectedState() {
   el.rmMicDot.classList.remove('connected');
   el.rmSettingsBtn.hidden = true;
   el.rmDisconnectBtn.hidden = true;
+  el.rmSettingsWrap.classList.remove('expanded');
   showView('nomic');
   el.rmRecordingControls.hidden = true;
   el.rmReviewControls.hidden = true;
@@ -84,6 +85,7 @@ function showReadyState() {
 function showRecordingState() {
   el.rmSettingsBtn.hidden = true;
   el.rmDisconnectBtn.hidden = true;
+  el.rmSettingsWrap.classList.remove('expanded');
   showView('live');
   el.rmRecordingControls.hidden = false;
   el.rmReviewControls.hidden = true;
@@ -117,7 +119,7 @@ export function handleModalDisconnect() {
 }
 
 export function handleModalSettings() {
-  el.qualityModal.classList.add('visible');
+  el.rmSettingsWrap.classList.toggle('expanded');
 }
 
 export async function handleModalRecord() {

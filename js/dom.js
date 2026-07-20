@@ -41,8 +41,6 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} bitrateReadout
  * @property {HTMLDivElement} toast
  * @property {HTMLSpanElement} toastMessage
- * @property {HTMLDivElement} qualityModal
- * @property {HTMLButtonElement} qualityModalClose
  * @property {HTMLDivElement} exportModal
  * @property {HTMLButtonElement} exportClose
  * @property {HTMLDivElement} exportQualityGrid
@@ -56,6 +54,7 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLInputElement} appendFileInput
  * @property {HTMLDivElement} recordModal
  * @property {HTMLButtonElement} recordModalClose
+ * @property {HTMLDivElement} rmSettingsWrap
  * @property {HTMLSpanElement} rmMicDot
  * @property {HTMLButtonElement} rmConnectBtn
  * @property {HTMLButtonElement} rmSettingsBtn
@@ -103,7 +102,6 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   micName: $('micName'),
   rateOptions: $('rateOptions'), bitOptions: $('bitOptions'), chOptions: $('chOptions'),
   bitrateReadout: $('bitrateReadout'), toast: $('toast'), toastMessage: $('toastMessage'),
-  qualityModal: $('qualityModal'), qualityModalClose: $('qualityModalClose'),
   exportModal: $('exportModal'), exportClose: $('exportClose'),
   exportQualityGrid: $('exportQualityGrid'), exportSize: $('exportSize'),
   exportDetail: $('exportDetail'), exportConfirm: $('exportConfirm'),
@@ -111,6 +109,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   appendMenuUpload: $('appendMenuUpload'), appendMenuRecord: $('appendMenuRecord'),
   appendFileInput: $('appendFileInput'),
   recordModal: $('recordModal'), recordModalClose: $('recordModalClose'),
+  rmSettingsWrap: $('rmSettingsWrap'),
   rmMicDot: $('rmMicDot'),
   rmConnectBtn: $('rmConnectBtn'), rmSettingsBtn: $('rmSettingsBtn'), rmDisconnectBtn: $('rmDisconnectBtn'),
   rmReadyView: $('rmReadyView'), rmNoMicView: $('rmNoMicView'), rmReadySpec: $('rmReadySpec'),
