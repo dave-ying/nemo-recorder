@@ -121,13 +121,11 @@ export function splitAtPlayhead() {
     { start: splitPoint, end: seg.end, origin: 'split' }
   );
 
-  // Shift playhead to the start of the right card so the split gap stays visible
-  const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  if (canvasRect.width > 0 && state.recordedBuffer.duration > 0) {
-    const shiftSec = ((SEGMENT_GAP_CSS_PX / 2 + 1) / canvasRect.width) * state.recordedBuffer.duration;
-    state.playbackOffset = Math.min(state.recordedBuffer.duration, state.playbackOffset + shiftSec);
-    el.timeCurrent.textContent = formatTime(state.playbackOffset);
-  }
+  // Snap the playhead to the exact split point — the start of the right
+  // segment. audioRatioToVisualRatio maps boundary positions to the right
+  // card's left edge, so the playhead lands exactly on the next segment.
+  state.playbackOffset = editedSample / sr;
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
 
   hideSegmentTrash();
   clearSegmentHover();

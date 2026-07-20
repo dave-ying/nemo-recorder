@@ -40,6 +40,16 @@ test('audio ratio at the exact boundary snaps to the start of the next card', ()
   assert.equal(v, 510 / 1000);
 });
 
+test('audio ratio a hair below the boundary (float rounding) still snaps to the next card start', () => {
+  // Simulates a playhead exactly on a split point whose ratio came out an
+  // epsilon below the boundary — it must not render at the left card's right
+  // edge (inside the gap), but at the right card's drawStart.
+  assert.equal(audioRatioToVisualRatio(0.5 - 1e-12, W, BOUNDS), 510 / 1000);
+  const b = computeSegmentBoundsPure(1000, [{ start: 0, end: 300 }, { start: 300, end: 600 }, { start: 600, end: 1000 }], 1000, 20);
+  assert.equal(audioRatioToVisualRatio(0.3 - 1e-12, 1000, b), 310 / 1000);
+  assert.equal(audioRatioToVisualRatio(0.6 - 1e-12, 1000, b), 610 / 1000);
+});
+
 test('audio ratio inside a segment maps linearly within that card', () => {
   // ratio 0.25 = halfway through seg 0's audio. Card is [0, 490]. Midpoint = 245/1000.
   assert.equal(audioRatioToVisualRatio(0.25, W, BOUNDS), 245 / 1000);

@@ -288,13 +288,22 @@ export function computeArrangementBounds(W, segments, totalSamples, gapPx, arran
 export function audioRatioToVisualRatio(audioRatio, W, segBounds) {
   if (segBounds.length === 0) return audioRatio;
   const targetPx = audioRatio * W;
+  // Float rounding can put a ratio that is meant to be exactly on a segment
+  // boundary (e.g. the playhead sitting on a split point) an epsilon BELOW
+  // it, which would attribute it to the previous segment and render it at
+  // that card's right edge — inside the visual gap. Treat the top EPSILON of
+  // each non-last card's linear range as belonging to the NEXT segment so
+  // such positions land on the next card's left edge instead.
+  const EPSILON = 1e-6;
   for (let i = 0; i < segBounds.length; i++) {
     const sb = segBounds[i];
     const isLast = i === segBounds.length - 1;
-    if (targetPx >= sb.start && (targetPx < sb.end || (isLast && targetPx <= sb.end))) {
+    const aboveStart = i === 0 ? targetPx >= sb.start : targetPx >= sb.start - EPSILON;
+    const belowEnd = isLast ? targetPx <= sb.end : targetPx < sb.end - EPSILON;
+    if (aboveStart && belowEnd) {
       const span = sb.end - sb.start;
       if (span <= 0) return sb.drawStart / W;
-      const frac = (targetPx - sb.start) / span;
+      const frac = Math.max(0, (targetPx - sb.start) / span);
       return (sb.drawStart + frac * (sb.drawEnd - sb.drawStart)) / W;
     }
   }
