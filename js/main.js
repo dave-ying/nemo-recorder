@@ -1,7 +1,7 @@
 import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateHeaderState, updateEmptyState } from './ui.js';
-import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, rerecord } from './audio.js';
+import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording } from './audio.js';
 import { loadUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer, undo, redo } from './editing.js';
@@ -16,6 +16,11 @@ const RESIZE_DEBOUNCE_MS = 120;
 
 el.connectButton.addEventListener('click', connectMicrophone);
 el.disconnectButton.addEventListener('click', disconnectMicrophone);
+el.emptyStateRecordButton.addEventListener('click', async () => {
+  if (state.isRecording) return;
+  if (!state.micCapabilities) await connectMicrophone();
+  if (state.micCapabilities) startRecording();
+});
 el.emptyStateUploadButton.addEventListener('click', () => el.fileInput.click());
 el.fileInput.addEventListener('change', (e) => {
   const file = /** @type {HTMLInputElement} */ (e.target).files[0];
@@ -58,7 +63,7 @@ el.skipForwardButton.addEventListener('click', () => {
   drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
 });
 el.playButton.addEventListener('click', () => { state.isPlaying ? pausePlayback() : startPlayback(); });
-el.retryButton.addEventListener('click', rerecord);
+
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
 el.deleteButton.addEventListener('click', deleteSegmentAtPlayhead);

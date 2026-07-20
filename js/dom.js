@@ -5,6 +5,7 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} connectButton
  * @property {HTMLButtonElement} disconnectButton
  * @property {HTMLDivElement} emptyState
+ * @property {HTMLButtonElement} emptyStateRecordButton
  * @property {HTMLButtonElement} emptyStateUploadButton
  * @property {HTMLInputElement} fileInput
  * @property {HTMLButtonElement} recordButton
@@ -12,7 +13,6 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} restartButton
  * @property {HTMLButtonElement} skipForwardButton
  * @property {HTMLButtonElement} playButton
- * @property {HTMLButtonElement} retryButton
  * @property {HTMLButtonElement} downloadButton
  * @property {HTMLButtonElement} splitButton
  * @property {HTMLButtonElement} deleteButton
@@ -56,9 +56,9 @@ export const $ = (id) => document.getElementById(id);
 // consumer precise element types instead of `HTMLElement | null` everywhere.
 export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   connectButton: $('connectButton'), disconnectButton: $('disconnectButton'),
-  emptyState: $('emptyState'), emptyStateUploadButton: $('emptyStateUploadButton'), fileInput: $('fileInput'),
+  emptyState: $('emptyState'), emptyStateRecordButton: $('emptyStateRecordButton'), emptyStateUploadButton: $('emptyStateUploadButton'), fileInput: $('fileInput'),
   recordButton: $('recordButton'), stopButton: $('stopButton'),
-  restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), retryButton: $('retryButton'), downloadButton: $('downloadButton'),
+  restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteButton: $('deleteButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'), segmentTrash: $('segmentTrash'),

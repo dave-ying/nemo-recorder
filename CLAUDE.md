@@ -46,7 +46,7 @@ All modules communicate through one shared mutable `state` object (`js/state.js`
 ### Editor modes (single view)
 
 The app has a single view (the editor). Three modes are driven by state, not DOM views:
-- **Empty** — no `state.recordedBuffer` and not recording. Shows the empty-state placeholder with an upload button. Transport is disabled.
+- **Empty** — no `state.recordedBuffer` and not recording. Shows the empty-state placeholder with Record and upload buttons. Transport is disabled.
 - **Recording** — `state.isRecording` is true. Live meter bar replaces the timeline ruler, live canvas overlays the waveform, stop button replaces the play button.
 - **Editing** — `state.recordedBuffer` is set. Full waveform rendering, segment editing (split/delete/drag/trash/scissors), playback transport.
 
