@@ -1,0 +1,28 @@
+import { state } from './state.js';
+import { el } from './dom.js';
+import { showToast } from './ui.js';
+import { loadBufferAsRecording } from './editing.js';
+
+export async function loadUploadedFile(file) {
+  el.uploadButtonConnect.disabled = true;
+  el.uploadButtonReady.disabled = true;
+
+  try {
+    if (!state.audioContext || state.audioContext.state === 'closed') {
+      state.audioContext = new AudioContext();
+    }
+    if (state.audioContext.state === 'suspended') await state.audioContext.resume();
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = await state.audioContext.decodeAudioData(arrayBuffer);
+
+    loadBufferAsRecording(buffer, `Loaded "${file.name}" — lossless PCM ready`);
+  } catch (err) {
+    showToast('Could not read that file — unsupported or corrupt audio', true);
+    console.warn('[nemo-record]', err.message);
+  } finally {
+    el.uploadButtonConnect.disabled = false;
+    el.uploadButtonReady.disabled = false;
+    el.fileInput.value = '';
+  }
+}

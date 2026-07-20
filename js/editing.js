@@ -1,11 +1,38 @@
 import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
-import { updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
+import { updateSegmentCountDisplay, setTransportDisabled, showToast, showView } from './ui.js';
 import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore } from './waveform.js';
 import { findSingleSegmentRemoval } from './waveform-math.js';
 import { pausePlayback } from './playback.js';
-import { pushHistory, popUndo, popRedo } from './history.js';
+import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
+
+// Shared tail for both mic capture (stopRecording) and file upload
+// (loadUploadedFile): both produce a full-length AudioBuffer that becomes the
+// new original/edited recording, and land in the same playback-ready state.
+export function loadBufferAsRecording(buffer, toastMessage) {
+  state.originalBuffer = buffer;
+  state.recordedBuffer = buffer;
+  state.segments = [{ start: 0, end: buffer.length }];
+  resetHistory();
+
+  el.timeCurrent.textContent = '00:00.000';
+  el.timeTotal.textContent = formatTime(buffer.duration);
+
+  state.cachedPeaks = null;
+  state.cachedPath = null;
+  state.playbackOffset = 0;
+  state.hoverRatio = -1;
+  state.hoveredSegmentIndex = -1;
+  state.hoverSegmentIndex = -1;
+  hideSegmentTrash();
+  updateSegmentCountDisplay();
+  setTransportDisabled(false);
+  requestAnimationFrame(() => drawPlaybackWaveform(0));
+
+  showView('playback');
+  showToast(toastMessage);
+}
 
 export function rebuildPlaybackBuffer() {
   if (!state.originalBuffer || !state.audioContext) return;

@@ -5,6 +5,7 @@ import { showToast, showView, renderQualityOptions, updateBitrate, updateSegment
 import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
 import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
+import { loadBufferAsRecording } from './editing.js';
 
 let liveRafId;
 
@@ -408,27 +409,7 @@ export function stopRecording() {
   const buffer = state.audioContext.createBuffer(numChannels, totalLength, state.audioContext.sampleRate);
   for (let c = 0; c < numChannels; c++) buffer.copyToChannel(combined[c], c);
 
-  state.originalBuffer = buffer;
-  state.recordedBuffer = buffer;
-  state.segments = [{ start: 0, end: totalLength }];
-  resetHistory();
-
-  el.timeCurrent.textContent = '00:00.000';
-  el.timeTotal.textContent = formatTime(buffer.duration);
-
-  state.cachedPeaks = null;
-  state.cachedPath = null;
-  state.playbackOffset = 0;
-  state.hoverRatio = -1;
-  state.hoveredSegmentIndex = -1;
-  state.hoverSegmentIndex = -1;
-  hideSegmentTrash();
-  updateSegmentCountDisplay();
-  setTransportDisabled(false);
-  requestAnimationFrame(() => drawPlaybackWaveform(0));
-
-  showView('playback');
-  showToast('Capture complete — lossless PCM ready');
+  loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
 }
 
 export function rerecord() {
@@ -457,9 +438,13 @@ export function rerecord() {
   resetReadouts();
   updateSegmentCountDisplay();
   setTransportDisabled(true);
-  renderQualityOptions();
-  updateBitrate();
 
-  showView('ready');
+  if (state.micCapabilities) {
+    renderQualityOptions();
+    updateBitrate();
+    showView('ready');
+  } else {
+    showView('connect');
+  }
   showToast('Ready for next take');
 }

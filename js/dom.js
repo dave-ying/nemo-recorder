@@ -4,6 +4,9 @@ export const $ = (id) => document.getElementById(id);
  * @typedef {Object} AppElements
  * @property {HTMLButtonElement} connectButton
  * @property {HTMLButtonElement} disconnectButton
+ * @property {HTMLButtonElement} uploadButtonConnect
+ * @property {HTMLButtonElement} uploadButtonReady
+ * @property {HTMLInputElement} fileInput
  * @property {HTMLButtonElement} recordButton
  * @property {HTMLButtonElement} stopButton
  * @property {HTMLButtonElement} restartButton
@@ -51,6 +54,7 @@ export const $ = (id) => document.getElementById(id);
 // consumer precise element types instead of `HTMLElement | null` everywhere.
 export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   connectButton: $('connectButton'), disconnectButton: $('disconnectButton'),
+  uploadButtonConnect: $('uploadButtonConnect'), uploadButtonReady: $('uploadButtonReady'), fileInput: $('fileInput'),
   recordButton: $('recordButton'), stopButton: $('stopButton'),
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), retryButton: $('retryButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteButton: $('deleteButton'),

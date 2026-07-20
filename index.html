@@ -28,6 +28,8 @@
     </header>
 
     <section class="stage">
+      <input type="file" id="fileInput" accept="audio/*" hidden>
+
       <div class="view connect-view" id="connectView">
         <button class="connect-button" id="connectButton" aria-label="Connect microphone">
           <div class="btn-bg"></div>
@@ -38,6 +40,7 @@
         <div class="connect-hint">
           Click Connect, choose your microphone, then click Allow
         </div>
+        <button class="btn" id="uploadButtonConnect">Upload Audio File</button>
       </div>
 
       <div class="view ready-view" id="readyView" hidden>
@@ -86,6 +89,7 @@
             <span class="btn-label">REC</span>
           </button>
         </div>
+        <button class="btn" id="uploadButtonReady">Upload Audio File Instead</button>
       </div>
 
       <div class="view recording-view" id="recordingView" hidden>
