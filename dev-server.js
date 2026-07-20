@@ -35,4 +35,4 @@ createServer(async (req, res) => {
     res.writeHead(404);
     res.end('Not found');
   }
-}).listen(PORT, () => console.log(`Nemo Record → http://localhost:${PORT}`));
+}).listen(PORT, () => console.log(`Nemo Recorder → http://localhost:${PORT}`));

@@ -1,8 +1,8 @@
-# Nemo Record
+# Nemo Recorder
 
 Truly lossless PCM audio capture directly from the Web Audio API — no compression, no codecs, no compromises.
 
-Unlike most browser recorders that use `MediaRecorder` (which forces lossy Opus/Vorbis encoding), Nemo Record captures raw PCM from the Web Audio graph via `AudioWorklet`, giving the same fidelity as a professional DAW at the same sample rate and bit depth.
+Unlike most browser recorders that use `MediaRecorder` (which forces lossy Opus/Vorbis encoding), Nemo Recorder captures raw PCM from the Web Audio graph via `AudioWorklet`, giving the same fidelity as a professional DAW at the same sample rate and bit depth.
 
 ## Features
 

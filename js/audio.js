@@ -43,8 +43,8 @@ export async function connectMicrophone() {
     state.micLabel = track.label || 'Unknown Microphone';
 
     let caps = {}, trackSettings = {};
-    try { caps = track.getCapabilities() || {}; } catch (e) { console.warn('[nemo-record]', e.message); }
-    try { trackSettings = track.getSettings() || {}; } catch (e) { console.warn('[nemo-record]', e.message); }
+    try { caps = track.getCapabilities() || {}; } catch (e) { console.warn('[nemo-recorder]', e.message); }
+    try { trackSettings = track.getSettings() || {}; } catch (e) { console.warn('[nemo-recorder]', e.message); }
 
     const candidateRates = [44100, 48000, 96000, 192000];
     let supportedRates;
@@ -102,7 +102,7 @@ export function disconnectMicrophone() {
   stopRecordingNodes();
   releaseMicStream();
   if (state.audioContext) {
-    try { state.audioContext.close(); } catch (e) { console.warn('[nemo-record]', e.message); }
+    try { state.audioContext.close(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
     state.audioContext = null;
     state.workletLoaded = false;
   }
@@ -127,7 +127,7 @@ export async function ensureAudioContext() {
         if (state.audioContext.state === 'suspended') await state.audioContext.resume();
         return state.audioContext;
       }
-      try { await state.audioContext.close(); } catch (e) { console.warn('[nemo-record]', e.message); }
+      try { await state.audioContext.close(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
       state.audioContext = null;
       state.workletLoaded = false;
   }
@@ -369,8 +369,8 @@ export function startLiveAnimation() {
 }
 
 export function stopRecordingNodes() {
-  if (state.sourceNode) { try { state.sourceNode.disconnect(); } catch(e) { console.warn('[nemo-record]', e.message); } state.sourceNode = null; }
-  if (state.workletNode) { try { state.workletNode.disconnect(); } catch(e) { console.warn('[nemo-record]', e.message); } state.workletNode = null; }
+  if (state.sourceNode) { try { state.sourceNode.disconnect(); } catch(e) { console.warn('[nemo-recorder]', e.message); } state.sourceNode = null; }
+  if (state.workletNode) { try { state.workletNode.disconnect(); } catch(e) { console.warn('[nemo-recorder]', e.message); } state.workletNode = null; }
   state.isRecording = false;
 }
 
@@ -385,7 +385,7 @@ export function stopRecording() {
   // the tab from throttling, degrading the whole browser while we sit idle in
   // the editor. Playback resumes the context on demand.
   releaseMicStream();
-  if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-record]', e.message));
+  if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
 
   if (state.recordedChunks.length === 0) {
     showToast('No audio captured', true);
@@ -417,7 +417,7 @@ export function rerecord() {
   stopRecordingNodes();
   releaseMicStream();
   if (state.audioContext) {
-    try { state.audioContext.close(); } catch (e) { console.warn('[nemo-record]', e.message); }
+    try { state.audioContext.close(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
     state.audioContext = null;
     state.workletLoaded = false;
   }

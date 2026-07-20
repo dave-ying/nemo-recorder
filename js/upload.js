@@ -19,7 +19,7 @@ export async function loadUploadedFile(file) {
     loadBufferAsRecording(buffer, `Loaded "${file.name}" — lossless PCM ready`);
   } catch (err) {
     showToast('Could not read that file — unsupported or corrupt audio', true);
-    console.warn('[nemo-record]', err.message);
+    console.warn('[nemo-recorder]', err.message);
   } finally {
     el.uploadButtonConnect.disabled = false;
     el.uploadButtonReady.disabled = false;
