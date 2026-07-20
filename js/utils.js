@@ -1,9 +1,17 @@
 const KNOWN_UNSUPPORTED_RE = /\.(wma|amr|awb|mid|midi|ape|ac3|dts|ra|aup)$/i;
+const OGG_FAMILY_RE = /\.(ogg|oga|opus|weba|webm)$/i;   // decodable everywhere except WebKit (Safari + all iOS browsers)
+const APPLE_FAMILY_RE = /\.(aif|aiff|aifc|caf)$/i;       // decodable only on WebKit
 
-export const unsupportedFormatError = (fileName) => {
-  if (KNOWN_UNSUPPORTED_RE.test(fileName)) {
-    const ext = fileName.match(KNOWN_UNSUPPORTED_RE)[1].toUpperCase();
-    return `${ext} files can't be decoded by browsers — convert to MP3 or WAV first`;
+export const unsupportedFormatError = (fileName, isWebKit = false) => {
+  const known = fileName.match(KNOWN_UNSUPPORTED_RE);
+  if (known) {
+    return `${known[1].toUpperCase()} files can't be decoded by browsers — convert to MP3 or WAV first`;
+  }
+  if (isWebKit && OGG_FAMILY_RE.test(fileName)) {
+    return `Safari can't decode OGG/Opus/WebM audio — try Chrome or Firefox, or convert to MP3/WAV`;
+  }
+  if (!isWebKit && APPLE_FAMILY_RE.test(fileName)) {
+    return `This browser can't decode AIFF/CAF audio — try Safari, or convert to WAV/FLAC`;
   }
   return `"${fileName}" couldn't be decoded — unsupported or corrupt file`;
 };

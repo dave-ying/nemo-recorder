@@ -42,6 +42,27 @@ test('unsupportedFormatError shows generic message for unknown extensions', () =
   assert.match(msg, /couldn't be decoded/i);
 });
 
+test('unsupportedFormatError: WebKit gets OGG-family hint', () => {
+  assert.match(unsupportedFormatError('song.ogg', true), /^Safari can't decode OGG\/Opus\/WebM/);
+  assert.match(unsupportedFormatError('clip.weba', true), /^Safari can't decode/);
+  assert.match(unsupportedFormatError('movie.webm', true), /^Safari can't decode/);
+});
+
+test('unsupportedFormatError: non-WebKit gets AIFF-family hint', () => {
+  assert.match(unsupportedFormatError('take.aiff', false), /^This browser can't decode AIFF\/CAF/);
+  assert.match(unsupportedFormatError('take.caf'), /^This browser can't decode AIFF\/CAF/); // isWebKit defaults to false
+});
+
+test('unsupportedFormatError: native-family failure falls through to generic (corrupt file)', () => {
+  assert.match(unsupportedFormatError('song.ogg', false), /couldn't be decoded/); // Chrome decodes OGG, so failure = corrupt
+  assert.match(unsupportedFormatError('take.aiff', true), /couldn't be decoded/);  // Safari decodes AIFF, so failure = corrupt
+});
+
+test('unsupportedFormatError: known-undecodable message ignores the browser flag', () => {
+  assert.match(unsupportedFormatError('x.wma', true), /^WMA files can't be decoded/);
+  assert.match(unsupportedFormatError('x.wma', false), /^WMA files can't be decoded/);
+});
+
 // ===== WAV worker =====
 
 // Runs the worker source string with a mocked `self`, returns the first posted message.
