@@ -85,6 +85,8 @@ export const updateEmptyState = () => {
   el.emptyState.hidden = !empty;
   el.downloadButton.hidden = !state.recordedBuffer;
   el.playheadCaretTop.hidden = empty;
+  el.editorTopBar.hidden = empty;
+  el.transportBar.hidden = empty;
 };
 
 export const renderQualityOptions = () => {
