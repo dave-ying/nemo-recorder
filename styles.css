@@ -504,9 +504,9 @@ body::after {
 .rm-playhead { position: absolute; top: 0; bottom: 0; z-index: 8; padding: 0; margin: 0; background: transparent; border: none; color: var(--accent); display: flex; flex-direction: column; align-items: center; opacity: 0.9; transform: translateX(-50%); transition: opacity 0.15s, color 0.15s; line-height: 0; -webkit-user-select: none; user-select: none; pointer-events: none; }
 .rm-playhead:hover, .rm-playhead.dragging { opacity: 1; color: var(--accent-2); }
 .rm-playhead.dragging { transition: none; }
-.rm-playhead-grip { width: 24px; height: 24px; display: block; flex: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); transition: transform 0.15s; pointer-events: auto; cursor: grab; }
+.rm-playhead-grip { width: 24px; height: 24px; display: block; flex: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); transition: transform 0.15s; pointer-events: auto; }
 .rm-playhead:hover .rm-playhead-grip { transform: scale(1.15); }
-.rm-playhead.dragging .rm-playhead-grip { transform: scale(1.2); transition: none; cursor: grabbing; }
+.rm-playhead.dragging .rm-playhead-grip { transform: scale(1.2); transition: none; }
 .rm-playhead-line { flex: 1; width: 12px; margin-top: -5px; display: flex; justify-content: center; pointer-events: auto; }
 .rm-playhead-line::before { content: ''; width: 2px; height: 100%; border-radius: 1px; background: currentColor; box-shadow: 0 0 8px rgba(255, 140, 66, 0.6); }
 .rm-playhead:hover .rm-playhead-line::before, .rm-playhead.dragging .rm-playhead-line::before { box-shadow: 0 0 12px rgba(255, 140, 66, 0.85); }
