@@ -2,14 +2,10 @@ export const $ = (id) => document.getElementById(id);
 
 /**
  * @typedef {Object} AppElements
- * @property {HTMLButtonElement} connectButton
- * @property {HTMLButtonElement} disconnectButton
  * @property {HTMLDivElement} emptyState
  * @property {HTMLButtonElement} emptyStateRecordButton
  * @property {HTMLButtonElement} emptyStateUploadButton
  * @property {HTMLInputElement} fileInput
- * @property {HTMLButtonElement} recordButton
- * @property {HTMLButtonElement} stopButton
  * @property {HTMLButtonElement} restartButton
  * @property {HTMLButtonElement} skipForwardButton
  * @property {HTMLButtonElement} playButton
@@ -25,9 +21,6 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} playheadLine
  * @property {HTMLButtonElement} segmentTrash
  * @property {HTMLDivElement} playbackView
- * @property {HTMLDivElement} headerMicInfo
- * @property {HTMLDivElement} liveMeterBar
- * @property {HTMLButtonElement} settingsButton
  * @property {HTMLCanvasElement} liveCanvas
  * @property {HTMLCanvasElement} waveformCanvas
  * @property {HTMLCanvasElement} timelineRulerCanvas
@@ -57,21 +50,42 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} appendMenuUpload
  * @property {HTMLButtonElement} appendMenuRecord
  * @property {HTMLInputElement} appendFileInput
+ * @property {HTMLDivElement} recordModal
+ * @property {HTMLButtonElement} recordModalClose
+ * @property {HTMLSpanElement} rmMicDot
+ * @property {HTMLButtonElement} rmConnectBtn
+ * @property {HTMLButtonElement} rmSettingsBtn
+ * @property {HTMLButtonElement} rmDisconnectBtn
+ * @property {HTMLDivElement} rmReadyView
+ * @property {HTMLDivElement} rmNoMicView
+ * @property {HTMLDivElement} rmReadySpec
+ * @property {HTMLDivElement} rmCanvasWrap
+ * @property {HTMLDivElement} rmReviewWrap
+ * @property {HTMLDivElement} rmReviewCanvasArea
+ * @property {HTMLCanvasElement} rmReviewCanvas
+ * @property {HTMLButtonElement} rmPlayhead
+ * @property {HTMLDivElement} rmRecordingControls
+ * @property {HTMLDivElement} rmReviewControls
+ * @property {HTMLSpanElement} rmReviewCurrent
+ * @property {HTMLSpanElement} rmReviewTotal
+ * @property {HTMLButtonElement} rmRecordBtn
+ * @property {HTMLButtonElement} rmStopBtn
+ * @property {HTMLButtonElement} rmPlayBtn
+ * @property {HTMLDivElement} rmActionsRight
+ * @property {HTMLButtonElement} rmRetakeBtn
+ * @property {HTMLButtonElement} rmAddBtn
  */
 
 // Element IDs are static in index.html, so a single cast here gives every
 // consumer precise element types instead of `HTMLElement | null` everywhere.
 export const el = /** @type {AppElements} */ (/** @type {any} */ ({
-  connectButton: $('connectButton'), disconnectButton: $('disconnectButton'),
   emptyState: $('emptyState'), emptyStateRecordButton: $('emptyStateRecordButton'), emptyStateUploadButton: $('emptyStateUploadButton'), fileInput: $('fileInput'),
-  recordButton: $('recordButton'), stopButton: $('stopButton'),
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteButton: $('deleteButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   transportUploadButton: $('transportUploadButton'), transportRecordButton: $('transportRecordButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'), segmentTrash: $('segmentTrash'),
-  headerMicInfo: $('headerMicInfo'), settingsButton: $('settingsButton'),
-  liveMeterBar: $('liveMeterBar'), playbackView: $('playbackView'),
+  playbackView: $('playbackView'),
   liveCanvas: $('liveCanvas'), waveformCanvas: $('waveformCanvas'), timelineRulerCanvas: $('timelineRulerCanvas'),
   waveformContainer: $('waveformContainer'), segmentCountEl: $('segmentCount'),
   liveTimer: $('liveTimer'), levelFill: $('levelFill'),
@@ -85,9 +99,23 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   exportDetail: $('exportDetail'), exportConfirm: $('exportConfirm'),
   appendButton: $('appendButton'), appendMenu: $('appendMenu'),
   appendMenuUpload: $('appendMenuUpload'), appendMenuRecord: $('appendMenuRecord'),
-  appendFileInput: $('appendFileInput')
+  appendFileInput: $('appendFileInput'),
+  recordModal: $('recordModal'), recordModalClose: $('recordModalClose'),
+  rmMicDot: $('rmMicDot'),
+  rmConnectBtn: $('rmConnectBtn'), rmSettingsBtn: $('rmSettingsBtn'), rmDisconnectBtn: $('rmDisconnectBtn'),
+  rmReadyView: $('rmReadyView'), rmNoMicView: $('rmNoMicView'), rmReadySpec: $('rmReadySpec'),
+  rmCanvasWrap: $('rmCanvasWrap'), rmReviewWrap: $('rmReviewWrap'),
+  rmReviewCanvasArea: $('rmReviewCanvasArea'),
+  rmReviewCanvas: $('rmReviewCanvas'),
+  rmPlayhead: $('rmPlayhead'),
+  rmRecordingControls: $('rmRecordingControls'), rmReviewControls: $('rmReviewControls'),
+  rmReviewCurrent: $('rmReviewCurrent'), rmReviewTotal: $('rmReviewTotal'),
+  rmRecordBtn: $('rmRecordBtn'), rmStopBtn: $('rmStopBtn'), rmPlayBtn: $('rmPlayBtn'),
+  rmActionsRight: $('rmActionsRight'),
+  rmRetakeBtn: $('rmRetakeBtn'), rmAddBtn: $('rmAddBtn')
 }));
 
 export const liveCtx = /** @type {CanvasRenderingContext2D} */ (el.liveCanvas.getContext('2d'));
 export const waveCtx = /** @type {CanvasRenderingContext2D} */ (el.waveformCanvas.getContext('2d'));
 export const rulerCtx = /** @type {CanvasRenderingContext2D} */ (el.timelineRulerCanvas.getContext('2d'));
+export const reviewCtx = /** @type {CanvasRenderingContext2D} */ (el.rmReviewCanvas.getContext('2d'));

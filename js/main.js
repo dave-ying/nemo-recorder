@@ -1,7 +1,7 @@
 import { state, SEGMENT_GAP_CSS_PX } from './state.js';
 import { el } from './dom.js';
-import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateHeaderState, updateEmptyState } from './ui.js';
-import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording } from './audio.js';
+import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState } from './ui.js';
+import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removeDraggingClass, removePlayheadCaretDraggingClass, visualRatioToAudioRatioWithState, hideSegmentTrash, findSegmentAtSample } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, rebuildPlaybackBuffer, undo, redo } from './editing.js';
@@ -9,25 +9,18 @@ import { startPlayback, pausePlayback, seekToRatio } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
 import { formatTime } from './utils.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
+import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
 
 // ===== Event handlers =====
 
-el.connectButton.addEventListener('click', connectMicrophone);
-el.disconnectButton.addEventListener('click', disconnectMicrophone);
-el.emptyStateRecordButton.addEventListener('click', async () => {
-  if (state.isRecording) return;
-  if (!state.micCapabilities) await connectMicrophone();
-  if (state.micCapabilities) startRecording();
-});
+el.emptyStateRecordButton.addEventListener('click', () => openRecordModal('fresh'));
 el.emptyStateUploadButton.addEventListener('click', () => el.fileInput.click());
 el.fileInput.addEventListener('change', (e) => {
   const file = /** @type {HTMLInputElement} */ (e.target).files[0];
   if (file) loadUploadedFile(file);
 });
-el.recordButton.addEventListener('click', () => { if (!state.isRecording) startRecording(); });
-el.stopButton.addEventListener('click', () => { if (state.isRecording) stopRecording(); });
 el.restartButton.addEventListener('click', () => {
   if (state.isPlaying) pausePlayback();
   const sr = state.originalBuffer.sampleRate;
@@ -70,10 +63,7 @@ el.deleteButton.addEventListener('click', deleteSegmentAtPlayhead);
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
 el.transportUploadButton.addEventListener('click', () => el.appendFileInput.click());
-el.transportRecordButton.addEventListener('click', () => {
-  state.appendOnStop = true;
-  startRecording();
-});
+el.transportRecordButton.addEventListener('click', () => openRecordModal('append'));
 
 const closeAppendMenu = () => { el.appendMenu.hidden = true; };
 
@@ -97,8 +87,7 @@ el.appendMenuUpload.addEventListener('click', () => {
 
 el.appendMenuRecord.addEventListener('click', () => {
   closeAppendMenu();
-  state.appendOnStop = true;
-  startRecording();
+  openRecordModal('append');
 });
 
 el.appendFileInput.addEventListener('change', (e) => {
@@ -128,10 +117,6 @@ el.playheadScissors.addEventListener('click', (e) => {
   splitAtPlayhead();
 });
 el.playheadScissors.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-
-el.settingsButton.addEventListener('click', () => {
-  el.qualityModal.classList.add('visible');
-});
 
 el.qualityModalClose.addEventListener('click', () => {
   el.qualityModal.classList.remove('visible');
@@ -239,6 +224,23 @@ document.addEventListener('keydown', (e) => {
   if (keyTarget.tagName === 'INPUT' || keyTarget.tagName === 'TEXTAREA') return;
   const noMod = !e.metaKey && !e.ctrlKey && !e.altKey;
 
+  // While the record modal is open it owns the keyboard: editor shortcuts
+  // (Space, S, arrows, Delete, undo) must not fire behind the overlay.
+  if (el.recordModal.classList.contains('visible')) {
+    if (e.code === 'Space' && noMod) {
+      e.preventDefault();
+      if (state.isRecording) handleModalStop();
+      else if (state.pendingTakeBuffer) togglePreview();
+    } else if (e.code === 'KeyR' && noMod) {
+      e.preventDefault();
+      if (state.isRecording) handleModalStop();
+      else if (!state.pendingTakeBuffer && state.micCapabilities) handleModalRecord();
+    } else if (e.code === 'Escape') {
+      closeRecordModal();
+    }
+    return;
+  }
+
   if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && !el.playbackView.hidden) {
     e.preventDefault();
     e.shiftKey ? redo() : undo();
@@ -267,8 +269,8 @@ document.addEventListener('keydown', (e) => {
     if (state.hoveredSegmentIndex >= 0) deleteSegmentByIndex(state.hoveredSegmentIndex);
     else deleteSegmentAtPlayhead();
   } else if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey) {
-    if (state.micCapabilities && !state.isRecording) { e.preventDefault(); startRecording(); }
-    else if (state.isRecording) { e.preventDefault(); stopRecording(); }
+    e.preventDefault();
+    openRecordModal('fresh');
   } else if (e.code === 'Escape') {
     if (!el.appendMenu.hidden) {
       closeAppendMenu();
@@ -302,15 +304,13 @@ window.addEventListener('resize', () => {
 });
 
 // ===== Init =====
-updateHeaderState();
+initRecordModal();
 updateEmptyState();
 updateSegmentCountDisplay();
 setTransportDisabled(true);
 
 if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === 'undefined') {
   showToast('Browser lacks required audio capture support', true);
-  el.connectButton.disabled = true;
-  el.connectButton.style.opacity = '0.4';
 }
 
 if (navigator.permissions?.query) {

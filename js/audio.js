@@ -1,11 +1,11 @@
 import { state, LIVE_SECONDS, WAVEFORM_SCALE, WAVEFORM_STYLE } from './state.js';
 import { el, liveCtx } from './dom.js';
 import { formatTime } from './utils.js';
-import { showToast, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled, updateHeaderState, setRecordingUI, updateEmptyState } from './ui.js';
+import { showToast, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled, updateEmptyState } from './ui.js';
 import { fillWaveformPathLive, hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform } from './waveform.js';
 import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
-import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
+import { loadBufferAsRecording } from './editing.js';
 
 let liveRafId;
 
@@ -31,8 +31,6 @@ const workletCode = `
 `;
 
 export async function connectMicrophone() {
-  el.connectButton.disabled = true;
-
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
@@ -78,7 +76,6 @@ export async function connectMicrophone() {
 
     renderQualityOptions();
     updateBitrate();
-    updateHeaderState();
     showToast(`Connected: ${state.micLabel}`);
   } catch (err) {
     console.error(err);
@@ -86,8 +83,6 @@ export async function connectMicrophone() {
       : err.name === 'NotFoundError' ? 'No microphone found'
       : (err.message || 'Failed to connect microphone');
     showToast(msg, true);
-  } finally {
-    el.connectButton.disabled = false;
   }
 }
 
@@ -118,7 +113,6 @@ export function disconnectMicrophone() {
   state.hoverRatio = -1;
   resetReadouts();
   updateSegmentCountDisplay();
-  updateHeaderState();
   updateEmptyState();
 }
 
@@ -208,7 +202,6 @@ async function ensureMediaStream() {
 
 export async function startRecording() {
   try {
-    el.recordButton.disabled = true;
     await ensureAudioContext();
 
     await ensureMediaStream();
@@ -237,7 +230,6 @@ export async function startRecording() {
     state.recordStartTime = performance.now();
     state.isRecording = true;
 
-    setRecordingUI(true);
     startLiveAnimation();
 
   } catch (err) {
@@ -245,10 +237,19 @@ export async function startRecording() {
     showToast(err.name === 'NotAllowedError' ? 'Microphone permission denied' : (err.message || 'Failed to start recording'), true);
     stopRecordingNodes();
     releaseMicStream();
-    updateHeaderState();
-  } finally {
-    el.recordButton.disabled = false;
   }
+}
+
+// Abort an in-progress capture without building a take: used when the record
+// modal closes mid-recording. Mirrors stopRecording's cleanup minus the buffer.
+export function cancelRecordingCapture() {
+  state.isRecording = false;
+  if (liveRafId) cancelAnimationFrame(liveRafId);
+  if (state.liveResizeHandler) window.removeEventListener('resize', state.liveResizeHandler);
+  stopRecordingNodes();
+  releaseMicStream();
+  state.recordedChunks = [];
+  if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
 }
 
 export function processLiveAudio(channels) {
@@ -390,9 +391,7 @@ export async function stopRecording() {
   if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
 
   if (state.recordedChunks.length === 0) {
-    setRecordingUI(false);
     updateEmptyState();
-    state.appendOnStop = false;
     showToast('No audio captured', true);
     return;
   }
@@ -413,13 +412,15 @@ export async function stopRecording() {
   const buffer = state.audioContext.createBuffer(numChannels, totalLength, state.audioContext.sampleRate);
   for (let c = 0; c < numChannels; c++) buffer.copyToChannel(combined[c], c);
 
-  setRecordingUI(false);
-  if (state.appendOnStop) {
-    state.appendOnStop = false;
-    await appendBufferToRecording(buffer, 'Appended new recording');
-  } else {
-    loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
+  // Called from the record modal: stash the take for its review flow. The
+  // modal decides whether to load or append it (see record-modal.js).
+  if (state.recordModalContext) {
+    state.pendingTakeBuffer = buffer;
+    return;
   }
+
+  // Defensive fallback for any non-modal caller.
+  loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
 }
 
 

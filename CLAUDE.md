@@ -25,7 +25,7 @@ There is no bundler/build step — files are served as-is. `dev-server.js` is a 
 All modules communicate through one shared mutable `state` object (`js/state.js`) — there is no framework, no event bus, no reactive layer. Modules import `state` directly and mutate it; DOM updates are then triggered imperatively (e.g. `drawPlaybackWaveform(ratio)`, `updateSegmentCountDisplay()`). When editing behavior, trace effects through `state` rather than expecting props/events to flow.
 
 - **`state.js`** — the single `AppState` object (JSDoc-typed) plus layout/style constants (`WAVEFORM_STYLE` colors, segment gap/corner/shadow px, `LIVE_SECONDS`, `MIN_SEGMENT_SAMPLES`). Start here to understand what fields exist before touching any feature.
-- **`dom.js`** — one-time `getElementById` lookups into a typed `el` object, plus the two canvas 2D contexts (`liveCtx`, `waveCtx`). Element IDs are static in `index.html`; add new DOM refs here rather than querying ad hoc.
+- **`dom.js`** — one-time `getElementById` lookups into a typed `el` object, plus the three canvas 2D contexts (`liveCtx`, `waveCtx`, `reviewCtx`). Element IDs are static in `index.html`; add new DOM refs here rather than querying ad hoc.
 - **`main.js`** — wires all DOM event listeners (buttons, keyboard shortcuts, drag/resize handlers) to functions exported by the other modules. This is the composition root; it contains almost no logic of its own — look here to find *what triggers what*, then follow into the relevant module for *how*.
 - **`audio.js`** — mic connection/capabilities detection, `AudioWorklet` setup (worklet processor source is an inline string, loaded via a `data:` URL — no separate worklet file), recording start/stop, live ring-buffer used for the recording-view waveform.
 - **`upload.js`** — lets the user pick an existing audio file (from `connectView` or `readyView`) instead of recording one, via `<input type="file">` + `AudioContext.decodeAudioData`. Reuses `editing.js`'s `loadBufferAsRecording()` to land in the same playback-ready state a mic capture would.
@@ -36,21 +36,23 @@ All modules communicate through one shared mutable `state` object (`js/state.js`
 - **`scrub.js`** — held-arrow-key scrubbing with acceleration (ramps from `SCRUB_MIN_SPEED` to `SCRUB_MAX_SPEED` the longer a key is held).
 - **`export.js`** — export modal UI + lazily-created Web Workers for encoding (one worker per format, created on first use). Talks to `worker-code.js` for the actual worker source.
 - **`worker-code.js`** — WAV and MP3 encoder source, kept as **template-literal strings** (not real worker files) so they can be spun up from Blob URLs and also imported directly into Node tests via `vm.runInContext`. This file is intentionally DOM-free — don't add browser-only APIs to the worker source strings.
-- **`ui.js`** — small generic DOM helpers: toasts, header state management (`updateHeaderState`), recording UI mode (`setEditorRecordingMode`), empty-state display (`updateEmptyState`), transport button enable/disable, quality-option rendering.
+- **`record-modal.js`** — modal controller for the recording modal. Handles multiple states (`disconnected`, `ready`, `recording`, `review`), mic connection/disconnection, start/stop recording, review waveform rendering with seekable+draggable playhead, preview playback of the pending take, and the "Add to Editor" / "Retake" decision flow.
+- **`ui.js`** — small generic DOM helpers: toasts, empty-state display (`updateEmptyState`), transport button enable/disable, quality-option rendering.
 - **`utils.js`** — pure formatting helpers (`formatTime`, `formatSize`).
 
 ### Vendored dependencies
 
 `vendor/lame.min.js` is a vendored copy of lamejs (MIT) for client-side MP3 encoding, loaded via `importScripts` inside the MP3 worker (resolved to an absolute URL since Blob-URL workers can't resolve relative `importScripts` paths). There are no npm runtime dependencies — `typescript` is the only devDependency, used solely for `npm run check`.
 
-### Editor modes (single view)
+### Editor modes (single view) + Record modal
 
-The app has a single view (the editor). Three modes are driven by state, not DOM views:
+The app has a single view (the editor). Two modes are driven by state:
 - **Empty** — no `state.recordedBuffer` and not recording. Shows the empty-state placeholder with Record and upload buttons. Transport is disabled.
-- **Recording** — `state.isRecording` is true. Live meter bar replaces the timeline ruler, live canvas overlays the waveform, stop button replaces the play button.
 - **Editing** — `state.recordedBuffer` is set. Full waveform rendering, segment editing (split/delete/drag/trash/scissors), playback transport.
 
-Mode transitions are handled by `setEditorRecordingMode()` and `updateEmptyState()` in `ui.js`, not by toggling view containers. `state.originalBuffer` holds the untouched capture; `state.segments` (array of `{start, end}` sample ranges into `originalBuffer`) plus `rebuildPlaybackBuffer()` in `editing.js` produce `state.recordedBuffer`, which is what's actually played back and exported.
+Recording no longer happens inline — it uses a separate modal (`record-modal.js`). The modal opens on any "Record" click (or `R` key) and handles the full lifecycle internally: mic status → record → live waveform with level meter → stop → review with seekable playback → retake or add to editor. The modal manages its own state (`disconnected`, `ready`, `recording`, `review`) independently of the editor. While the modal is open, editor keyboard shortcuts are blocked by a guard in `main.js`.
+
+`state.originalBuffer` holds the untouched capture; `state.segments` (array of `{start, end}` sample ranges into `originalBuffer`) plus `rebuildPlaybackBuffer()` in `editing.js` produce `state.recordedBuffer`, which is what's actually played back and exported.
 
 ### Segment card rendering
 

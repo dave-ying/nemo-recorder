@@ -83,7 +83,12 @@ export const SEGMENT_DELETE_ANIM_MS = 480;
  * @property {number} draggingHandleIndex
  * @property {Object|null} _dragSnapshot
  * @property {boolean} draggingPlayhead
- * @property {boolean} appendOnStop
+ * @property {AudioBuffer|null} pendingTakeBuffer
+ * @property {'fresh'|'append'|null} recordModalContext
+ * @property {AudioBufferSourceNode|null} previewSource
+ * @property {number} previewStartTime
+ * @property {number} previewOffset
+ * @property {boolean} isPreviewing
  */
 
 /** @type {AppState} */
@@ -127,7 +132,12 @@ export const state = {
   trashHideTimer: null,
   mouseMoveRaf: null,
   draggingPlayhead: false,
-  appendOnStop: false
+  pendingTakeBuffer: null,
+  recordModalContext: null,
+  previewSource: null,
+  previewStartTime: 0,
+  previewOffset: 0,
+  isPreviewing: false
 };
 
 

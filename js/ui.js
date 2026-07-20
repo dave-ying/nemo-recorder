@@ -12,18 +12,6 @@ export const showToast = (message, isError = false) => {
   toastTimer = setTimeout(() => el.toast.classList.remove('show'), TOAST_DURATION_MS);
 };
 
-export const updateHeaderState = () => {
-  if (state.micCapabilities) {
-    el.connectButton.textContent = state.micLabel || 'Connected';
-    el.connectButton.style.opacity = '0.6';
-    el.connectButton.disabled = true;
-  } else {
-    el.connectButton.textContent = 'Connect';
-    el.connectButton.style.opacity = '';
-    el.connectButton.disabled = false;
-  }
-};
-
 export const resetReadouts = () => {
   el.bitrateReadout.textContent = '— kbps';
 };
@@ -52,27 +40,9 @@ export const setTransportDisabled = (disabled) => {
   el.transportRecordButton.disabled = disabled;
 };
 
-export const setEditorRecordingMode = (active) => {
-  el.playButton.hidden = active;
-  el.timelineRulerCanvas.hidden = active;
-  el.playheadCaretTop.style.display = active ? 'none' : '';
-  el.playheadScissors.classList.remove('visible');
-  el.segmentTrash.classList.remove('visible');
-  el.appendButton.classList.remove('visible');
-  el.appendMenu.hidden = true;
-  if (active) {
-    el.emptyState.hidden = true;
-    setTransportDisabled(true);
-    el.undoButton.disabled = true;
-    el.redoButton.disabled = true;
-  }
-};
-
 export const updateEmptyState = () => {
   const empty = !state.recordedBuffer && !state.isRecording;
   el.emptyState.hidden = !empty;
-  el.connectButton.hidden = empty;
-  el.recordButton.hidden = empty;
   el.downloadButton.hidden = !state.recordedBuffer;
   el.playheadCaretTop.hidden = empty;
 };

@@ -218,91 +218,114 @@
   </div>
 
   <!-- Record Modal -->
-  <div class="quality-modal-overlay" id="recordModal">
+  <div class="quality-modal-overlay record-modal" id="recordModal">
     <div class="modal">
       <div class="modal-header">
         <span class="modal-title">Record</span>
         <button class="modal-close" id="recordModalClose">&times;</button>
       </div>
 
-      <!-- Mic status row -->
-      <div class="rm-mic-row" id="rmMicRow">
-        <div class="rm-mic-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-        </div>
+      <!-- Mic status chip -->
+      <div class="rm-mic" id="rmMicRow">
+        <span class="rm-mic-dot" id="rmMicDot"></span>
+        <svg class="rm-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
         <span class="rm-mic-name" id="micName">No microphone connected</span>
-        <button class="btn" id="rmConnectBtn">Connect</button>
-        <button class="btn" id="rmSettingsBtn" hidden>
+        <button class="rm-icon-btn" id="rmSettingsBtn" title="Capture settings" aria-label="Capture settings" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
-          Settings
         </button>
-        <button class="btn" id="rmDisconnectBtn" hidden>Disconnect</button>
+        <button class="rm-icon-btn" id="rmDisconnectBtn" title="Disconnect microphone" aria-label="Disconnect microphone" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
       </div>
 
-      <!-- Live canvas area during recording -->
-      <div class="rm-canvas-wrap" id="rmCanvasWrap" hidden>
-        <canvas id="liveCanvas"></canvas>
-        <div class="rm-live-meter">
-          <div class="rec-indicator">
-            <span class="rec-indicator-dot"></span>
-            <span>REC</span>
-          </div>
-          <div class="level-meter"><div class="level-meter-fill" id="levelFill"></div></div>
-          <div class="live-timer" id="liveTimer">00:00.000</div>
-        </div>
-      </div>
-
-      <!-- Review area -->
-      <div class="rm-review-wrap" id="rmReviewWrap" hidden>
-        <div class="rm-review-header">
-          <span class="rm-review-label">Recording</span>
-          <div class="rm-review-time">
-            <span id="rmReviewCurrent">00:00.000</span>
-            <span class="time-sep">/</span>
-            <span id="rmReviewTotal">00:00.000</span>
-          </div>
-        </div>
-        <div class="rm-review-canvas-area" id="rmReviewCanvasArea">
-          <canvas id="rmReviewCanvas"></canvas>
-          <button class="rm-playhead" id="rmPlayhead" aria-label="Review playhead">
-            <svg class="rm-playhead-grip" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M0 0h24v24H0z" fill="none"/>
-              <path d="M7 5h10q2 0 2 2v4q0 1-.7 1.7l-5.6 5.6q-.7.7-1.4 0l-5.6-5.6Q5 12 5 11V7q0-2 2-2"/>
-            </svg>
-            <span class="rm-playhead-line"></span>
+      <!-- Stage: exactly one view visible per state -->
+      <div class="rm-stage">
+        <!-- Ready: big record button -->
+        <div class="rm-ready" id="rmReadyView" hidden>
+          <button class="rm-big-record" id="rmRecordBtn" aria-label="Start recording">
+            <span class="rm-big-record-dot"></span>
           </button>
+          <div class="rm-ready-hint">Click to start recording</div>
+          <div class="rm-ready-spec" id="rmReadySpec"></div>
         </div>
-        <div class="rm-review-controls">
-          <button class="rm-play-btn" id="rmPlayBtn" aria-label="Play take">
-            <svg class="rm-play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-            <svg class="rm-pause-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          </button>
+
+        <!-- Disconnected: connect prompt -->
+        <div class="rm-nomic" id="rmNoMicView" hidden>
+          <svg class="rm-nomic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="1" y1="1" x2="23" y2="23"/>
+            <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+            <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+          <div class="rm-nomic-text">No microphone connected</div>
+          <button class="btn btn-primary" id="rmConnectBtn">Connect Microphone</button>
+        </div>
+
+        <!-- Recording: live waveform + HUD -->
+        <div class="rm-live" id="rmCanvasWrap" hidden>
+          <canvas id="liveCanvas"></canvas>
+          <div class="rm-live-hud">
+            <span class="rm-rec"><span class="rm-rec-dot"></span>REC</span>
+            <span class="live-timer" id="liveTimer">00:00.000</span>
+          </div>
+          <div class="rm-live-meter"><div class="level-meter-fill" id="levelFill"></div></div>
+        </div>
+
+        <!-- Review: take waveform + playhead -->
+        <div class="rm-review" id="rmReviewWrap" hidden>
+          <div class="rm-review-canvas-area" id="rmReviewCanvasArea">
+            <canvas id="rmReviewCanvas"></canvas>
+            <button class="rm-playhead" id="rmPlayhead" aria-label="Drag to seek">
+              <svg class="rm-playhead-grip" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M0 0h24v24H0z" fill="none"/>
+                <path d="M7 5h10q2 0 2 2v4q0 1-.7 1.7l-5.6 5.6q-.7.7-1.4 0l-5.6-5.6Q5 12 5 11V7q0-2 2-2"/>
+              </svg>
+              <span class="rm-playhead-line"></span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- Actions -->
-      <div class="rm-actions" id="rmActions">
-        <button class="btn btn-primary" id="rmRecordBtn">Record</button>
-        <button class="rm-rec-stop-btn" id="rmStopBtn" hidden>
+      <!-- Recording controls: stop -->
+      <div class="rm-controls" id="rmRecordingControls" hidden>
+        <button class="rm-stop" id="rmStopBtn" aria-label="Stop recording">
           <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
         </button>
-        <div class="rm-actions-right" id="rmActionsRight" hidden>
-          <button class="btn" id="rmRetakeBtn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            Retake
-          </button>
-          <button class="btn btn-primary" id="rmAddBtn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-            Add to Editor
-          </button>
+      </div>
+
+      <!-- Review controls: play + time -->
+      <div class="rm-controls" id="rmReviewControls" hidden>
+        <button class="rm-play-btn" id="rmPlayBtn" aria-label="Play or pause take">
+          <svg class="rm-play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="rm-pause-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+        </button>
+        <div class="rm-review-time">
+          <span id="rmReviewCurrent">00:00.000</span>
+          <span class="time-sep">/</span>
+          <span id="rmReviewTotal">00:00.000</span>
         </div>
+      </div>
+
+      <!-- Review actions -->
+      <div class="rm-actions" id="rmActionsRight" hidden>
+        <button class="btn" id="rmRetakeBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Retake
+        </button>
+        <button class="btn btn-primary" id="rmAddBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          Add to Editor
+        </button>
       </div>
     </div>
   </div>
