@@ -43,6 +43,8 @@ export const setTransportDisabled = (disabled) => {
   el.playButton.disabled = disabled;
   el.splitButton.disabled = disabled;
   el.deleteButton.disabled = disabled;
+  el.transportUploadButton.disabled = disabled;
+  el.transportRecordButton.disabled = disabled;
 };
 
 export const setRecordingUI = (active) => {

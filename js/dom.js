@@ -18,6 +18,8 @@ export const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} deleteButton
  * @property {HTMLButtonElement} undoButton
  * @property {HTMLButtonElement} redoButton
+ * @property {HTMLButtonElement} transportUploadButton
+ * @property {HTMLButtonElement} transportRecordButton
  * @property {HTMLButtonElement} playheadScissors
  * @property {HTMLButtonElement} playheadCaretTop
  * @property {HTMLSpanElement} playheadLine
@@ -66,6 +68,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteButton: $('deleteButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
+  transportUploadButton: $('transportUploadButton'), transportRecordButton: $('transportRecordButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'), segmentTrash: $('segmentTrash'),
   headerMicInfo: $('headerMicInfo'), settingsButton: $('settingsButton'),
   liveMeterBar: $('liveMeterBar'), playbackView: $('playbackView'),

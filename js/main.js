@@ -69,6 +69,11 @@ el.splitButton.addEventListener('click', splitAtPlayhead);
 el.deleteButton.addEventListener('click', deleteSegmentAtPlayhead);
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
+el.transportUploadButton.addEventListener('click', () => el.appendFileInput.click());
+el.transportRecordButton.addEventListener('click', () => {
+  state.appendOnStop = true;
+  startRecording();
+});
 
 const closeAppendMenu = () => { el.appendMenu.hidden = true; };
 
