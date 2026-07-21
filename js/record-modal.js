@@ -113,6 +113,14 @@ export async function handleModalConnect() {
   if (state.micCapabilities) showReadyState();
 }
 
+export async function handleModalDeviceChange() {
+  const deviceId = el.micDeviceSelect.value;
+  el.micDeviceSelect.disabled = true;
+  await connectMicrophone(deviceId);
+  el.micDeviceSelect.disabled = false;
+  if (state.micCapabilities) showReadyState();
+}
+
 export function handleModalDisconnect() {
   disconnectMicrophone();
   closeRecordModal();
@@ -397,6 +405,7 @@ function startReviewDrag(e) {
 
 export function initRecordModal() {
   el.rmConnectBtn.addEventListener('click', handleModalConnect);
+  el.micDeviceSelect.addEventListener('change', handleModalDeviceChange);
   el.rmSettingsBtn.addEventListener('click', handleModalSettings);
   el.rmDisconnectBtn.addEventListener('click', handleModalDisconnect);
   el.rmRecordBtn.addEventListener('click', handleModalRecord);

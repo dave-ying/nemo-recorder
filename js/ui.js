@@ -115,3 +115,21 @@ export const renderQualityOptions = () => {
   createOptions(el.chOptions, state.micCapabilities.supportedChannels, state.settings.channels,
     { 1: 'Mono', 2: 'Stereo' }, 'channels');
 };
+
+// Only shown when there's an actual choice to make — a single detected
+// device (or none yet) has nothing worth picking between.
+export const renderMicDeviceOptions = () => {
+  if (!state.micDevices || state.micDevices.length < 2) {
+    el.micDeviceRow.hidden = true;
+    return;
+  }
+  el.micDeviceRow.hidden = false;
+  el.micDeviceSelect.innerHTML = '';
+  state.micDevices.forEach((d, i) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Microphone ${i + 1}`;
+    if (d.deviceId === state.micDeviceId) opt.selected = true;
+    el.micDeviceSelect.appendChild(opt);
+  });
+};

@@ -107,6 +107,8 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {boolean} workletLoaded
  * @property {MicCapabilities|null} micCapabilities
  * @property {string} micLabel
+ * @property {{deviceId: string, label: string}[]} micDevices - audioinput devices, populated after mic permission is granted
+ * @property {string|null} micDeviceId - deviceId of the currently connected/selected microphone
  * @property {boolean} isRecording
  * @property {boolean} isPlaying
  * @property {Float32Array[][]} recordedChunks
@@ -157,6 +159,8 @@ export const state = {
   workletLoaded: false,
   micCapabilities: null,
   micLabel: '',
+  micDevices: [],
+  micDeviceId: null,
   isRecording: false,
   isPlaying: false,
   recordedChunks: [],

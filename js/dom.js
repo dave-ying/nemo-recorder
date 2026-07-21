@@ -11,6 +11,7 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} playButton
  * @property {HTMLButtonElement} downloadButton
  * @property {HTMLButtonElement} splitButton
+ * @property {HTMLButtonElement} deleteSegmentButton
  * @property {HTMLButtonElement} undoButton
  * @property {HTMLButtonElement} redoButton
  * @property {HTMLButtonElement} transportUploadButton
@@ -34,6 +35,8 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} timeCurrent
  * @property {HTMLSpanElement} timeTotal
  * @property {HTMLDivElement} micName
+ * @property {HTMLDivElement} micDeviceRow
+ * @property {HTMLSelectElement} micDeviceSelect
  * @property {HTMLDivElement} rateOptions
  * @property {HTMLDivElement} bitOptions
  * @property {HTMLDivElement} chOptions
@@ -88,7 +91,7 @@ const $ = (id) => document.getElementById(id);
 export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   emptyState: $('emptyState'), emptyStateRecordButton: $('emptyStateRecordButton'), emptyStateUploadButton: $('emptyStateUploadButton'), fileInput: $('fileInput'),
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), downloadButton: $('downloadButton'),
-  splitButton: $('splitButton'),
+  splitButton: $('splitButton'), deleteSegmentButton: $('deleteSegmentButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   transportUploadButton: $('transportUploadButton'), transportRecordButton: $('transportRecordButton'),
   playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'), segmentTrash: $('segmentTrash'),
@@ -99,6 +102,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   liveTimer: $('liveTimer'), levelFill: $('levelFill'),
   timeCurrent: $('timeCurrent'), timeTotal: $('timeTotal'),
   micName: $('micName'),
+  micDeviceRow: $('micDeviceRow'), micDeviceSelect: $('micDeviceSelect'),
   rateOptions: $('rateOptions'), bitOptions: $('bitOptions'), chOptions: $('chOptions'),
   bitrateReadout: $('bitrateReadout'), toast: $('toast'), toastMessage: $('toastMessage'),
   exportModal: $('exportModal'), exportClose: $('exportClose'),

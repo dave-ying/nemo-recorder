@@ -1,7 +1,7 @@
 import { state, LIVE_SECONDS, WAVEFORM_SCALE, WAVEFORM_STYLE } from './state.js';
 import { el, liveCtx } from './dom.js';
 import { formatTime } from './utils.js';
-import { showToast, renderQualityOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled, updateEmptyState } from './ui.js';
+import { showToast, renderQualityOptions, renderMicDeviceOptions, updateBitrate, updateSegmentCountDisplay, resetReadouts, setTransportDisabled, updateEmptyState } from './ui.js';
 import { fillWaveformPathLive, hideSegmentTrash } from './waveform.js';
 import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
@@ -30,12 +30,32 @@ const workletCode = `
   registerProcessor('recorder-processor', RecorderProcessor);
 `;
 
-export async function connectMicrophone() {
+// Populates state.micDevices with audioinput devices. Labels are only
+// non-empty once mic permission has been granted at least once, so this is
+// called after a successful connect rather than on page load.
+export async function refreshMicDeviceList() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      video: false
-    });
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    state.micDevices = devices
+      .filter(d => d.kind === 'audioinput')
+      .map(d => ({ deviceId: d.deviceId, label: d.label }));
+  } catch (e) {
+    console.warn('[nemo-recorder]', e.message);
+  }
+}
+
+navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
+  if (!state.micCapabilities) return;
+  await refreshMicDeviceList();
+  renderMicDeviceOptions();
+});
+
+export async function connectMicrophone(deviceId) {
+  try {
+    const audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
 
     const track = stream.getAudioTracks()[0];
     state.micLabel = track.label || 'Unknown Microphone';
@@ -44,20 +64,34 @@ export async function connectMicrophone() {
     try { caps = track.getCapabilities() || {}; } catch (e) { console.warn('[nemo-recorder]', e.message); }
     try { trackSettings = track.getSettings() || {}; } catch (e) { console.warn('[nemo-recorder]', e.message); }
 
-    const candidateRates = [44100, 48000, 96000, 192000];
-    let supportedRates;
-    if (caps.sampleRate && typeof caps.sampleRate === 'object') {
-      supportedRates = candidateRates.filter(r => r >= caps.sampleRate.min && r <= caps.sampleRate.max);
-      if (!supportedRates.length) supportedRates = [trackSettings.sampleRate || 48000];
-    } else if (trackSettings.sampleRate) {
-      supportedRates = [trackSettings.sampleRate];
-    } else {
-      supportedRates = [48000];
-    }
+    state.micDeviceId = trackSettings.deviceId || deviceId || null;
+    await refreshMicDeviceList();
 
+    // Same unreliability as channelCount above: getCapabilities().sampleRate
+    // reports the range the audio backend could resample to (often a huge
+    // span like 3kHz-384kHz for every device), not the mic's true native
+    // rate. Offering that whole range as "supported" rates would default new
+    // recordings to the highest one (e.g. 192k) even on ordinary hardware —
+    // inflating file size with interpolated data, not real extra fidelity.
+    // getSettings().sampleRate is what the track is actually delivering, so
+    // it's the only rate treated as genuinely detected.
+    const candidateRates = [44100, 48000, 96000, 192000];
+    let nativeRate = null;
+    if (trackSettings.sampleRate) {
+      nativeRate = trackSettings.sampleRate;
+    } else if (caps.sampleRate && typeof caps.sampleRate === 'object') {
+      nativeRate = candidateRates.find(r => r >= caps.sampleRate.min && r <= caps.sampleRate.max) || caps.sampleRate.min || 48000;
+    }
+    const supportedRates = [nativeRate || 48000];
+
+    // getSettings().channelCount reflects the channel count the track is
+    // actually running at, which is an accurate read of the hardware. Chrome's
+    // getCapabilities().channelCount.max is unreliable and commonly reports 2
+    // for mono-only mics (it describes what the audio pipeline could upmix to,
+    // not the physical device), so it's only used as a fallback.
     let maxChannels = 1;
-    if (caps.channelCount && typeof caps.channelCount === 'object') maxChannels = caps.channelCount.max || 1;
-    else if (trackSettings.channelCount) maxChannels = trackSettings.channelCount;
+    if (trackSettings.channelCount) maxChannels = trackSettings.channelCount;
+    else if (caps.channelCount && typeof caps.channelCount === 'object') maxChannels = caps.channelCount.max || 1;
     const supportedChannels = maxChannels >= 2 ? [1, 2] : [1];
 
     const supportedBitDepths = [16, 24, 32];
@@ -75,12 +109,25 @@ export async function connectMicrophone() {
     el.micName.textContent = state.micLabel;
 
     renderQualityOptions();
+    renderMicDeviceOptions();
     updateBitrate();
-    showToast(`Connected: ${state.micLabel}`);
+
+    // We request echoCancellation/noiseSuppression/autoGainControl: false for
+    // a raw capture, but some drivers/OSes silently keep them on regardless.
+    // getSettings() reports what's actually active, so use it to flag when
+    // the capture isn't as unprocessed as the UI implies. Only a `=== true`
+    // report counts — `undefined` just means the browser doesn't expose the
+    // setting, not that processing is active.
+    const stillProcessing = ['echoCancellation', 'noiseSuppression', 'autoGainControl']
+      .filter(key => trackSettings[key] === true)
+      .map(key => key.replace(/([A-Z])/g, ' $1').toLowerCase());
+    const processingNote = stillProcessing.length ? ` — driver kept ${stillProcessing.join(', ')} on` : '';
+    showToast(`Connected: ${state.micLabel}${processingNote}`, stillProcessing.length > 0);
   } catch (err) {
     console.error(err);
     const msg = err.name === 'NotAllowedError' ? 'Microphone permission denied'
       : err.name === 'NotFoundError' ? 'No microphone found'
+      : err.name === 'OverconstrainedError' ? 'Selected microphone is unavailable'
       : (err.message || 'Failed to connect microphone');
     showToast(msg, true);
   }
@@ -103,6 +150,8 @@ export function disconnectMicrophone() {
     state.workletLoaded = false;
   }
   state.micCapabilities = null;
+  state.micDevices = [];
+  state.micDeviceId = null;
   state.originalBuffer = null;
   state.recordedBuffer = null;
   state.segments = [];
@@ -113,6 +162,7 @@ export function disconnectMicrophone() {
   el.playheadScissors.classList.remove('visible');
   resetReadouts();
   updateSegmentCountDisplay();
+  renderMicDeviceOptions();
   updateEmptyState();
 }
 
@@ -165,8 +215,9 @@ async function ensureMediaStream() {
     const currentSettings = state.mediaStream.getAudioTracks()[0].getSettings();
     const channelMismatch = currentSettings.channelCount !== undefined && state.settings.channels !== currentSettings.channelCount;
     const rateMismatch = currentSettings.sampleRate !== undefined && state.settings.sampleRate !== currentSettings.sampleRate;
+    const deviceMismatch = state.micDeviceId !== null && currentSettings.deviceId !== undefined && currentSettings.deviceId !== state.micDeviceId;
 
-    if (channelMismatch || rateMismatch) {
+    if (channelMismatch || rateMismatch || deviceMismatch) {
       needsNewStream = true;
     }
   }
@@ -179,7 +230,8 @@ async function ensureMediaStream() {
         channelCount: state.settings.channels,
         channelCountMode: 'explicit',
         sampleRate: state.settings.sampleRate,
-        echoCancellation: false, noiseSuppression: false, autoGainControl: false
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+        ...(state.micDeviceId ? { deviceId: { exact: state.micDeviceId } } : {})
       },
       video: false
     };
@@ -187,14 +239,24 @@ async function ensureMediaStream() {
     try {
       state.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (err) {
-      if (err.name === 'OverconstrainedError') {
+      if (err.name !== 'OverconstrainedError') throw err;
+      try {
         state.mediaStream = await navigator.mediaDevices.getUserMedia({
           ...constraints,
           audio: { ...constraints.audio, sampleRate: undefined }
         });
         showToast(`Mic couldn't match exact rate; using closest available.`);
-      } else {
-        throw err;
+      } catch (err2) {
+        // Selected device likely unplugged since capability detection — fall
+        // back to the system default mic rather than failing the recording.
+        if (err2.name !== 'OverconstrainedError' || !constraints.audio.deviceId) throw err2;
+        state.micDeviceId = null;
+        state.mediaStream = await navigator.mediaDevices.getUserMedia({
+          ...constraints,
+          audio: { ...constraints.audio, sampleRate: undefined, deviceId: undefined }
+        });
+        renderMicDeviceOptions();
+        showToast(`Selected microphone unavailable; using default microphone.`);
       }
     }
   }
