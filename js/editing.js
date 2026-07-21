@@ -234,6 +234,171 @@ export function deleteSegmentAtPlayhead() {
   if (target) deleteSegmentByIndex(target.index);
 }
 
+// ===== Segment copy/paste (context menu) =====
+
+export function copySegmentByIndex(index) {
+  if (!state.originalBuffer || index < 0 || index >= state.segments.length) return;
+  const seg = state.segments[index];
+  const numCh = state.originalBuffer.numberOfChannels;
+  const channels = [];
+  for (let c = 0; c < numCh; c++) {
+    channels.push(state.originalBuffer.getChannelData(c).slice(seg.start, seg.end));
+  }
+  state.clipboardSegment = { channels, length: seg.end - seg.start, sampleRate: state.originalBuffer.sampleRate };
+  showToast(`Copied segment ${index + 1}`);
+}
+
+// Appends `newLen` samples (produced per channel by `fillChannel`) onto
+// originalBuffer. Shared by every paste/duplicate path, which each only
+// differ in where the new samples come from and where the resulting segment
+// gets spliced in.
+function concatClipOntoOriginal(newLen, fillChannel) {
+  const nch = state.originalBuffer.numberOfChannels;
+  const oldLen = state.originalBuffer.length;
+  const combined = state.audioContext.createBuffer(nch, oldLen + newLen, state.originalBuffer.sampleRate);
+  for (let c = 0; c < nch; c++) {
+    const dst = combined.getChannelData(c);
+    dst.set(state.originalBuffer.getChannelData(c), 0);
+    dst.set(fillChannel(c), oldLen);
+  }
+  return { combined, oldLen };
+}
+
+// Shared tail for paste-after/duplicate: appends `newLen` samples (produced
+// per channel by `fillChannel`) onto originalBuffer and splices a new segment
+// in right after `afterIndex`.
+function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLabel, toastMessage) {
+  if (!state.originalBuffer || !state.audioContext) return;
+  if (state.isPlaying) pausePlayback();
+
+  const { combined, oldLen } = concatClipOntoOriginal(newLen, fillChannel);
+
+  pushHistory();
+  state.originalBuffer = combined;
+  const insertAt = Math.max(0, Math.min(afterIndex + 1, state.segments.length));
+  state.segments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel });
+  rebuildPlaybackBuffer();
+
+  el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
+  updateSegmentCountDisplay();
+  updateEmptyState();
+  clearSegmentHover();
+  // Select the segment that was just created: visual confirmation of what
+  // landed and where. It also makes repeated paste/duplicate chain forward —
+  // each new block becomes the anchor for the next one — instead of stacking
+  // every copy in the same slot.
+  showSegmentTrash(insertAt);
+  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  drawPlaybackWaveform(ratio);
+  showToast(toastMessage);
+}
+
+export function pasteSegmentAfterIndex(index) {
+  const clip = state.clipboardSegment;
+  if (!clip) { showToast('Nothing to paste — copy a segment first'); return; }
+  insertClonedAudioAfter(
+    index, clip.length,
+    (c) => clip.channels[Math.min(c, clip.channels.length - 1)],
+    'paste', `Pasted after segment ${index + 1}`
+  );
+}
+
+export function duplicateSegmentByIndex(index) {
+  if (!state.originalBuffer || index < 0 || index >= state.segments.length) return;
+  const seg = state.segments[index];
+  insertClonedAudioAfter(
+    index, seg.end - seg.start,
+    (c) => state.originalBuffer.getChannelData(c).subarray(seg.start, seg.end),
+    'duplicate', `Duplicated segment ${index + 1}`
+  );
+}
+
+// Shared classification of where the playhead currently sits, used both to
+// decide whether pasteInsertAtPlayhead needs to split a segment and to decide
+// whether the context menu should offer that action at all (only when the
+// playhead is strictly mid-segment — not at a boundary, and not off the ends
+// of the timeline).
+function classifyPlayheadPosition() {
+  if (!state.recordedBuffer || !state.originalBuffer || state.segments.length === 0) return null;
+  const sr = state.originalBuffer.sampleRate;
+  const editedSample = Math.round(state.playbackOffset * sr);
+  const target = findSegmentAtSample(editedSample);
+  if (!target) return null;
+
+  const { index, offsetInSeg, seg } = target;
+  const segLen = seg.end - seg.start;
+  const atSegStart = offsetInSeg <= 0;
+  const atRecordingEnd = index === state.segments.length - 1 && offsetInSeg >= segLen;
+  return { target, atSegStart, atRecordingEnd, midSegment: !atSegStart && !atRecordingEnd };
+}
+
+export function isPlayheadMidSegment() {
+  const info = classifyPlayheadPosition();
+  return !!info && info.midSegment;
+}
+
+// Secondary paste mode: instead of landing after a chosen segment, drop the
+// clipboard audio exactly at the playhead. If the playhead sits mid-segment,
+// that segment is split there first (same split point splitAtPlayhead would
+// use) and the paste is inserted between the two halves — content after the
+// playhead shifts right to make room. If the playhead sits exactly on a
+// segment boundary (or at the very end of the recording), no split is
+// needed; the paste just slots in there directly.
+export function pasteInsertAtPlayhead() {
+  const clip = state.clipboardSegment;
+  if (!clip) { showToast('Nothing to paste — copy a segment first'); return; }
+  if (!state.recordedBuffer || !state.originalBuffer || !state.audioContext) return;
+  if (state.isPlaying) pausePlayback();
+
+  const info = classifyPlayheadPosition();
+  if (!info) return;
+  const { target, atSegStart, atRecordingEnd } = info;
+  const { index, offsetInSeg, seg } = target;
+
+  const newLen = clip.length;
+  const { combined, oldLen } = concatClipOntoOriginal(newLen, (c) => clip.channels[Math.min(c, clip.channels.length - 1)]);
+
+  pushHistory();
+  state.originalBuffer = combined;
+  const pasted = { start: oldLen, end: oldLen + newLen, origin: 'paste' };
+
+  let pastedIndex;
+  let didSplit = false;
+  if (atSegStart) {
+    pastedIndex = index;
+    state.segments.splice(pastedIndex, 0, pasted);
+  } else if (atRecordingEnd) {
+    pastedIndex = index + 1;
+    state.segments.splice(pastedIndex, 0, pasted);
+  } else {
+    const splitPoint = seg.start + offsetInSeg;
+    state.segments.splice(index, 1,
+      { start: seg.start, end: splitPoint, origin: 'split' },
+      pasted,
+      { start: splitPoint, end: seg.end, origin: 'split' }
+    );
+    pastedIndex = index + 1;
+    didSplit = true;
+  }
+
+  rebuildPlaybackBuffer();
+
+  // Every segment before pastedIndex is untouched by this edit, and by
+  // construction its total sample length equals editedSample — so the
+  // playhead's sample position in the new buffer is unchanged; it now sits
+  // at the start of the freshly pasted clip.
+  el.timeCurrent.textContent = formatTime(state.playbackOffset);
+  el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
+
+  updateSegmentCountDisplay();
+  updateEmptyState();
+  clearSegmentHover();
+  showSegmentTrash(pastedIndex);
+  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  drawPlaybackWaveform(ratio);
+  showToast(didSplit ? 'Pasted at playhead (split)' : 'Pasted at playhead');
+}
+
 function applyHistorySnapshot(snapshot, render) {
   state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
   rebuildPlaybackBuffer();

@@ -1030,6 +1030,17 @@ function findSegmentAtX(x, width) {
   return -1;
 }
 
+export function getSegmentIndexAtClientPoint(clientX, clientY) {
+  if (!state.recordedBuffer) return -1;
+  const rect = el.waveformContainer.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const cardTop = SEGMENT_VERTICAL_INSET_CSS_PX;
+  const cardBottom = rect.height - SEGMENT_VERTICAL_INSET_CSS_PX;
+  if (y < cardTop || y > cardBottom) return -1;
+  return findSegmentAtX(x, rect.width);
+}
+
 el.waveformContainer.addEventListener('pointerdown', (e) => {
   if (!state.recordedBuffer) return;
   const rect = el.waveformContainer.getBoundingClientRect();

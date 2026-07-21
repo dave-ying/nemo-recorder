@@ -86,6 +86,12 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLDivElement} helpTabs
  * @property {HTMLDivElement} helpPanelShortcuts
  * @property {HTMLDivElement} helpPanelChangelog
+ * @property {HTMLDivElement} segmentContextMenu
+ * @property {HTMLButtonElement} segmentContextCopy
+ * @property {HTMLButtonElement} segmentContextPaste
+ * @property {HTMLButtonElement} segmentContextPasteAtPlayhead
+ * @property {HTMLButtonElement} segmentContextDuplicate
+ * @property {HTMLButtonElement} segmentContextDelete
  */
 
 // Element IDs are static in index.html, so a single cast here gives every
@@ -129,7 +135,11 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   confirmModal: $('confirmModal'), confirmTitle: $('confirmTitle'), confirmMessage: $('confirmMessage'),
   confirmCancel: $('confirmCancel'), confirmOk: $('confirmOk'),
   helpButton: $('helpButton'), helpModal: $('helpModal'), helpModalClose: $('helpModalClose'),
-  helpTabs: $('helpTabs'), helpPanelShortcuts: $('helpPanelShortcuts'), helpPanelChangelog: $('helpPanelChangelog')
+  helpTabs: $('helpTabs'), helpPanelShortcuts: $('helpPanelShortcuts'), helpPanelChangelog: $('helpPanelChangelog'),
+  segmentContextMenu: $('segmentContextMenu'),
+  segmentContextCopy: $('segmentContextCopy'), segmentContextPaste: $('segmentContextPaste'),
+  segmentContextPasteAtPlayhead: $('segmentContextPasteAtPlayhead'),
+  segmentContextDuplicate: $('segmentContextDuplicate'), segmentContextDelete: $('segmentContextDelete')
 }));
 
 export const liveCtx = /** @type {CanvasRenderingContext2D} */ (el.liveCanvas.getContext('2d'));

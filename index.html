@@ -92,6 +92,29 @@
               Record voice
             </button>
           </div>
+          <div class="segment-context-menu" id="segmentContextMenu" hidden>
+            <button class="segment-context-menu-item" id="segmentContextCopy">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
+            <button class="segment-context-menu-item" id="segmentContextPaste">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+              Paste
+            </button>
+            <button class="segment-context-menu-item" id="segmentContextPasteAtPlayhead">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><line x1="12" y1="10" x2="12" y2="18"/></svg>
+              Paste at playhead
+            </button>
+            <button class="segment-context-menu-item" id="segmentContextDuplicate">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              Duplicate
+            </button>
+            <div class="segment-context-menu-sep"></div>
+            <button class="segment-context-menu-item segment-context-menu-item-danger" id="segmentContextDelete">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              Delete
+            </button>
+          </div>
           <button class="playhead" id="playheadCaretTop" aria-label="Drag to move playhead" tabindex="-1" hidden>
             <svg class="playhead-grip" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
               <path d="M0 0h24v24H0z" fill="none"/>
@@ -365,6 +388,9 @@
           <div class="shortcut-row"><span class="shortcut-desc">Play / Pause</span><span class="shortcut-keys"><kbd>Space</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-desc">Split at playhead</span><span class="shortcut-keys"><kbd>S</kbd> <span class="shortcut-or">or</span> <kbd>Ctrl</kbd><kbd>B</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-desc">Delete selected segment</span><span class="shortcut-keys"><kbd>Delete</kbd> <span class="shortcut-or">or</span> <kbd>Backspace</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-desc">Copy selected segment</span><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>C</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-desc">Paste after selected segment</span><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>V</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-desc">Paste at playhead (splits if mid-segment)</span><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-desc">Scrub backward / forward</span><span class="shortcut-keys"><kbd>←</kbd><kbd>→</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-desc">Jump playhead back / forward 1s</span><span class="shortcut-keys"><kbd>Shift</kbd><kbd>←</kbd><kbd>→</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-desc">Select segment left / right of playhead</span><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>←</kbd><kbd>→</kbd></span></div>
@@ -384,6 +410,8 @@
 
       <div class="help-panel" id="helpPanelChangelog" hidden>
         <ul class="changelog-list">
+          <li>Right-click a segment for a context menu (Copy, Paste, Duplicate, Delete), with matching Ctrl+C / Ctrl+V shortcuts for Copy/Paste.</li>
+          <li>Added Ctrl+Shift+V to paste directly at the playhead, splitting the segment there if needed.</li>
           <li>Removed floating on-canvas controls (upload, record, scissors, delete) in favor of a single top toolbar.</li>
           <li>Accurate microphone capability detection with an input device picker.</li>
           <li>Hardened audio import with a file size guard and clearer errors for unsupported formats.</li>

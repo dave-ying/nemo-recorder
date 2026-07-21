@@ -77,6 +77,13 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  */
 
 /**
+ * @typedef {Object} ClipboardSegment
+ * @property {Float32Array[]} channels - copied PCM data, one array per channel
+ * @property {number} length - sample length of the copied audio
+ * @property {number} sampleRate
+ */
+
+/**
  * @typedef {Object} MicCapabilities
  * @property {number[]} supportedRates
  * @property {number[]} supportedChannels
@@ -130,6 +137,7 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} previewStartTime
  * @property {number} previewOffset
  * @property {boolean} isPreviewing
+ * @property {ClipboardSegment|null} clipboardSegment - last segment copied via Copy (context menu or Ctrl+C)
  */
 
 /** @type {AppState} */
@@ -178,7 +186,8 @@ export const state = {
   previewSource: null,
   previewStartTime: 0,
   previewOffset: 0,
-  isPreviewing: false
+  isPreviewing: false,
+  clipboardSegment: null
 };
 
 

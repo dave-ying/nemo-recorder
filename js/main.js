@@ -3,13 +3,14 @@ import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState } from './ui.js';
 import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
-import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment } from './editing.js';
+import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint } from './waveform.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead } from './editing.js';
 import { startPlayback, pausePlayback } from './playback.js';
 import { arrowKeyDown, arrowKeyUp, stepBySeconds } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 import { closeHelpModal, initHelpModal } from './help-modal.js';
+import { openSegmentContextMenu, initSegmentContextMenu } from './context-menu.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -92,6 +93,15 @@ el.timelineRulerCanvas.addEventListener('pointerdown', (e) => {
   e.stopPropagation();
   hideSegmentTrash();
   seekFromClientX(e.clientX);
+});
+
+el.waveformContainer.addEventListener('contextmenu', (e) => {
+  if (!state.recordedBuffer) return;
+  const i = getSegmentIndexAtClientPoint(e.clientX, e.clientY);
+  if (i < 0) return;
+  e.preventDefault();
+  showSegmentTrash(i);
+  openSegmentContextMenu(i, e.clientX, e.clientY);
 });
 
 document.addEventListener('pointerdown', (e) => {
@@ -220,6 +230,17 @@ document.addEventListener('keydown', (e) => {
   } else if (e.code === 'KeyY' && (e.ctrlKey || e.metaKey) && !el.playbackView.hidden) {
     e.preventDefault();
     redo();
+  } else if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !el.playbackView.hidden && state.recordedBuffer) {
+    e.preventDefault();
+    if (state.selectedSegmentIndex >= 0) copySegmentByIndex(state.selectedSegmentIndex);
+    else showToast('Select a segment to copy');
+  } else if (e.code === 'KeyV' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && !el.playbackView.hidden && state.recordedBuffer) {
+    e.preventDefault();
+    pasteInsertAtPlayhead();
+  } else if (e.code === 'KeyV' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !el.playbackView.hidden && state.recordedBuffer) {
+    e.preventDefault();
+    if (state.selectedSegmentIndex >= 0) pasteSegmentAfterIndex(state.selectedSegmentIndex);
+    else showToast('Select a segment to paste after');
   } else if (e.code === 'Space' && noMod) {
     if (!el.playbackView.hidden && state.recordedBuffer) {
       e.preventDefault();
@@ -289,6 +310,7 @@ window.addEventListener('resize', () => {
 // ===== Init =====
 initRecordModal();
 initHelpModal();
+initSegmentContextMenu();
 updateEmptyState();
 updateSegmentCountDisplay();
 setTransportDisabled(true);
