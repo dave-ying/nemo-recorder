@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE, SEGMENT_DRAG_SCALE_MAX } from './state.js';
 import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
@@ -682,7 +682,7 @@ function positionPlayheadCaretsAtDeviceX(deviceX) {
 /**
  * Render a single segment card at the given animated bounds, using a pre-built
  * local waveform path (built once at drag-begin) scaled to fit the current
- * width. Optional `lift`, `shadowBlur`, `shadowOffsetY`, `dashed`, and
+ * width. Optional `lift`, `scale`, `bg`, `shadowBlur`, `shadowOffsetY`, and
  * `strokeColor` let the caller style the floating dragged card differently
  * from the in-place cards.
  */
@@ -693,10 +693,21 @@ function drawDragCard(ctx, segPath, pathWidth, drawStart, drawEnd, playheadX, H,
   if (!cardPath) return;
 
   const lift = options.lift || 0;
+  const scale = options.scale || 1;
   const edgeWidth = options.edgeWidth;
+  const bg = options.bg || WAVEFORM_STYLE.segmentCardBg;
 
   ctx.save();
   if (lift > 0) ctx.translate(0, -lift);
+  if (scale !== 1) {
+    // Scale around the card's own center so the lift reads as "picked up
+    // and slightly enlarged" rather than growing from a corner.
+    const cx = drawStart + curWidth / 2;
+    const cy = H / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-cx, -cy);
+  }
 
   // Card background + drop shadow (deeper for the lifted floating card).
   // The shadow offset is increased by `lift` so the shadow stays near the
@@ -706,7 +717,7 @@ function drawDragCard(ctx, segPath, pathWidth, drawStart, drawEnd, playheadX, H,
   ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
   ctx.shadowBlur = options.shadowBlur != null ? options.shadowBlur : SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
   ctx.shadowOffsetY = (options.shadowOffsetY != null ? options.shadowOffsetY : SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr) + lift;
-  ctx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
+  ctx.fillStyle = bg;
   ctx.fill(cardPath);
   ctx.restore();
 
@@ -748,16 +759,9 @@ function drawDragCard(ctx, segPath, pathWidth, drawStart, drawEnd, playheadX, H,
 
   ctx.restore();
 
-  // Edge stroke: dashed outline for the floating card while actively dragged,
-  // solid accent edge while settling, normal edge for in-place cards.
-  if (options.dashed) {
-    ctx.save();
-    ctx.setLineDash([5 * dpr, 4 * dpr]);
-    ctx.strokeStyle = options.strokeColor || WAVEFORM_STYLE.selectedEdgeColor;
-    ctx.lineWidth = edgeWidth;
-    ctx.stroke(cardPath);
-    ctx.restore();
-  } else if (options.strokeColor) {
+  // Edge stroke: solid accent edge (with glow) while the card is lifted
+  // (dragging or settling), normal edge for in-place cards.
+  if (options.strokeColor) {
     ctx.save();
     ctx.strokeStyle = options.strokeColor;
     ctx.lineWidth = edgeWidth;
@@ -775,9 +779,10 @@ function drawDragCard(ctx, segPath, pathWidth, drawStart, drawEnd, playheadX, H,
 }
 
 /**
- * Draw a faint dashed outline of the dragged segment's slot — the "drop zone"
- * the card will land in. Replaces the old vertical-line drop indicator with a
- * shape that matches the card's rounded rectangle.
+ * Draw a recessed, neutral placeholder at the dragged segment's slot — the
+ * "hole" it was lifted out of. Deliberately styled to recede (dark fill, no
+ * glow, no accent color) rather than compete with the floating card, which
+ * uses the accent color to read as the one "live" element during the drag.
  */
 function drawDropZoneOutline(ctx, drawStart, drawEnd, H, dpr) {
   const w = drawEnd - drawStart;
@@ -786,13 +791,11 @@ function drawDropZoneOutline(ctx, drawStart, drawEnd, H, dpr) {
   if (!cardPath) return;
   ctx.save();
   ctx.setLineDash([6 * dpr, 5 * dpr]);
-  ctx.strokeStyle = WAVEFORM_STYLE.selectedEdgeColor;
-  ctx.lineWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
-  ctx.shadowColor = WAVEFORM_STYLE.selectedGlowColor;
-  ctx.shadowBlur = 6 * dpr;
-  ctx.stroke(cardPath);
-  ctx.fillStyle = 'rgba(77, 216, 200, 0.05)';
+  ctx.fillStyle = WAVEFORM_STYLE.dropZoneBg;
   ctx.fill(cardPath);
+  ctx.strokeStyle = WAVEFORM_STYLE.dropZoneEdgeColor;
+  ctx.lineWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
+  ctx.stroke(cardPath);
   ctx.restore();
 }
 
@@ -879,22 +882,28 @@ function drawDragFrame() {
       drawDropZoneOutline(waveCtx, slot.drawStart, slot.drawEnd, H, dpr);
     }
 
-    // Floating dragged card: follows the pointer, lifted, deep shadow, dashed.
+    // Floating dragged card: follows the pointer 1:1, lifted, deep shadow.
+    // bg/scale ease in with liftPx so pickup reads as a smooth "rising off
+    // the row" rather than an instant translucent-to-opaque pop.
     if (floatStart >= 0) {
+      const maxLift = SEGMENT_DRAG_LIFT_CSS_PX * dpr;
+      const liftFrac = maxLift > 0 ? Math.max(0, Math.min(1, snap.liftPx / maxLift)) : 0;
       const floatEnd = floatStart + pathWidth;
       const splitX = splitForCard(srcK, floatStart, floatEnd, pathWidth);
       drawDragCard(waveCtx, snap.segPaths[srcIdx], pathWidth,
         floatStart, floatEnd, splitX, H, dpr, {
           edgeWidth,
           lift: snap.liftPx,
+          scale: 1 + SEGMENT_DRAG_SCALE_MAX * liftFrac,
+          bg: lerpColorAlpha(WAVEFORM_STYLE.segmentCardBg, WAVEFORM_STYLE.dragCardBg, liftFrac),
           shadowBlur: SEGMENT_DRAG_SHADOW_BLUR_CSS_PX * dpr,
           shadowOffsetY: SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX * dpr,
-          dashed: true,
+          strokeColor: WAVEFORM_STYLE.selectedEdgeColor,
         });
     }
   } else {
     // Settle: render the dragged segment at its eased position, with lift +
-    // deep shadow fading to normal as it lands.
+    // deep shadow + opaque bg + scale all fading back to normal as it lands.
     const ab = snap.animBounds[srcIdx];
     if (ab && ab.drawEnd > ab.drawStart) {
       const maxLift = SEGMENT_DRAG_LIFT_CSS_PX * dpr;
@@ -905,6 +914,8 @@ function drawDragFrame() {
         ab.drawStart, ab.drawEnd, splitX, H, dpr, {
           edgeWidth,
           lift: snap.liftPx,
+          scale: 1 + SEGMENT_DRAG_SCALE_MAX * liftFrac,
+          bg: lerpColorAlpha(WAVEFORM_STYLE.segmentCardBg, WAVEFORM_STYLE.dragCardBg, liftFrac),
           shadowBlur: SEGMENT_SHADOW_BLUR_CSS_PX * dpr + (SEGMENT_DRAG_SHADOW_BLUR_CSS_PX - SEGMENT_SHADOW_BLUR_CSS_PX) * dpr * liftFrac,
           shadowOffsetY: SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr + (SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX - SEGMENT_SHADOW_OFFSET_Y_CSS_PX) * dpr * liftFrac,
           strokeColor: liftFrac > 0.05 ? WAVEFORM_STYLE.selectedEdgeColor : null,

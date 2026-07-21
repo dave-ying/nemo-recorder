@@ -23,6 +23,9 @@ export const WAVEFORM_STYLE = {
   selectedUnplayedColorBright: 'rgba(77, 216, 200, 0.52)',
   selectedEdgeColor: 'rgba(77, 216, 200, 0.8)',
   selectedGlowColor: 'rgba(77, 216, 200, 0.45)',
+  dragCardBg: 'rgba(36, 39, 50, 0.98)',
+  dropZoneBg: 'rgba(0, 0, 0, 0.18)',
+  dropZoneEdgeColor: 'rgba(255, 255, 255, 0.16)',
   deletePlayedColor: 'rgba(255, 58, 92, 0.95)',
   deleteUnplayedColorDim: 'rgba(255, 58, 92, 0.34)',
   deleteUnplayedColorBright: 'rgba(255, 58, 92, 0.58)',
@@ -44,6 +47,7 @@ export const SEGMENT_DRAG_SETTLE_MS = 220;
 export const SEGMENT_DRAG_SHADOW_BLUR_CSS_PX = 20;
 export const SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX = 9;
 export const SEGMENT_DRAG_APPROACH_RATE = 22; // per-second convergence rate for live ease
+export const SEGMENT_DRAG_SCALE_MAX = 0.03; // extra uniform scale-up applied to the fully-lifted card
 
 export const APPEND_BUTTON_SIZE_CSS_PX = 32;
 export const APPEND_BUTTON_PAD_CSS_PX = 16;

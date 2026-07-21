@@ -620,6 +620,7 @@ export function beginSegmentReorderDrag(clientX, clientY) {
   };
 
   hideSegmentTrash();
+  el.waveformContainer.style.cursor = 'grabbing';
   ensureDragAnimRunning();
 }
 
