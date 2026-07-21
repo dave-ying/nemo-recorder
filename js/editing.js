@@ -43,6 +43,37 @@ export function jumpToSegmentEnd() {
   drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
 }
 
+// Ctrl/Cmd+Arrow segment selection. With no segment selected, finds the
+// segment closest to the playhead in the given direction (the segment under
+// the playhead counts as "to the right" only if the playhead sits exactly at
+// its start — otherwise it's already behind the playhead). With a segment
+// already selected, it just steps to the adjacent one.
+export function selectAdjacentSegment(direction) {
+  if (!state.recordedBuffer || state.segments.length === 0) return;
+
+  if (state.selectedSegmentIndex >= 0) {
+    const next = state.selectedSegmentIndex + direction;
+    if (next < 0 || next >= state.segments.length) return;
+    showSegmentTrash(next);
+    return;
+  }
+
+  const sr = state.originalBuffer.sampleRate;
+  const editedSample = Math.round(state.playbackOffset * sr);
+  const target = findSegmentAtSample(editedSample);
+  if (!target) return;
+
+  if (direction > 0) {
+    const idx = target.offsetInSeg === 0 ? target.index : target.index + 1;
+    if (idx >= state.segments.length) return;
+    showSegmentTrash(idx);
+  } else {
+    const idx = target.index - 1;
+    if (idx < 0) return;
+    showSegmentTrash(idx);
+  }
+}
+
 // Shared tail for both mic capture (stopRecording) and file upload
 // (loadUploadedFile): both produce a full-length AudioBuffer that becomes the
 // new original/edited recording, and land in the same playback-ready state.

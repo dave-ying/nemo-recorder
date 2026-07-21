@@ -4,9 +4,9 @@ import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmpty
 import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag } from './editing.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment } from './editing.js';
 import { startPlayback, pausePlayback } from './playback.js';
-import { arrowKeyDown, arrowKeyUp } from './scrub.js';
+import { arrowKeyDown, arrowKeyUp, stepBySeconds } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 import { closeHelpModal, initHelpModal } from './help-modal.js';
@@ -181,6 +181,13 @@ document.addEventListener('keydown', (e) => {
   const keyTarget = /** @type {HTMLElement} */ (e.target);
   if (keyTarget.tagName === 'INPUT' || keyTarget.tagName === 'TEXTAREA') return;
   const noMod = !e.metaKey && !e.ctrlKey && !e.altKey;
+  // Delete/split have keyboard aliases beyond the base key: the base key
+  // stays unrestricted (unchanged from before) so existing behavior doesn't
+  // shift, while the new aliases each require an exact modifier combo.
+  const isDeleteShortcut = e.code === 'Delete'
+    || (e.code === 'Backspace' && noMod);
+  const isSplitShortcut = (e.code === 'KeyS' && noMod)
+    || (e.code === 'KeyB' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey);
 
   if (el.helpModal.classList.contains('visible')) {
     if (e.code === 'Escape') closeHelpModal();
@@ -218,9 +225,21 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       state.isPlaying ? pausePlayback() : startPlayback();
     }
-  } else if (e.code === 'KeyS' && noMod && !el.playbackView.hidden && state.recordedBuffer) {
+  } else if (isSplitShortcut && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
     splitAtPlayhead();
+  } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !el.playbackView.hidden && state.recordedBuffer) {
+    // Discrete 1-second jump — ignore OS key-repeat so held Shift+Arrow
+    // doesn't rapid-fire jumps (and doesn't stack with a plain-arrow scrub
+    // already in flight if Shift gets pressed mid-hold).
+    if (e.repeat) return;
+    e.preventDefault();
+    stepBySeconds(e.code === 'ArrowRight' ? 1 : -1);
+  } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !el.playbackView.hidden && state.recordedBuffer) {
+    // Repeat is allowed here (unlike the Shift+Arrow jump) so holding the
+    // key steps through segments one at a time, like list navigation.
+    e.preventDefault();
+    selectAdjacentSegment(e.code === 'ArrowRight' ? 1 : -1);
   } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && noMod && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
     arrowKeyDown(e.code);
@@ -230,7 +249,7 @@ document.addEventListener('keydown', (e) => {
   } else if (e.code === 'ArrowDown' && noMod && !el.playbackView.hidden && state.recordedBuffer && !el.skipForwardButton.disabled) {
     e.preventDefault();
     el.skipForwardButton.click();
-  } else if (e.code === 'Delete' && !el.playbackView.hidden && state.recordedBuffer) {
+  } else if (isDeleteShortcut && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
     if (state.selectedSegmentIndex >= 0) deleteSegmentByIndex(state.selectedSegmentIndex);
     else deleteSegmentAtPlayhead();

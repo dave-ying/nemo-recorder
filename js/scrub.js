@@ -14,7 +14,7 @@ const SCRUB_MAX_SPEED = 1.0;
 let scrubState = null;
 const heldArrows = new Set();
 
-function stepBySeconds(deltaSec) {
+export function stepBySeconds(deltaSec) {
   if (!state.recordedBuffer) return;
   if (state.isPlaying) pausePlayback();
   const dur = state.recordedBuffer.duration;
