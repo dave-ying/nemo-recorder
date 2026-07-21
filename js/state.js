@@ -1,7 +1,6 @@
 export const LIVE_SECONDS = 4;
 export const WAVEFORM_SCALE = 0.88;
 
-export const MIN_SEGMENT_SAMPLES = 500;
 export const SEGMENT_DRAG_THRESHOLD_CSS_PX = 4;
 export const SEGMENT_GAP_CSS_PX = 8;
 export const SEGMENT_CORNER_RADIUS_CSS_PX = 6;
@@ -48,18 +47,6 @@ export const SEGMENT_DRAG_APPROACH_RATE = 22; // per-second convergence rate for
 
 export const APPEND_BUTTON_SIZE_CSS_PX = 30;
 export const APPEND_BUTTON_PAD_CSS_PX = 16;
-
-/**
- * @typedef {Object} DragSnapshot
- * @property {number} handleIndex
- * @property {number} totalSamples
- * @property {number} startClientX
- * @property {number} accBeforeSegI
- * @property {number} segIStart
- * @property {number} segIP1End
- * @property {number} minAcc
- * @property {number} maxAcc
- */
 
 /**
  * @typedef {Object} SegmentDragSnapshot
@@ -133,8 +120,6 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {boolean} isDownloading
  * @property {{sampleRate: number, bitDepth: number, channels: number}} settings
  * @property {{format: string, quality: number}} exportSettings
- * @property {number} draggingHandleIndex
- * @property {DragSnapshot|null} _dragSnapshot
  * @property {boolean} draggingPlayhead
  * @property {number} draggingSegmentIndex - segment being reordered via drag-and-drop (-1 when not dragging)
  * @property {PendingSegmentDrag|null} pendingSegmentDrag - tracks pointerdown on a segment before the drag threshold is crossed; if pointerup fires first, it is treated as a click (show/hide trash)
@@ -180,8 +165,6 @@ export const state = {
   cachedPeaks: null,
   cachedPeaksWidth: 0,
   cachedPath: null,
-  draggingHandleIndex: -1,
-  _dragSnapshot: null,
   liveResizeHandler: null,
   isDownloading: false,
   settings: { sampleRate: 48000, bitDepth: 24, channels: 1 },

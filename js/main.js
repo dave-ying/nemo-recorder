@@ -4,7 +4,7 @@ import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmpty
 import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, applySplitHandleDrag, finishSplitHandleDrag, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag } from './editing.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag } from './editing.js';
 import { startPlayback, pausePlayback } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
@@ -34,6 +34,7 @@ el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
 el.deleteSegmentButton.addEventListener('click', () => {
   if (state.selectedSegmentIndex >= 0) deleteSegmentByIndex(state.selectedSegmentIndex);
+  else showToast('Select a segment to delete');
 });
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
@@ -87,12 +88,6 @@ document.querySelectorAll('.export-format-btn').forEach(btn => {
   });
 });
 
-el.playheadScissors.addEventListener('click', (e) => {
-  e.stopPropagation();
-  splitAtPlayhead();
-});
-el.playheadScissors.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-
 el.timelineRulerCanvas.addEventListener('pointerdown', (e) => {
   if (!state.recordedBuffer) return;
   e.preventDefault();
@@ -122,10 +117,6 @@ window.addEventListener('mouseup', () => {
   }
   if (state.draggingSegmentIndex >= 0) {
     finishSegmentReorderDrag();
-    return;
-  }
-  if (state.draggingHandleIndex >= 0) {
-    finishSplitHandleDrag();
     return;
   }
   if (state.draggingPlayhead) {
@@ -161,10 +152,6 @@ window.addEventListener('mousemove', (e) => {
   }
   if (state.draggingSegmentIndex >= 0) {
     applySegmentReorderDrag(e.clientX);
-    return;
-  }
-  if (state.draggingHandleIndex >= 0) {
-    applySplitHandleDrag(e.clientX);
     return;
   }
   if (state.draggingPlayhead) {

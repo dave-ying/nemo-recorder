@@ -9,7 +9,7 @@
  * position `ratio * W` can land inside a visual gap — which represents no audio.
  *
  * These functions provide the gap-aware mapping used by the playhead, carets,
- * scissors, time ticks, and drag handling.
+ * time ticks, and drag handling.
  */
 
 export const PEAK_STEP_DIVISOR = 100;

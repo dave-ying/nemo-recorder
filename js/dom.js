@@ -16,7 +16,6 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} redoButton
  * @property {HTMLButtonElement} transportUploadButton
  * @property {HTMLButtonElement} transportRecordButton
- * @property {HTMLButtonElement} playheadScissors
  * @property {HTMLButtonElement} playheadCaretTop
  * @property {HTMLSpanElement} playheadLine
  * @property {HTMLElement} stage
@@ -93,7 +92,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   splitButton: $('splitButton'), deleteSegmentButton: $('deleteSegmentButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   transportUploadButton: $('transportUploadButton'), transportRecordButton: $('transportRecordButton'),
-  playheadScissors: $('playheadScissors'), playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'),
+  playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'),
   stage: $('stage'),
   playbackView: $('playbackView'), editorSection: $('editorSection'), editorTopBar: $('editorTopBar'), transportBar: $('transportBar'),
   liveCanvas: $('liveCanvas'), waveformCanvas: $('waveformCanvas'), timelineRulerCanvas: $('timelineRulerCanvas'),

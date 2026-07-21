@@ -114,29 +114,6 @@ body::after {
 .waveform-canvas { width: 100%; height: 100%; display: block; }
 .timeline-ruler-canvas { position: absolute; left: 0; top: -26px; width: 100%; height: 26px; cursor: pointer; z-index: 1; }
 
-.playhead-scissors {
-  position: absolute;
-  width: 30px; height: 30px; border-radius: 7px;
-  background: var(--accent); border: 1px solid var(--accent-2);
-  color: var(--bg); cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  padding: 5px; z-index: 9;
-  box-shadow: 0 2px 14px rgba(255, 140, 66, 0.45), 0 0 0 3px rgba(255, 140, 66, 0.08);
-  transition: opacity 0.18s, box-shadow 0.15s, background 0.15s, border-color 0.15s, transform 0.15s;
-  pointer-events: none; opacity: 0;
-  transform: translate(-50%, -50%) scale(1);
-}
-.playhead-scissors svg { width: 100%; height: 100%; }
-.playhead-scissors.visible { opacity: 1; pointer-events: auto; }
-.playhead-scissors:hover {
-  background: var(--accent-2); border-color: var(--accent-2);
-  box-shadow: 0 4px 24px rgba(255, 140, 66, 0.65), 0 0 0 4px rgba(255, 140, 66, 0.12);
-  transform: translate(-50%, -50%) scale(1.15);
-}
-.playhead-scissors:active {
-  transform: translate(-50%, -50%) scale(0.92);
-}
-
 .append-button {
   position: absolute;
   width: 30px; height: 30px; border-radius: 8px;
@@ -255,48 +232,6 @@ body::after {
 .playhead.dragging .playhead-line::before {
   box-shadow: 0 0 9px rgba(255, 140, 66, 0.85);
 }
-.division-handle {
-  position: absolute;
-  z-index: 15;
-  cursor: default;
-  padding: 2px;
-  margin: 0;
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  border-radius: 4px;
-  width: 24px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.85;
-  pointer-events: auto;
-  transform: translateX(-50%);
-  transition: opacity 0.15s, transform 0.15s, color 0.15s;
-  line-height: 0;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.division-handle:hover {
-  opacity: 1;
-  color: var(--fg);
-  transform: translateX(-50%) scale(1.15);
-}
-.division-handle.dragging {
-  opacity: 1;
-  color: var(--fg);
-  transform: translateX(-50%) scale(1.2);
-  transition: none;
-}
-.division-handle svg {
-  width: 18px;
-  height: 18px;
-  display: block;
-  pointer-events: none;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
-}
-
 .transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
 .restart-button {
   width: 36px; height: 36px; border-radius: 50%; background: var(--surface); border: none; cursor: pointer;
@@ -350,13 +285,13 @@ body::after {
   padding: 10px 18px; border-radius: 6px; border: 1px solid var(--border-bright); background: var(--surface); color: var(--fg);
   cursor: pointer; transition: all 0.18s; display: inline-flex; align-items: center; gap: 8px;
 }
-.btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--fg-muted); transform: translateY(-1px); }
+.btn:hover:not(:disabled):not(.btn-inactive) { background: var(--surface-hover); border-color: var(--fg-muted); transform: translateY(-1px); }
 .btn:active { transform: translateY(0); }
-.btn:disabled { color: var(--fg-dim); border-color: var(--border); cursor: not-allowed; transform: none; }
+.btn:disabled, .btn.btn-inactive { color: var(--fg-dim); border-color: var(--border); cursor: not-allowed; transform: none; }
 .btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 .btn-primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); box-shadow: 0 4px 20px rgba(255, 140, 66, 0.4); }
-.btn-danger:hover:not(:disabled) { color: var(--rec); border-color: var(--rec); background: rgba(255, 58, 92, 0.06); }
-.btn-edit:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); background: rgba(255, 140, 66, 0.06); }
+.btn-danger:hover:not(:disabled):not(.btn-inactive) { color: var(--rec); border-color: var(--rec); background: rgba(255, 58, 92, 0.06); }
+.btn-edit:hover:not(:disabled):not(.btn-inactive) { color: var(--accent); border-color: var(--accent); background: rgba(255, 140, 66, 0.06); }
 .btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .btn svg.spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
@@ -601,13 +536,10 @@ body::after {
   .time-display { font-size: 12px; min-width: 110px; }
   .btn { padding: 8px 12px; font-size: 10px; }
   .btn svg { width: 11px; height: 11px; }
-  .playhead-scissors { width: 26px; height: 26px; padding: 4px; }
   .append-button { width: 26px; height: 26px; }
   .append-button svg { width: 14px; height: 14px; }
   .append-menu { min-width: 170px; }
   .append-menu-item { padding: 8px 12px; font-size: 10px; gap: 8px; }
-  .division-handle { width: 20px; height: 18px; padding: 1px; }
-  .division-handle svg { width: 16px; height: 16px; }
   .playhead-grip { width: 22px; height: 22px; }
   .playhead-line { margin-top: -5px; }
   .readout { padding: 8px 6px; gap: 2px; }

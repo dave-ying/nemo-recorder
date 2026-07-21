@@ -159,7 +159,6 @@ export function disconnectMicrophone() {
   state.cachedPath = null;
   resetHistory();
   hideSegmentTrash();
-  el.playheadScissors.classList.remove('visible');
   resetReadouts();
   updateSegmentCountDisplay();
   renderMicDeviceOptions();

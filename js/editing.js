@@ -2,7 +2,7 @@ import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE } fro
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
-import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, removeDraggingClass, visualRatioToAudioRatioWithState, showSegmentTrash, ensureDragAnimRunning } from './waveform.js';
+import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, visualRatioToAudioRatioWithState, showSegmentTrash, ensureDragAnimRunning } from './waveform.js';
 import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath } from './waveform-math.js';
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
@@ -172,7 +172,6 @@ export function deleteSegmentByIndex(index) {
   if (!state.recordedBuffer) {
     hideSegmentTrash();
     clearSegmentHover();
-    el.playheadScissors.classList.remove('visible');
     el.playButton.classList.remove('playing');
     el.timeCurrent.textContent = '00:00.000';
     el.timeTotal.textContent = '00:00.000';
@@ -210,7 +209,6 @@ function applyHistorySnapshot(snapshot, render) {
 
   hideSegmentTrash();
   clearSegmentHover();
-  el.playheadScissors.classList.remove('visible');
 
   if (!state.recordedBuffer) {
     el.playButton.classList.remove('playing');
@@ -329,36 +327,6 @@ export async function appendBufferToRecording(buffer, toastMessage) {
     : 0;
   drawPlaybackWaveform(ratio);
   showToast(toastMessage);
-}
-
-export function applySplitHandleDrag(clientX) {
-  const snap = state._dragSnapshot;
-  if (!snap) return;
-  const rect = el.waveformContainer.getBoundingClientRect();
-  const ratio = (clientX - rect.left) / rect.width;
-  let newAcc = ratio * snap.totalSamples;
-  newAcc = Math.max(snap.minAcc, Math.min(snap.maxAcc, newAcc));
-  const newSegIEnd = snap.segIStart + (newAcc - snap.accBeforeSegI);
-  state.segments[snap.handleIndex].end = newSegIEnd;
-  state.segments[snap.handleIndex + 1].start = newSegIEnd;
-  const playheadRatio = state.recordedBuffer.duration > 0
-    ? state.playbackOffset / state.recordedBuffer.duration
-    : 0;
-  drawPlaybackWaveform(playheadRatio);
-}
-
-export function finishSplitHandleDrag() {
-  const idx = state.draggingHandleIndex;
-  removeDraggingClass(idx);
-  state.draggingHandleIndex = -1;
-  state._dragSnapshot = null;
-  rebuildPlaybackBuffer();
-  updateSegmentCountDisplay();
-  const ratio = state.recordedBuffer.duration > 0
-    ? state.playbackOffset / state.recordedBuffer.duration
-    : 0;
-  drawPlaybackWaveform(ratio);
-  showToast('Split line repositioned');
 }
 
 // ===== Segment reorder (drag-and-drop) =====

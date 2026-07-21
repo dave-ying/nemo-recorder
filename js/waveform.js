@@ -1,8 +1,7 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE } from './state.js';
 import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
-import { pushHistory } from './history.js';
 import { updateEmptyState } from './ui.js';
 import { drawDeleteAnimFrame, prepareCanvasForAnim, buildShatterTiles, buildSlide, drawSlideCard, renderCardSnapshot, captureCanvasRegionForIndex } from './segment-anim.js';
 
@@ -32,41 +31,7 @@ function computePeaks(width) {
   return computePeaksForRange(data, 0, data.length, width);
 }
 
-// ===== Trash & scissors positioning =====
-
-const SCISSORS_FALLBACK_HEIGHT = 30;
-
-function updatePlayheadScissorsPosition(ratio) {
-  if (state.isPlaying || !state.recordedBuffer || ratio < 0 || ratio > 1 || el.playbackView.hidden) {
-    el.playheadScissors.classList.remove('visible');
-    return;
-  }
-
-  const EDGE_THRESHOLD = 1 / (2 * state.recordedBuffer.length);
-  if (ratio <= EDGE_THRESHOLD || ratio >= 1 - EDGE_THRESHOLD) {
-    el.playheadScissors.classList.remove('visible');
-    return;
-  }
-
-  const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.editorSection.getBoundingClientRect();
-  const halfBtn = (el.playheadScissors.offsetHeight || SCISSORS_FALLBACK_HEIGHT) / 2;
-
-  const gapPx = SEGMENT_GAP_CSS_PX;
-  const segBounds = _computeSegmentBounds(canvasRect.width, state.recordedBuffer.length, gapPx);
-  const visualRatio = audioRatioToVisualRatio(ratio, canvasRect.width, segBounds);
-
-  let leftPx = (canvasRect.left - viewRect.left) + visualRatio * canvasRect.width;
-  const insetY = SEGMENT_VERTICAL_INSET_CSS_PX;
-  const playheadBottomY = (canvasRect.bottom - viewRect.top) - insetY;
-  const topPx = playheadBottomY + halfBtn;
-
-  leftPx = Math.max(halfBtn, Math.min(viewRect.width - halfBtn, leftPx));
-
-  el.playheadScissors.style.left = leftPx + 'px';
-  el.playheadScissors.style.top = topPx + 'px';
-  el.playheadScissors.classList.add('visible');
-}
+// ===== Trash positioning =====
 
 // ===== Playhead caret positioning =====
 
@@ -126,7 +91,7 @@ export function removePlayheadCaretDraggingClass() {
 
 export function hideSegmentTrash() {
   state.selectedSegmentIndex = -1;
-  el.deleteSegmentButton.disabled = true;
+  el.deleteSegmentButton.classList.add('btn-inactive');
   state.isHoveringTrash = false;
   stopSelectionAnim();
   if (!state.isPlaying && state.recordedBuffer) {
@@ -142,7 +107,7 @@ export function clearSegmentHover() {
 export function showSegmentTrash(index) {
   if (index < 0 || index >= state.segments.length) return;
   state.selectedSegmentIndex = index;
-  el.deleteSegmentButton.disabled = false;
+  el.deleteSegmentButton.classList.remove('btn-inactive');
   startSelectionAnim();
 }
 
@@ -167,107 +132,6 @@ function stopSelectionAnim() {
   if (selectionAnimRaf) { cancelAnimationFrame(selectionAnimRaf); selectionAnimRaf = null; }
 }
 
-const DIVISION_HANDLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 -0.5 21 21" fill="currentColor"><path d="M3.25 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M17.75 3h-2a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-
-let bottomHandles = [];
-
-function createHandleElement() {
-  const h = document.createElement('button');
-  h.className = 'division-handle';
-  h.innerHTML = DIVISION_HANDLE_SVG;
-  h.tabIndex = -1;
-  h.setAttribute('aria-label', 'Drag to reposition split');
-
-  h.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const segIndex = parseInt(h.dataset.segIndex);
-    if (state.isPlaying) pausePlayback();
-    const totalSamples = state.recordedBuffer.length;
-    let accBeforeSegI = 0;
-    for (let j = 0; j < segIndex; j++) {
-      accBeforeSegI += state.segments[j].end - state.segments[j].start;
-    }
-    const segILen = state.segments[segIndex].end - state.segments[segIndex].start;
-    const segIP1Len = state.segments[segIndex + 1].end - state.segments[segIndex + 1].start;
-    pushHistory();
-    state.draggingHandleIndex = segIndex;
-    state._dragSnapshot = {
-      handleIndex: segIndex,
-      totalSamples,
-      startClientX: e.clientX,
-      accBeforeSegI,
-      segIStart: state.segments[segIndex].start,
-      segIP1End: state.segments[segIndex + 1].end,
-      minAcc: accBeforeSegI + MIN_SEGMENT_SAMPLES,
-      maxAcc: accBeforeSegI + segILen + segIP1Len - MIN_SEGMENT_SAMPLES
-    };
-    addDraggingClass(segIndex);
-    hideSegmentTrash();
-    el.playheadScissors.classList.remove('visible');
-  });
-
-  h.addEventListener('click', (e) => {
-    e.stopPropagation();
-  });
-
-  return h;
-}
-
-function ensureDivisionHandles() {
-  const segs = state.segments;
-  const desiredSegIndices = [];
-  for (let i = 0; i < segs.length - 1; i++) {
-    desiredSegIndices.push(i);
-  }
-
-  while (bottomHandles.length > desiredSegIndices.length) {
-    bottomHandles.pop().remove();
-  }
-
-  while (bottomHandles.length < desiredSegIndices.length) {
-    const bottomH = createHandleElement();
-    el.editorSection.appendChild(bottomH);
-    bottomHandles.push(bottomH);
-  }
-
-  for (let i = 0; i < bottomHandles.length; i++) {
-    bottomHandles[i].dataset.segIndex = String(desiredSegIndices[i]);
-  }
-}
-
-const HANDLE_HALF_W = 12;
-
-function positionDivisionHandles() {
-  if (!state.recordedBuffer || state.segments.length <= 1) {
-    for (const h of bottomHandles) h.style.display = 'none';
-    return;
-  }
-
-  const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.editorSection.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const W = Math.floor(canvasRect.width * dpr);
-  const bottomPx = (canvasRect.bottom - viewRect.top) + 1;
-  const totalSamples = state.recordedBuffer.length;
-
-  for (const h of bottomHandles) {
-    const segIndex = parseInt(h.dataset.segIndex);
-    let acc = 0;
-    for (let j = 0; j <= segIndex; j++) {
-      acc += state.segments[j].end - state.segments[j].start;
-    }
-    const ratio = acc / totalSamples;
-    const lineXCssPx = Math.floor(ratio * W) / dpr;
-    let leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
-    leftPx = Math.max(HANDLE_HALF_W, Math.min(viewRect.width - HANDLE_HALF_W, leftPx));
-
-    h.style.display = '';
-    h.style.left = leftPx + 'px';
-    h.style.top = bottomPx + 'px';
-  }
-}
-
 function positionAppendButton() {
   if (!state.recordedBuffer || state.isRecording || el.playbackView.hidden) {
     el.appendButton.classList.remove('visible');
@@ -290,16 +154,6 @@ function positionAppendButton() {
   el.appendButton.style.left = leftPx + 'px';
   el.appendButton.style.top = (midY - APPEND_BUTTON_SIZE_CSS_PX / 2) + 'px';
   el.appendButton.classList.add('visible');
-}
-
-function addDraggingClass(segIndex) {
-  const h = bottomHandles.find(el => parseInt(el.dataset.segIndex) === segIndex);
-  if (h) h.classList.add('dragging');
-}
-
-export function removeDraggingClass(segIndex) {
-  const h = bottomHandles.find(el => parseInt(el.dataset.segIndex) === segIndex);
-  if (h) h.classList.remove('dragging');
 }
 
 // ===== Playback waveform rendering =====
@@ -560,8 +414,6 @@ function cancelSegmentDeleteAnimation() {
 
 function clearDomSlideTransitions() {
   el.playheadCaretTop.style.transition = '';
-  el.playheadScissors.style.transition = '';
-  for (const h of bottomHandles) h.style.transition = '';
 }
 
 function beginSegmentAnim(slides, snap, tiles, oldPlayheadX, newPlayheadX, newPlayheadRatio, reverseTiles, dpr, W, H, onComplete) {
@@ -569,12 +421,7 @@ function beginSegmentAnim(slides, snap, tiles, oldPlayheadX, newPlayheadX, newPl
 
   const domTransition = `left ${SEGMENT_DELETE_ANIM_MS}ms ease-out, top ${SEGMENT_DELETE_ANIM_MS}ms ease-out`;
   el.playheadCaretTop.style.transition = domTransition;
-  el.playheadScissors.style.transition = `${domTransition}, opacity 0.18s ease`;
   positionPlayheadCarets(newPlayheadRatio);
-  updatePlayheadScissorsPosition(newPlayheadRatio);
-  if (state.draggingHandleIndex < 0) ensureDivisionHandles();
-  for (const h of bottomHandles) h.style.transition = `${domTransition}, opacity 0.15s, transform 0.15s, color 0.15s`;
-  positionDivisionHandles();
 
   deleteAnim = { startTime: performance.now(), slides, snap, tiles, W, H, dpr, oldPlayheadX, newPlayheadX, reverseTiles, raf: null };
 
@@ -640,7 +487,6 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   waveCtx.clearRect(0, 0, W, H);
 
   if (!state.recordedBuffer) {
-    el.playheadScissors.classList.remove('visible');
     el.playheadCaretTop.style.display = 'none';
     rulerCtx.clearRect(0, 0, el.timelineRulerCanvas.width, el.timelineRulerCanvas.height);
     rulerCacheKey = '';
@@ -652,7 +498,6 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   const segBounds = _computeSegmentBounds(W, totalSamples, gapPx);
   const visualRatio = audioRatioToVisualRatio(playheadRatio, W, segBounds);
 
-  updatePlayheadScissorsPosition(playheadRatio);
   positionPlayheadCarets(playheadRatio);
 
   if (!state.cachedPeaks || state.cachedPeaksWidth !== W) {
@@ -690,10 +535,6 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     }
   }
 
-  if (state.draggingHandleIndex < 0) {
-    ensureDivisionHandles();
-  }
-  positionDivisionHandles();
   positionAppendButton();
 
   if (state.selectedSegmentIndex >= 0 && state.selectedSegmentIndex >= segBounds.length) {
@@ -1078,12 +919,6 @@ function drawDragFrame() {
     ? computeDragPlayheadX(snap, floatStart)
     : computeDragPlayheadX(snap);
   positionPlayheadCaretsAtDeviceX(caretX);
-  el.playheadScissors.classList.remove('visible');
-
-  // Division handles would be at stale positions during the live rearrange;
-  // hide them for the duration of the drag. drawPlaybackWaveform will
-  // reposition them when normal rendering resumes after settle.
-  for (const h of bottomHandles) h.style.display = 'none';
 
   // The append button doesn't depend on segment positions, keep it placed.
   positionAppendButton();
