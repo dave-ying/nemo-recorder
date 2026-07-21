@@ -39,6 +39,7 @@ All modules communicate through one shared mutable `state` object (`js/state.js`
 - **`export.js`** — export modal UI + lazily-created Web Workers for encoding (one worker per format, created on first use). Talks to `worker-code.js` for the actual worker source.
 - **`worker-code.js`** — WAV and MP3 encoder source, kept as **template-literal strings** (not real worker files) so they can be spun up from Blob URLs and also imported directly into Node tests via `vm.runInContext`. This file is intentionally DOM-free — don't add browser-only APIs to the worker source strings.
 - **`record-modal.js`** — modal controller for the recording modal. Handles multiple states (`disconnected`, `ready`, `recording`, `review`), mic connection/disconnection, start/stop recording, review waveform rendering with seekable+draggable playhead, preview playback of the pending take, and the "Add to Editor" / "Retake" decision flow.
+- **`help-modal.js`** — modal controller for the Help modal (opened via the "?" button in the header). Tab-switches between a Keyboard Shortcuts panel and a static Changelog panel; no state beyond which tab is active.
 - **`ui.js`** — small generic DOM helpers: toasts, empty-state display (`updateEmptyState`), transport button enable/disable, quality-option rendering.
 - **`utils.js`** — pure formatting helpers (`formatTime`, `formatSize`).
 

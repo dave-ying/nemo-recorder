@@ -9,6 +9,7 @@ import { startPlayback, pausePlayback } from './playback.js';
 import { arrowKeyDown, arrowKeyUp } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
+import { closeHelpModal, initHelpModal } from './help-modal.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -181,6 +182,11 @@ document.addEventListener('keydown', (e) => {
   if (keyTarget.tagName === 'INPUT' || keyTarget.tagName === 'TEXTAREA') return;
   const noMod = !e.metaKey && !e.ctrlKey && !e.altKey;
 
+  if (el.helpModal.classList.contains('visible')) {
+    if (e.code === 'Escape') closeHelpModal();
+    return;
+  }
+
   // While the record modal is open it owns the keyboard: editor shortcuts
   // (Space, S, arrows, Delete, undo) must not fire behind the overlay.
   if (el.recordModal.classList.contains('visible')) {
@@ -263,6 +269,7 @@ window.addEventListener('resize', () => {
 
 // ===== Init =====
 initRecordModal();
+initHelpModal();
 updateEmptyState();
 updateSegmentCountDisplay();
 setTransportDisabled(true);

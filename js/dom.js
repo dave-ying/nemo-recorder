@@ -80,6 +80,12 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLDivElement} confirmMessage
  * @property {HTMLButtonElement} confirmCancel
  * @property {HTMLButtonElement} confirmOk
+ * @property {HTMLButtonElement} helpButton
+ * @property {HTMLDivElement} helpModal
+ * @property {HTMLButtonElement} helpModalClose
+ * @property {HTMLDivElement} helpTabs
+ * @property {HTMLDivElement} helpPanelShortcuts
+ * @property {HTMLDivElement} helpPanelChangelog
  */
 
 // Element IDs are static in index.html, so a single cast here gives every
@@ -121,7 +127,9 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   rmActionsRight: $('rmActionsRight'),
   rmRetakeBtn: $('rmRetakeBtn'), rmAddBtn: $('rmAddBtn'),
   confirmModal: $('confirmModal'), confirmTitle: $('confirmTitle'), confirmMessage: $('confirmMessage'),
-  confirmCancel: $('confirmCancel'), confirmOk: $('confirmOk')
+  confirmCancel: $('confirmCancel'), confirmOk: $('confirmOk'),
+  helpButton: $('helpButton'), helpModal: $('helpModal'), helpModalClose: $('helpModalClose'),
+  helpTabs: $('helpTabs'), helpPanelShortcuts: $('helpPanelShortcuts'), helpPanelChangelog: $('helpPanelChangelog')
 }));
 
 export const liveCtx = /** @type {CanvasRenderingContext2D} */ (el.liveCanvas.getContext('2d'));

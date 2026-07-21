@@ -45,7 +45,7 @@ export const SEGMENT_DRAG_SHADOW_BLUR_CSS_PX = 20;
 export const SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX = 9;
 export const SEGMENT_DRAG_APPROACH_RATE = 22; // per-second convergence rate for live ease
 
-export const APPEND_BUTTON_SIZE_CSS_PX = 30;
+export const APPEND_BUTTON_SIZE_CSS_PX = 32;
 export const APPEND_BUTTON_PAD_CSS_PX = 16;
 
 /**
