@@ -75,8 +75,6 @@ export const setTransportDisabled = (disabled) => {
   el.skipForwardButton.disabled = disabled;
   el.playButton.disabled = disabled;
   el.splitButton.disabled = disabled;
-  el.transportUploadButton.disabled = disabled;
-  el.transportRecordButton.disabled = disabled;
 };
 
 export const updateEmptyState = () => {

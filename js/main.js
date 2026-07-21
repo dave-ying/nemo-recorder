@@ -38,9 +38,6 @@ el.deleteSegmentButton.addEventListener('click', () => {
 });
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
-el.transportUploadButton.addEventListener('click', () => el.appendFileInput.click());
-el.transportRecordButton.addEventListener('click', () => openRecordModal('append'));
-
 const closeAppendMenu = () => { el.appendMenu.hidden = true; };
 
 el.appendButton.addEventListener('click', (e) => {
