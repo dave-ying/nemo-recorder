@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, TRASH_HALF_WIDTH_CSS_PX, TRASH_ABOVE_CARD_CSS_PX, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, MIN_SEGMENT_SAMPLES, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE } from './state.js';
 import { el, waveCtx, rulerCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
@@ -125,9 +125,8 @@ export function removePlayheadCaretDraggingClass() {
 // ===== Trash show/hide helpers =====
 
 export function hideSegmentTrash() {
-  clearTimeout(state.trashHideTimer);
-  el.segmentTrash.classList.remove('visible');
   state.selectedSegmentIndex = -1;
+  el.deleteSegmentButton.disabled = true;
   state.isHoveringTrash = false;
   stopSelectionAnim();
   if (!state.isPlaying && state.recordedBuffer) {
@@ -142,15 +141,13 @@ export function clearSegmentHover() {
 
 export function showSegmentTrash(index) {
   if (index < 0 || index >= state.segments.length) return;
-  clearTimeout(state.trashHideTimer);
   state.selectedSegmentIndex = index;
-  el.segmentTrash.classList.add('visible');
-  positionSegmentTrash();
+  el.deleteSegmentButton.disabled = false;
   startSelectionAnim();
 }
 
-el.segmentTrash.addEventListener('mouseenter', () => { state.isHoveringTrash = true; });
-el.segmentTrash.addEventListener('mouseleave', () => { state.isHoveringTrash = false; });
+el.deleteSegmentButton.addEventListener('mouseenter', () => { state.isHoveringTrash = true; });
+el.deleteSegmentButton.addEventListener('mouseleave', () => { state.isHoveringTrash = false; });
 
 let selectionAnimRaf = null;
 
@@ -168,25 +165,6 @@ function startSelectionAnim() {
 
 function stopSelectionAnim() {
   if (selectionAnimRaf) { cancelAnimationFrame(selectionAnimRaf); selectionAnimRaf = null; }
-}
-
-function positionSegmentTrash() {
-  if (state.selectedSegmentIndex < 0 || !state.recordedBuffer) return;
-  if (state.selectedSegmentIndex >= state.segments.length) { hideSegmentTrash(); return; }
-  const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.editorSection.getBoundingClientRect();
-  const gapPx = SEGMENT_GAP_CSS_PX;
-  const segBounds = _computeSegmentBounds(canvasRect.width, state.recordedBuffer.length, gapPx);
-  const sb = segBounds[state.selectedSegmentIndex];
-  if (!sb) { hideSegmentTrash(); return; }
-
-  const centerX = (sb.drawStart + sb.drawEnd) / 2;
-  let leftPx = (canvasRect.left - viewRect.left) + centerX;
-  leftPx = Math.max(TRASH_HALF_WIDTH_CSS_PX, Math.min(viewRect.width - TRASH_HALF_WIDTH_CSS_PX, leftPx));
-  const topPx = (canvasRect.top - viewRect.top) - TRASH_ABOVE_CARD_CSS_PX;
-
-  el.segmentTrash.style.left = leftPx + 'px';
-  el.segmentTrash.style.top = topPx + 'px';
 }
 
 const DIVISION_HANDLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 -0.5 21 21" fill="currentColor"><path d="M3.25 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M17.75 3h-2a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -718,8 +696,8 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   positionDivisionHandles();
   positionAppendButton();
 
-  if (state.selectedSegmentIndex >= 0) {
-    positionSegmentTrash();
+  if (state.selectedSegmentIndex >= 0 && state.selectedSegmentIndex >= segBounds.length) {
+    hideSegmentTrash();
   }
 
   drawTimelineRuler(state.recordedBuffer.duration, segBounds, W, dpr, geomKey);

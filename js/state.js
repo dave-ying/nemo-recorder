@@ -46,8 +46,6 @@ export const SEGMENT_DRAG_SHADOW_BLUR_CSS_PX = 20;
 export const SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX = 9;
 export const SEGMENT_DRAG_APPROACH_RATE = 22; // per-second convergence rate for live ease
 
-export const TRASH_HALF_WIDTH_CSS_PX = 15;
-export const TRASH_ABOVE_CARD_CSS_PX = 34;
 export const APPEND_BUTTON_SIZE_CSS_PX = 30;
 export const APPEND_BUTTON_PAD_CSS_PX = 16;
 
@@ -135,7 +133,6 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {boolean} isDownloading
  * @property {{sampleRate: number, bitDepth: number, channels: number}} settings
  * @property {{format: string, quality: number}} exportSettings
- * @property {number|null} trashHideTimer
  * @property {number} draggingHandleIndex
  * @property {DragSnapshot|null} _dragSnapshot
  * @property {boolean} draggingPlayhead
@@ -189,7 +186,6 @@ export const state = {
   isDownloading: false,
   settings: { sampleRate: 48000, bitDepth: 24, channels: 1 },
   exportSettings: { format: 'wav', quality: 32 },
-  trashHideTimer: null,
   draggingPlayhead: false,
   draggingSegmentIndex: -1,
   pendingSegmentDrag: null,

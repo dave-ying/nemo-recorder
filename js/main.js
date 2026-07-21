@@ -32,6 +32,9 @@ el.playButton.addEventListener('click', () => { state.isPlaying ? pausePlayback(
 
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
+el.deleteSegmentButton.addEventListener('click', () => {
+  if (state.selectedSegmentIndex >= 0) deleteSegmentByIndex(state.selectedSegmentIndex);
+});
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
 el.transportUploadButton.addEventListener('click', () => el.appendFileInput.click());
@@ -98,15 +101,10 @@ el.timelineRulerCanvas.addEventListener('pointerdown', (e) => {
   seekFromClientX(e.clientX);
 });
 
-el.segmentTrash.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (state.selectedSegmentIndex >= 0) deleteSegmentByIndex(state.selectedSegmentIndex);
-});
-
 document.addEventListener('pointerdown', (e) => {
   if (!el.playbackView.hidden && state.selectedSegmentIndex >= 0) {
     const target = /** @type {Node} */ (e.target);
-    if (el.waveformContainer.contains(target) || target === el.segmentTrash || el.segmentTrash.contains(target)) return;
+    if (el.waveformContainer.contains(target) || el.deleteSegmentButton.contains(target)) return;
     hideSegmentTrash();
   }
   if (!el.appendMenu.hidden) {
