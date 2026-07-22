@@ -739,26 +739,39 @@ function stepDragAnim(dt, now) {
 }
 
 /**
- * Compute the playhead's animated device-px X for the current drag frame.
+ * Locate the playhead within the live arrangement. The playhead is a fixed
+ * timeline position during a reorder — it does NOT follow the dragged segment
+ * or any audio content. Resolves the arrangement to its would-be segment
+ * order and reuses findSegmentAtSamplePure's boundary semantics (a sample
+ * exactly on a boundary belongs to the right segment; past-the-end clamps to
+ * the last segment).
  *
- * The playhead follows its audio content: it stays on the same segment (by
- * {start, end} identity) at the same offset within that segment, regardless of
- * where that segment has been dragged to in the live arrangement. If the
- * playhead's segment is the dragged one during live drag, the playhead sits on
- * the floating card (which follows the pointer) rather than the slot.
+ * @returns {{ k: number, frac: number }} `k` = position in the arrangement of
+ *   the segment containing the playhead (-1 if there are no segments);
+ *   `frac` = the playhead's fraction within that segment (0..1).
  */
-function computeDragPlayheadX(snap, floatStart) {
-  const originalIdx = snap.playheadSegOriginalIndex;
-  if (originalIdx < 0) return -1;
-  const segLen = snap.playheadSegEnd - snap.playheadSegStart;
-  const frac = segLen > 0 ? Math.max(0, Math.min(1, snap.playheadOffsetInSeg / segLen)) : 0;
+function locatePlayheadInArrangement(snap) {
+  const total = state.recordedBuffer.length;
+  const sr = state.originalBuffer.sampleRate;
+  const ph = Math.max(0, Math.min(total, Math.round(state.playbackOffset * sr)));
+  const ordered = snap.arrangement.map(i => snap.originalSegments[i]);
+  const hit = findSegmentAtSamplePure(ordered, ph);
+  if (!hit) return { k: -1, frac: 0 };
+  const segLen = hit.seg.end - hit.seg.start;
+  return { k: hit.index, frac: segLen > 0 ? Math.max(0, Math.min(1, hit.offsetInSeg / segLen)) : 0 };
+}
 
-  if (floatStart != null) {
-    // Playhead is on the floating card.
-    const pathWidth = snap.segPathWidths[originalIdx];
-    return floatStart + frac * pathWidth;
-  }
-  const ab = snap.animBounds[originalIdx];
+/**
+ * Compute the playhead caret's device-px X for the current drag frame. The
+ * caret sits wherever the fixed playhead time falls in the live arrangement,
+ * using the containing card's animated bounds — so it glides with the cards
+ * as they ease toward their would-be positions, but never follows the dragged
+ * card or the pointer.
+ */
+function computeDragPlayheadX(snap) {
+  const { k, frac } = locatePlayheadInArrangement(snap);
+  if (k < 0) return -1;
+  const ab = snap.animBounds[snap.arrangement[k]];
   if (!ab) return -1;
   return ab.drawStart + frac * (ab.drawEnd - ab.drawStart);
 }
@@ -920,9 +933,10 @@ function drawDropZoneOutline(ctx, drawStart, drawEnd, H, dpr) {
  * order (not a global canvas X), because the floating dragged card can be
  * anywhere on the canvas — far from its slot — and a global X would misclassify
  * cards that are before/after the playhead in the arrangement. Each card is
- * either fully played (before the playhead's segment in the arrangement), fully
- * unplayed (after it), or split at the playhead offset (if it IS the playhead's
- * segment).
+ * either fully played (before the playhead time in the arrangement), fully
+ * unplayed (after it), or split at the playhead time (the card containing it).
+ * The playhead holds a fixed timeline position throughout the drag — it does
+ * not follow the dragged segment.
  */
 function drawDragFrame() {
   const snap = state._segmentDragSnapshot;
@@ -958,22 +972,14 @@ function drawDragFrame() {
   const srcIdx = snap.srcIndex;
   const arrangement = snap.arrangement;
   const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
-  const playheadOrigIdx = snap.playheadSegOriginalIndex;
-  const playheadSegLen = snap.playheadSegEnd - snap.playheadSegStart;
-  const playheadFrac = playheadSegLen > 0
-    ? Math.max(0, Math.min(1, snap.playheadOffsetInSeg / playheadSegLen))
-    : 0;
 
-  // Find the playhead segment's position in the live arrangement so each card
-  // can be classified as before / after / containing the playhead.
-  let kPlayhead = -1;
-  for (let k = 0; k < arrangement.length; k++) {
-    if (arrangement[k] === playheadOrigIdx) { kPlayhead = k; break; }
-  }
+  // The playhead holds a fixed timeline position during the drag; find where
+  // that time falls in the live arrangement so each card can be classified as
+  // before / after / containing the playhead.
+  const { k: kPlayhead, frac: playheadFrac } = locatePlayheadInArrangement(snap);
   const srcK = arrangement.indexOf(srcIdx);
 
-  // Compute the floating card's current position (used for the floating render
-  // and for the playhead caret when the playhead is on the dragged segment).
+  // Compute the floating card's current position (used for the floating render).
   const pathWidth = snap.segPathWidths[srcIdx];
   let floatStart = -1;
   if (pathWidth > 0) {
@@ -1063,13 +1069,9 @@ function drawDragFrame() {
     }
   }
 
-  // Playhead carets follow the audio content. If the playhead is on the
-  // dragged segment during live drag, the carets sit on the floating card.
-  const playheadOnDragged = playheadOrigIdx === srcIdx;
-  const caretX = playheadOnDragged && !isSettling && floatStart >= 0
-    ? computeDragPlayheadX(snap, floatStart)
-    : computeDragPlayheadX(snap);
-  positionPlayheadCaretsAtDeviceX(caretX);
+  // The playhead keeps its timeline position: the caret sits wherever that
+  // time falls in the live arrangement, never on the floating dragged card.
+  positionPlayheadCaretsAtDeviceX(computeDragPlayheadX(snap));
 
   // The append button doesn't depend on segment positions, keep it placed.
   positionAppendButton();

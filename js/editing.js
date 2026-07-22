@@ -626,10 +626,6 @@ export function beginSegmentReorderDrag(clientX, clientY) {
   if (state._segmentDragSnapshot) return; // re-entrant guard (e.g. during settle)
   if (state.isPlaying) pausePlayback();
 
-  const sr = state.originalBuffer.sampleRate;
-  const playheadSample = Math.round(state.playbackOffset * sr);
-  const target = findSegmentAtSample(playheadSample);
-
   const dpr = window.devicePixelRatio || 1;
   const rect = el.waveformContainer.getBoundingClientRect();
   const W = Math.max(1, Math.floor(rect.width * dpr));
@@ -681,10 +677,6 @@ export function beginSegmentReorderDrag(clientX, clientY) {
     srcIndex: pending.index,
     currentClientX: clientX,
     dropInsertIndex: pending.index,
-    playheadSegStart: target ? target.seg.start : -1,
-    playheadSegEnd: target ? target.seg.end : -1,
-    playheadOffsetInSeg: target ? target.offsetInSeg : 0,
-    playheadSegOriginalIndex: target ? target.index : -1,
     pointerX,
     pointerOffsetInCard,
     animBounds,
@@ -748,21 +740,9 @@ export function finishSegmentReorderDrag() {
   rebuildPlaybackBuffer();
   state.bufferEpoch++;
 
-  // Preserve the playhead on the same audio content: find the (now-relocated)
-  // segment by its {start, end} identity and reposition the playhead to the
-  // same offset within it.
-  if (state.recordedBuffer && snap.playheadSegStart >= 0) {
-    const sr = state.originalBuffer.sampleRate;
-    let acc = 0;
-    for (let i = 0; i < state.segments.length; i++) {
-      const s = state.segments[i];
-      if (s.start === snap.playheadSegStart && s.end === snap.playheadSegEnd) {
-        state.playbackOffset = Math.max(0, Math.min((acc + snap.playheadOffsetInSeg) / sr, state.recordedBuffer.duration));
-        break;
-      }
-      acc += s.end - s.start;
-    }
-  }
+  // The playhead is a fixed timeline position: state.playbackOffset is
+  // deliberately left untouched, so the caret stays at the same time and the
+  // reordered content reflows around it (it does not follow the moved audio).
 
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);

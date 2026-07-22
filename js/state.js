@@ -63,10 +63,6 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} srcIndex - index of the segment being reordered
  * @property {number} currentClientX - last pointer client X (updated each move)
  * @property {number} dropInsertIndex - raw insert index in [0, segments.length] computed from currentClientX
- * @property {number} playheadSegStart - {start} of the segment the playhead was in at drag-begin (for audio-content preservation), or -1
- * @property {number} playheadSegEnd - {end} of the same segment, or -1
- * @property {number} playheadOffsetInSeg - sample offset within that segment
- * @property {number} playheadSegOriginalIndex - ORIGINAL index of the playhead segment at drag-begin, or -1
  * @property {number} pointerX - current pointer X over the waveform canvas, in device px (for the floating card)
  * @property {number} pointerOffsetInCard - device-px offset of the pointer within the dragged card at drag-begin (so the floating card stays pinned to the grab point)
  * @property {Array<{drawStart: number, drawEnd: number}>} animBounds - per ORIGINAL segment index, current animated card bounds in device px
@@ -137,6 +133,8 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {Path2D|null} cachedPath
  * @property {(() => void)|null} liveResizeHandler
  * @property {boolean} isDownloading
+ * @property {{targetLufs: number, truePeakDbtp: number}} loudness
+ * @property {{thresholdDb: number, minSilenceMs: number}} trimSilence - settings for the Trim Silence button (see js/trim-silence.js)
  * @property {{sampleRate: number, bitDepth: number, channels: number}} settings
  * @property {{format: string, quality: number}} exportSettings
  * @property {boolean} draggingPlayhead
@@ -149,8 +147,9 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} previewStartTime
  * @property {number} previewOffset
  * @property {boolean} isPreviewing
- * @property {ClipboardSegment|null} clipboardSegment - last segment copied via Copy (context menu or Ctrl+C)
- */
+  @property {{enabled: boolean}} denoise
+  @property {ClipboardSegment|null} clipboardSegment - last segment copied via Copy (context menu or Ctrl+C)
+  */
 
 /** @type {AppState} */
 export const state = {
@@ -189,6 +188,10 @@ export const state = {
   cachedPath: null,
   liveResizeHandler: null,
   isDownloading: false,
+  /** @type {{targetLufs: number, truePeakDbtp: number}} */
+  loudness: { targetLufs: -16, truePeakDbtp: -1 },
+  /** @type {{thresholdDb: number, minSilenceMs: number}} */
+  trimSilence: { thresholdDb: -40, minSilenceMs: 500 },
   settings: { sampleRate: 48000, bitDepth: 24, channels: 1 },
   exportSettings: { format: 'wav', quality: 32 },
   draggingPlayhead: false,
@@ -201,6 +204,7 @@ export const state = {
   previewStartTime: 0,
   previewOffset: 0,
   isPreviewing: false,
+  denoise: { enabled: false },
   clipboardSegment: null
 };
 
