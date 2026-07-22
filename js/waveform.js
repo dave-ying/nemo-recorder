@@ -35,18 +35,23 @@ function computePeaks(width) {
 
 // ===== Playhead caret positioning =====
 
-function positionPlayheadCarets(ratio) {
+// Callers that already computed segBounds/device width for this frame (e.g.
+// drawPlaybackWaveform) pass them in to avoid a duplicate O(N) computation.
+function positionPlayheadCarets(ratio, segBounds, deviceW) {
   if (!state.recordedBuffer || el.playbackView.hidden || ratio < 0 || ratio > 1) {
     el.playheadCaretTop.style.display = 'none';
     return;
   }
 
-  const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.editorSection.getBoundingClientRect();
+  if (!_cachedCanvasRect || !_cachedViewRect) return;
+  const canvasRect = _cachedCanvasRect;
+  const viewRect = _cachedViewRect;
   const dpr = window.devicePixelRatio || 1;
-  const W = Math.floor(canvasRect.width * dpr);
-  const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
-  const segBounds = _computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+  const W = deviceW != null ? deviceW : Math.floor(canvasRect.width * dpr);
+  if (!segBounds) {
+    const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
+    segBounds = _computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
+  }
   const visualRatio = audioRatioToVisualRatio(ratio, W, segBounds);
   const lineXCssPx = Math.floor(visualRatio * W) / dpr;
   const leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
@@ -54,12 +59,17 @@ function positionPlayheadCarets(ratio) {
   el.playheadCaretTop.style.display = '';
 
   const insetY = SEGMENT_VERTICAL_INSET_CSS_PX;
-  const lineOffsetTop = el.playheadLine.offsetTop;
-  const topPx = (canvasRect.top - viewRect.top) + insetY - lineOffsetTop;
-
-  el.playheadLine.style.height = Math.max(0, canvasRect.height - 2 * insetY) + 'px';
+  // top and height are layout-constant — only write when they change (set via style object check)
+  const heightPx = Math.max(0, canvasRect.height - 2 * insetY);
+  if (el.playheadLine.style.height !== heightPx + 'px') {
+    el.playheadLine.style.height = heightPx + 'px';
+  }
+  // top depends on canvasRect.top which only changes on scroll/resize — cache it in rect cache
+  const topPx = (canvasRect.top - viewRect.top) + insetY - (_cachedLineOffsetTop || 0);
+  if (el.playheadCaretTop.style.top !== topPx + 'px') {
+    el.playheadCaretTop.style.top = topPx + 'px';
+  }
   el.playheadCaretTop.style.left = leftPx + 'px';
-  el.playheadCaretTop.style.top = topPx + 'px';
 }
 
 function playheadCaretMouseDown(e) {
@@ -115,11 +125,19 @@ el.deleteSegmentButton.addEventListener('mouseenter', () => { state.isHoveringTr
 el.deleteSegmentButton.addEventListener('mouseleave', () => { state.isHoveringTrash = false; });
 
 let selectionAnimRaf = null;
+let _lastPulseTime = 0;
 
 function startSelectionAnim() {
   if (selectionAnimRaf) return;
-  const tick = () => {
+  _lastPulseTime = 0;
+  const tick = (now) => {
     if (state.selectedSegmentIndex < 0) { selectionAnimRaf = null; return; }
+    // Throttle to ~24 fps — the pulse is a slow sine wave, no need for 60 fps
+    if (now - _lastPulseTime < 41) {
+      selectionAnimRaf = requestAnimationFrame(tick);
+      return;
+    }
+    _lastPulseTime = now;
     if (!state.isPlaying && state.recordedBuffer) {
       drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
     }
@@ -138,21 +156,19 @@ function positionAppendButton() {
     el.appendMenu.hidden = true;
     return;
   }
-  const viewRect = el.editorSection.getBoundingClientRect();
-  const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const stageRect = el.stage.getBoundingClientRect();
-  // Center the button in the visible empty space between the waveform's right
-  // edge and the master container's (stage's) right edge. That space spans the
-  // waveform container's right margin plus the stage's right padding, so it is
-  // wider than just the margin — measuring against the stage is what makes the
-  // button sit visually centered rather than shifted toward the waveform.
+  if (!_cachedCanvasRect || !_cachedViewRect) return;
+  if (!_cachedStageRect) _cachedStageRect = el.stage.getBoundingClientRect();
+  const canvasRect = _cachedCanvasRect;
+  const viewRect = _cachedViewRect;
+  const stageRect = _cachedStageRect;
   const gapLeftPx = canvasRect.right - viewRect.left;
   const gapRightPx = stageRect.right - viewRect.left;
   const gapWidthPx = gapRightPx - gapLeftPx;
   let leftPx = gapLeftPx + Math.max(0, (gapWidthPx - APPEND_BUTTON_SIZE_CSS_PX) / 2);
   const midY = (canvasRect.top - viewRect.top) + canvasRect.height / 2;
-  el.appendButton.style.left = leftPx + 'px';
-  el.appendButton.style.top = (midY - APPEND_BUTTON_SIZE_CSS_PX / 2) + 'px';
+  const topPx = midY - APPEND_BUTTON_SIZE_CSS_PX / 2;
+  if (el.appendButton.style.left !== leftPx + 'px') el.appendButton.style.left = leftPx + 'px';
+  if (el.appendButton.style.top !== topPx + 'px') el.appendButton.style.top = topPx + 'px';
   el.appendButton.classList.add('visible');
 }
 
@@ -171,10 +187,29 @@ function buildSegmentCardPaths(segBounds, H, dpr) {
 /** @type {HTMLCanvasElement | null} */
 let baseLayerCanvas = null;
 let baseLayerKey = '';
+/** @type {HTMLCanvasElement | null} */
+let playedLayerCanvas = null;
+/** @type {HTMLCanvasElement | null} */
+let unplayedLayerCanvas = null;
+let waveformLayerKey = '';
 /** @type {Array<Path2D | null>} */
 let cachedCardPaths = [];
 let cardPathsKey = '';
 let rulerCacheKey = '';
+
+// Layout rect cache — invalidated on resize to avoid forced reflows
+let _cachedCanvasRect = null;
+let _cachedViewRect = null;
+let _cachedStageRect = null;
+let _cachedLineOffsetTop = null;
+let _cachedPathHeight = 0;
+
+export function invalidateRectCache() {
+  _cachedCanvasRect = null;
+  _cachedViewRect = null;
+  _cachedStageRect = null;
+  _cachedLineOffsetTop = null;
+}
 
 function segmentGeometryKey(W, H, dpr) {
   let k = W + 'x' + H + '@' + dpr;
@@ -191,8 +226,6 @@ function renderBaseLayer(segBounds, cardPaths, W, H, dpr) {
   ctx.clearRect(0, 0, W, H);
 
   const midY = H / 2;
-  const selectedIdx = state.selectedSegmentIndex;
-  const hoverIdx = state.hoverSegmentIndex;
 
   for (let i = 0; i < cardPaths.length; i++) {
     const cardPath = cardPaths[i];
@@ -201,13 +234,7 @@ function renderBaseLayer(segBounds, cardPaths, W, H, dpr) {
     ctx.shadowColor = WAVEFORM_STYLE.segmentShadowColor;
     ctx.shadowBlur = SEGMENT_SHADOW_BLUR_CSS_PX * dpr;
     ctx.shadowOffsetY = SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr;
-    if (i === state.draggingSegmentIndex) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
-    } else if (i === selectedIdx || i === hoverIdx) {
-      ctx.fillStyle = WAVEFORM_STYLE.hoverCardBg;
-    } else {
-      ctx.fillStyle = WAVEFORM_STYLE.segmentCardBg;
-    }
+    ctx.fillStyle = i === state.draggingSegmentIndex ? 'rgba(255, 255, 255, 0.018)' : WAVEFORM_STYLE.segmentCardBg;
     ctx.fill(cardPath);
     ctx.restore();
   }
@@ -228,6 +255,37 @@ function renderBaseLayer(segBounds, cardPaths, W, H, dpr) {
   }
 }
 
+function renderWaveformLayers(path, segBounds, cardPaths, W, H, dpr) {
+  if (!playedLayerCanvas) playedLayerCanvas = document.createElement('canvas');
+  if (!unplayedLayerCanvas) unplayedLayerCanvas = document.createElement('canvas');
+  if (playedLayerCanvas.width !== W) playedLayerCanvas.width = W;
+  if (playedLayerCanvas.height !== H) playedLayerCanvas.height = H;
+  if (unplayedLayerCanvas.width !== W) unplayedLayerCanvas.width = W;
+  if (unplayedLayerCanvas.height !== H) unplayedLayerCanvas.height = H;
+
+  const playedCtx = playedLayerCanvas.getContext('2d');
+  const unplayedCtx = unplayedLayerCanvas.getContext('2d');
+
+  playedCtx.clearRect(0, 0, W, H);
+  unplayedCtx.clearRect(0, 0, W, H);
+
+  for (let i = 0; i < cardPaths.length; i++) {
+    const cardPath = cardPaths[i];
+    if (!cardPath) continue;
+    playedCtx.save();
+    playedCtx.clip(cardPath);
+    playedCtx.fillStyle = WAVEFORM_STYLE.playedColor;
+    playedCtx.fill(path);
+    playedCtx.restore();
+
+    unplayedCtx.save();
+    unplayedCtx.clip(cardPath);
+    unplayedCtx.fillStyle = WAVEFORM_STYLE.unplayedColor;
+    unplayedCtx.fill(path);
+    unplayedCtx.restore();
+  }
+}
+
 function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
   const edgeWidth = SEGMENT_EDGE_WIDTH_CSS_PX * dpr;
 
@@ -240,83 +298,87 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
     ? (Math.sin((performance.now() / 1000) * (Math.PI * 2 / pulsePeriod)) + 1) / 2
     : 0;
 
+  // Draw card backgrounds (base layer) — no hover/selected tint
   if (baseLayerCanvas) ctx.drawImage(baseLayerCanvas, 0, 0);
+
+  // Hover card-background tint goes UNDER the waveform (matching the legacy
+  // look where it lived in the base layer): brighten the card, not the wave.
+  if (hoverIdx >= 0 && hoverIdx < segBounds.length && hoverIdx !== selectedIdx && hoverIdx !== state.draggingSegmentIndex) {
+    const hoverPath = cardPaths[hoverIdx];
+    if (hoverPath) {
+      ctx.fillStyle = WAVEFORM_STYLE.hoverCardBg;
+      ctx.fill(hoverPath);
+    }
+  }
+
+  // Draw pre-rendered waveform layers
+  if (unplayedLayerCanvas) ctx.drawImage(unplayedLayerCanvas, 0, 0);
+  if (playedLayerCanvas && playheadX > 0) {
+    ctx.drawImage(playedLayerCanvas, 0, 0, playheadX, H, 0, 0, playheadX, H);
+  }
 
   for (let i = 0; i < segBounds.length; i++) {
     const sb = segBounds[i];
     const cardPath = cardPaths[i];
     if (!cardPath) continue;
-    const x = sb.drawStart;
     const w = sb.drawEnd - sb.drawStart;
     const isSelected = i === selectedIdx;
     const isDragged = i === state.draggingSegmentIndex;
 
-    ctx.save();
-    ctx.clip(cardPath);
-
-    if (isDragged) ctx.globalAlpha = 0.35;
-
-    const midX = Math.min(sb.drawEnd, Math.max(sb.drawStart, playheadX));
     if (isSelected) {
+      // The standard waveform layers were already blitted across this card;
+      // erase them (clip + clear) and re-stamp the card exactly as the legacy
+      // renderer did: brighter card bg, midline, then the selected-color fills.
+      ctx.save();
+      ctx.clip(cardPath);
+      ctx.clearRect(sb.drawStart - 1, 0, w + 2, H);
+      ctx.fillStyle = WAVEFORM_STYLE.hoverCardBg;
+      ctx.fill(cardPath);
+      ctx.strokeStyle = WAVEFORM_STYLE.midlineColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sb.drawStart, H / 2);
+      ctx.lineTo(sb.drawEnd, H / 2);
+      ctx.stroke();
+
+      const midX = Math.min(sb.drawEnd, Math.max(sb.drawStart, playheadX));
       const unplayedColor = isMarkedForDelete
         ? lerpColorAlpha(WAVEFORM_STYLE.deleteUnplayedColorDim, WAVEFORM_STYLE.deleteUnplayedColorBright, pulse)
         : lerpColorAlpha(WAVEFORM_STYLE.selectedUnplayedColorDim, WAVEFORM_STYLE.selectedUnplayedColorBright, pulse);
       const playedColor = isMarkedForDelete ? WAVEFORM_STYLE.deletePlayedColor : WAVEFORM_STYLE.selectedPlayedColor;
-      if (midX > x) {
+      if (midX > sb.drawStart) {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(x, 0, midX - x, H);
+        ctx.rect(sb.drawStart, 0, midX - sb.drawStart, H);
         ctx.clip();
         ctx.fillStyle = playedColor;
         ctx.fill(path);
         ctx.restore();
       }
-      if (midX < x + w) {
+      if (midX < sb.drawStart + w) {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(midX, 0, x + w - midX, H);
+        ctx.rect(midX, 0, sb.drawStart + w - midX, H);
         ctx.clip();
         ctx.fillStyle = unplayedColor;
         ctx.fill(path);
         ctx.restore();
       }
-    } else {
-      if (midX > x) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x, 0, midX - x, H);
-        ctx.clip();
-        ctx.fillStyle = WAVEFORM_STYLE.playedColor;
-        ctx.fill(path);
-        ctx.restore();
-      }
-      if (midX < x + w) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(midX, 0, x + w - midX, H);
-        ctx.clip();
-        ctx.fillStyle = WAVEFORM_STYLE.unplayedColor;
-        ctx.fill(path);
-        ctx.restore();
-      }
-    }
-
-    ctx.restore();
-
-    if (isDragged) {
-      ctx.save();
-      ctx.setLineDash([5 * dpr, 4 * dpr]);
-      ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
-      ctx.lineWidth = edgeWidth;
-      ctx.stroke(cardPath);
       ctx.restore();
-    } else if (isSelected) {
+
       const glowBlur = (6 + pulse * 8) * dpr;
       ctx.save();
       ctx.strokeStyle = isMarkedForDelete ? WAVEFORM_STYLE.deleteEdgeColor : WAVEFORM_STYLE.selectedEdgeColor;
       ctx.lineWidth = isMarkedForDelete ? edgeWidth * 1.5 : edgeWidth;
       ctx.shadowColor = isMarkedForDelete ? WAVEFORM_STYLE.deleteGlowColor : WAVEFORM_STYLE.selectedGlowColor;
       ctx.shadowBlur = glowBlur;
+      ctx.stroke(cardPath);
+      ctx.restore();
+    } else if (isDragged) {
+      ctx.save();
+      ctx.setLineDash([5 * dpr, 4 * dpr]);
+      ctx.strokeStyle = WAVEFORM_STYLE.segmentEdgeColor;
+      ctx.lineWidth = edgeWidth;
       ctx.stroke(cardPath);
       ctx.restore();
     } else if (i === hoverIdx) {
@@ -332,13 +394,25 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
 }
 
 function lerpColorAlpha(dimRgba, brightRgba, t) {
-  const d = parseRgba(dimRgba);
-  const b = parseRgba(brightRgba);
+  const d = parseRgbaCached(dimRgba);
+  const b = parseRgbaCached(brightRgba);
   const r = Math.round(d.r + (b.r - d.r) * t);
   const g = Math.round(d.g + (b.g - d.g) * t);
   const bl = Math.round(d.b + (b.b - d.b) * t);
   const a = d.a + (b.a - d.a) * t;
   return `rgba(${r}, ${g}, ${bl}, ${a})`;
+}
+
+// The style colors are module constants, so parsing them once per string
+// avoids running the regex every animation frame.
+const _rgbaCache = new Map();
+function parseRgbaCached(str) {
+  let c = _rgbaCache.get(str);
+  if (!c) {
+    c = parseRgba(str);
+    _rgbaCache.set(str, c);
+  }
+  return c;
 }
 
 function parseRgba(str) {
@@ -419,7 +493,7 @@ function clearDomSlideTransitions() {
 function beginSegmentAnim(slides, snap, tiles, oldPlayheadX, newPlayheadX, newPlayheadRatio, reverseTiles, dpr, W, H, onComplete) {
   cancelSegmentDeleteAnimation();
 
-  const domTransition = `left ${SEGMENT_DELETE_ANIM_MS}ms ease-out, top ${SEGMENT_DELETE_ANIM_MS}ms ease-out`;
+  const domTransition = `left ${SEGMENT_DELETE_ANIM_MS}ms cubic-bezier(0.33, 1, 0.68, 1), top ${SEGMENT_DELETE_ANIM_MS}ms cubic-bezier(0.33, 1, 0.68, 1)`;
   el.playheadCaretTop.style.transition = domTransition;
   positionPlayheadCarets(newPlayheadRatio);
 
@@ -475,7 +549,7 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   // External callers (resize, hover, etc.) would clobber the drag frame; bail
   // and let the drag rAF loop continue rendering.
   if (dragAnimRaf !== null) return;
-  cancelSegmentDeleteAnimation();
+  if (deleteAnim) return;
   const dpr = window.devicePixelRatio || 1;
   const rect = el.waveformCanvas.getBoundingClientRect();
   const W = Math.max(1, Math.floor(rect.width * dpr));
@@ -483,6 +557,16 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
 
   if (el.waveformCanvas.width !== W) el.waveformCanvas.width = W;
   if (el.waveformCanvas.height !== H) el.waveformCanvas.height = H;
+
+  // Update the rect cache when the canvas geometry changes. All dependent
+  // rects must refresh together — a layout shift moves the canvas AND the
+  // view/stage in lockstep, so refreshing only one desyncs caret positioning.
+  if (!_cachedCanvasRect || _cachedCanvasRect.width !== rect.width || _cachedCanvasRect.height !== rect.height || _cachedCanvasRect.top !== rect.top || _cachedCanvasRect.left !== rect.left) {
+    _cachedCanvasRect = rect;
+    _cachedViewRect = el.editorSection.getBoundingClientRect();
+    _cachedStageRect = el.stage.getBoundingClientRect();
+    _cachedLineOffsetTop = el.playheadLine.offsetTop;
+  }
 
   waveCtx.clearRect(0, 0, W, H);
 
@@ -498,13 +582,19 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
   const segBounds = _computeSegmentBounds(W, totalSamples, gapPx);
   const visualRatio = audioRatioToVisualRatio(playheadRatio, W, segBounds);
 
-  positionPlayheadCarets(playheadRatio);
+  positionPlayheadCarets(playheadRatio, segBounds, W);
 
   if (!state.cachedPeaks || state.cachedPeaksWidth !== W) {
     state.cachedPeaks = computePeaks(W);
     state.cachedPeaksWidth = W;
+    state.cachedPath = null;
+  }
+  // Peaks are height-independent, but the path bakes in H/2 — rebuild it when
+  // the canvas height changes even if the width (and peaks) are unchanged.
+  if (!state.cachedPath || _cachedPathHeight !== H) {
     state.cachedPath = new Path2D();
     buildWaveformPath(state.cachedPath, state.cachedPeaks, 0, W, H / 2, WAVEFORM_SCALE);
+    _cachedPathHeight = H;
   }
   const path = state.cachedPath;
 
@@ -515,10 +605,15 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     cachedCardPaths = buildSegmentCardPaths(segBounds, H, dpr);
     cardPathsKey = geomKey;
   }
-  const baseKey = geomKey + '#' + state.selectedSegmentIndex + '#' + state.hoverSegmentIndex + '#' + state.draggingSegmentIndex;
+  const baseKey = geomKey + '#' + state.draggingSegmentIndex;
   if (baseKey !== baseLayerKey) {
     renderBaseLayer(segBounds, cachedCardPaths, W, H, dpr);
     baseLayerKey = baseKey;
+  }
+  // Waveform layers keyed on geometry only (colors are constant)
+  if (geomKey !== waveformLayerKey) {
+    renderWaveformLayers(path, segBounds, cachedCardPaths, W, H, dpr);
+    waveformLayerKey = geomKey;
   }
 
   drawSegmentCards(waveCtx, path, segBounds, cachedCardPaths, playheadX, H, dpr);
@@ -665,18 +760,23 @@ function positionPlayheadCaretsAtDeviceX(deviceX) {
     el.playheadCaretTop.style.display = 'none';
     return;
   }
-  const canvasRect = el.waveformCanvas.getBoundingClientRect();
-  const viewRect = el.editorSection.getBoundingClientRect();
+  if (!_cachedCanvasRect || !_cachedViewRect) return;
+  const canvasRect = _cachedCanvasRect;
+  const viewRect = _cachedViewRect;
   const dpr = window.devicePixelRatio || 1;
   const lineXCssPx = deviceX / dpr;
   const leftPx = (canvasRect.left - viewRect.left) + lineXCssPx;
   el.playheadCaretTop.style.display = '';
   const insetY = SEGMENT_VERTICAL_INSET_CSS_PX;
-  const lineOffsetTop = el.playheadLine.offsetTop;
-  const topPx = (canvasRect.top - viewRect.top) + insetY - lineOffsetTop;
-  el.playheadLine.style.height = Math.max(0, canvasRect.height - 2 * insetY) + 'px';
+  const heightPx = Math.max(0, canvasRect.height - 2 * insetY);
+  if (el.playheadLine.style.height !== heightPx + 'px') {
+    el.playheadLine.style.height = heightPx + 'px';
+  }
+  const topPx = (canvasRect.top - viewRect.top) + insetY - (_cachedLineOffsetTop || 0);
+  if (el.playheadCaretTop.style.top !== topPx + 'px') {
+    el.playheadCaretTop.style.top = topPx + 'px';
+  }
   el.playheadCaretTop.style.left = leftPx + 'px';
-  el.playheadCaretTop.style.top = topPx + 'px';
 }
 
 /**
@@ -816,7 +916,7 @@ function drawDragFrame() {
   if (!snap || !state.recordedBuffer || !state.originalBuffer) return;
 
   const dpr = window.devicePixelRatio || 1;
-  const rect = el.waveformCanvas.getBoundingClientRect();
+  const rect = _cachedCanvasRect || el.waveformCanvas.getBoundingClientRect();
   const W = Math.max(1, Math.floor(rect.width * dpr));
   const H = Math.max(1, Math.floor(rect.height * dpr));
   if (el.waveformCanvas.width !== W) el.waveformCanvas.width = W;

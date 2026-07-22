@@ -5,6 +5,8 @@ import { updateEmptyState, setTransportDisabled, confirmDialog } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, cancelRecordingCapture } from './audio.js';
 import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
 import { computePeaksForRange, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
+import { pausePlayback } from './playback.js';
+import { stopScrub } from './scrub.js';
 
 let reviewRafId = null;
 let previewSeeking = false;
@@ -12,12 +14,17 @@ let previewStarting = false;
 let previewGen = 0;
 let cachedReviewPeaks = null;
 let cachedReviewWidth = 0;
+let _reviewBaseCanvas = null;
+let _reviewPlayedCanvas = null;
+let _reviewBaseKey = '';
 let closeConfirmOpen = false;
 
 // ===== Modal open / close =====
 
 export function openRecordModal(context) {
   if (el.recordModal.classList.contains('visible')) return;
+  stopScrub();
+  if (state.isPlaying) pausePlayback();
   state.recordModalContext = context || 'fresh';
   el.recordModal.classList.add('visible');
   if (state.micCapabilities) showReadyState();
@@ -99,6 +106,7 @@ function showReviewState() {
   el.rmActionsRight.hidden = false;
   el.rmPlayBtn.classList.remove('playing');
   cachedReviewPeaks = null;
+  _reviewBaseKey = '';
   el.rmReviewCurrent.textContent = '00:00.000';
   el.rmReviewTotal.textContent = formatTime(state.pendingTakeBuffer.duration);
   renderReviewWaveform();
@@ -306,8 +314,82 @@ function computeReviewPeaks(width) {
   return peaks;
 }
 
-// Draws the full waveform with the played portion (left of the current
-// preview offset) highlighted, and positions the playhead to match.
+/**
+ * Pre-render the static (unplayed) waveform + ruler to an offscreen canvas.
+ * Rebuilt only when canvas size or take buffer changes.
+ */
+function buildReviewBaseLayer(peaks, W, H, dpr) {
+  const RULER_H = 22 * dpr;
+  const waveH = H - RULER_H;
+  const midY = RULER_H + waveH / 2;
+  const scale = 0.88;
+  const duration = state.pendingTakeBuffer ? state.pendingTakeBuffer.duration : 0;
+
+  if (!_reviewBaseCanvas) _reviewBaseCanvas = document.createElement('canvas');
+  if (_reviewBaseCanvas.width !== W) _reviewBaseCanvas.width = W;
+  if (_reviewBaseCanvas.height !== H) _reviewBaseCanvas.height = H;
+  const ctx = _reviewBaseCanvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  // Ruler
+  if (duration > 0) {
+    const rect = el.rmReviewCanvas.getBoundingClientRect();
+    const intervalSec = pickRulerIntervalSec(duration, rect.width);
+    const minorInterval = intervalSec / 5;
+    const EPS = intervalSec * 1e-6;
+    const majorTickH = 9 * dpr;
+    const minorTickH = 5 * dpr;
+    const labelGap = 4 * dpr;
+    const lineW = Math.max(1, Math.round(dpr));
+
+    ctx.fillStyle = 'rgba(110, 110, 122, 0.35)';
+    for (let t = 0; t <= duration + EPS; t += minorInterval) {
+      const x = (t / duration) * W;
+      ctx.fillRect(x - lineW / 2, RULER_H - minorTickH, lineW, minorTickH);
+    }
+
+    ctx.fillStyle = 'rgba(155, 155, 165, 0.55)';
+    ctx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
+    for (let t = 0; t <= duration + EPS; t += intervalSec) {
+      const x = (t / duration) * W;
+      ctx.fillRect(x - lineW / 2, RULER_H - majorTickH, lineW, majorTickH);
+      const label = formatRulerLabel(t, intervalSec);
+      const tw = ctx.measureText(label).width;
+      const labelX = Math.max(2 * dpr, Math.min(W - tw - 2 * dpr, x - tw / 2));
+      ctx.fillText(label, labelX, RULER_H - majorTickH - labelGap);
+    }
+  }
+
+  // Unplayed waveform
+  for (let x = 0; x < W; x++) {
+    const min = peaks[x * 2];
+    const max = peaks[x * 2 + 1];
+    const top = midY - max * midY * scale;
+    const h = Math.max(1, (max - min) * midY * scale);
+    ctx.fillStyle = 'rgba(77, 216, 200, 0.22)';
+    ctx.fillRect(x, top, 1, h);
+  }
+
+  // Played-color layer (waveform only, no ruler) — blitted cropped to the
+  // playhead each frame so preview playback costs 2 drawImage calls, not a
+  // per-column fillRect loop.
+  if (!_reviewPlayedCanvas) _reviewPlayedCanvas = document.createElement('canvas');
+  if (_reviewPlayedCanvas.width !== W) _reviewPlayedCanvas.width = W;
+  if (_reviewPlayedCanvas.height !== H) _reviewPlayedCanvas.height = H;
+  const pctx = _reviewPlayedCanvas.getContext('2d');
+  pctx.clearRect(0, 0, W, H);
+  pctx.fillStyle = 'rgba(77, 216, 200, 0.95)';
+  for (let x = 0; x < W; x++) {
+    const min = peaks[x * 2];
+    const max = peaks[x * 2 + 1];
+    const top = midY - max * midY * scale;
+    const h = Math.max(1, (max - min) * midY * scale);
+    pctx.fillRect(x, top, 1, h);
+  }
+}
+
+// Draws the waveform with the played portion highlighted using pre-rendered
+// static layers, so per-frame work is two blits and a playhead style update.
 function renderReviewWaveform() {
   const canvas = el.rmReviewCanvas;
   const rect = canvas.getBoundingClientRect();
@@ -318,54 +400,30 @@ function renderReviewWaveform() {
     canvas.width = W;
     canvas.height = H;
     cachedReviewPeaks = null;
+    _reviewBaseKey = '';
   }
 
   const RULER_H = 22 * dpr;
   const waveH = H - RULER_H;
-  const midY = RULER_H + waveH / 2;
-  const scale = 0.88;
   const duration = state.pendingTakeBuffer ? state.pendingTakeBuffer.duration : 0;
   const ratio = duration > 0 ? state.previewOffset / duration : 0;
+  const playheadX = Math.round(ratio * W);
+
+  const peaks = computeReviewPeaks(W);
+
+  // Rebuild static base layer if geometry or peaks changed
+  const baseKey = W + 'x' + H + '#' + cachedReviewWidth;
+  if (baseKey !== _reviewBaseKey) {
+    buildReviewBaseLayer(peaks, W, H, dpr);
+    _reviewBaseKey = baseKey;
+  }
 
   reviewCtx.clearRect(0, 0, W, H);
 
-  if (duration > 0) {
-    const intervalSec = pickRulerIntervalSec(duration, rect.width);
-    const minorInterval = intervalSec / 5;
-    const EPS = intervalSec * 1e-6;
-    const majorTickH = 9 * dpr;
-    const minorTickH = 5 * dpr;
-    const labelGap = 4 * dpr;
-    const lineW = Math.max(1, Math.round(dpr));
-
-    reviewCtx.fillStyle = 'rgba(110, 110, 122, 0.35)';
-    for (let t = 0; t <= duration + EPS; t += minorInterval) {
-      const x = (t / duration) * W;
-      reviewCtx.fillRect(x - lineW / 2, RULER_H - minorTickH, lineW, minorTickH);
-    }
-
-    reviewCtx.fillStyle = 'rgba(155, 155, 165, 0.55)';
-    reviewCtx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
-    for (let t = 0; t <= duration + EPS; t += intervalSec) {
-      const x = (t / duration) * W;
-      reviewCtx.fillRect(x - lineW / 2, RULER_H - majorTickH, lineW, majorTickH);
-      const label = formatRulerLabel(t, intervalSec);
-      const tw = reviewCtx.measureText(label).width;
-      const labelX = Math.max(2 * dpr, Math.min(W - tw - 2 * dpr, x - tw / 2));
-      reviewCtx.fillText(label, labelX, RULER_H - majorTickH - labelGap);
-    }
-  }
-
-  const peaks = computeReviewPeaks(W);
-  const playheadX = Math.round(ratio * W);
-
-  for (let x = 0; x < W; x++) {
-    const min = peaks[x * 2];
-    const max = peaks[x * 2 + 1];
-    const top = midY - max * midY * scale;
-    const h = Math.max(1, (max - min) * midY * scale);
-    reviewCtx.fillStyle = x < playheadX ? 'rgba(77, 216, 200, 0.95)' : 'rgba(77, 216, 200, 0.22)';
-    reviewCtx.fillRect(x, top, 1, h);
+  // Blit static unplayed layer, then the played layer cropped to the playhead
+  if (_reviewBaseCanvas) reviewCtx.drawImage(_reviewBaseCanvas, 0, 0);
+  if (_reviewPlayedCanvas && playheadX > 0) {
+    reviewCtx.drawImage(_reviewPlayedCanvas, 0, RULER_H, playheadX, waveH, 0, RULER_H, playheadX, waveH);
   }
 
   el.rmPlayhead.style.left = `${ratio * rect.width}px`;
@@ -378,9 +436,14 @@ function ratioFromPointerX(clientX) {
   return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
 }
 
+let _reviewDragWasPlaying = false;
+
 function onReviewPointerMove(e) {
   if (!previewSeeking) return;
-  seekReview(ratioFromPointerX(e.clientX));
+  const ratio = ratioFromPointerX(e.clientX);
+  state.previewOffset = ratio * state.pendingTakeBuffer.duration;
+  el.rmReviewCurrent.textContent = formatTime(state.previewOffset);
+  renderReviewWaveform();
 }
 
 function onReviewPointerUp() {
@@ -388,13 +451,18 @@ function onReviewPointerUp() {
   el.rmPlayhead.classList.remove('dragging');
   window.removeEventListener('pointermove', onReviewPointerMove);
   window.removeEventListener('pointerup', onReviewPointerUp);
+  if (_reviewDragWasPlaying) {
+    _reviewDragWasPlaying = false;
+    playPreview();
+  }
 }
 
 function startReviewDrag(e) {
   if (!state.pendingTakeBuffer) return;
   e.preventDefault();
   e.stopPropagation();
-  seekReview(ratioFromPointerX(e.clientX));
+  _reviewDragWasPlaying = state.isPreviewing;
+  if (state.isPreviewing) pausePreview();
   previewSeeking = true;
   el.rmPlayhead.classList.add('dragging');
   window.addEventListener('pointermove', onReviewPointerMove);
@@ -427,6 +495,7 @@ export function initRecordModal() {
     resizeTimer = setTimeout(() => {
       if (el.recordModal.classList.contains('visible') && !state.isRecording && state.pendingTakeBuffer) {
         cachedReviewPeaks = null;
+        _reviewBaseKey = '';
         renderReviewWaveform();
       }
     }, 150);

@@ -3,16 +3,40 @@ import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState } from './ui.js';
 import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
-import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint } from './waveform.js';
+import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint, invalidateRectCache } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead } from './editing.js';
-import { startPlayback, pausePlayback } from './playback.js';
+import { startPlayback, pausePlayback, isPlaybackActive } from './playback.js';
 import { arrowKeyDown, arrowKeyUp, stepBySeconds } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 import { closeHelpModal, initHelpModal } from './help-modal.js';
-import { openSegmentContextMenu, initSegmentContextMenu } from './context-menu.js';
+import { openSegmentContextMenu, initSegmentContextMenu, closeSegmentContextMenu } from './context-menu.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
+let _pendingSeekClientX = null;
+let _seekRafId = null;
+
+function flushSeek() {
+  if (_seekRafId) cancelAnimationFrame(_seekRafId);
+  _seekRafId = null;
+  if (_pendingSeekClientX !== null) {
+    seekFromClientX(_pendingSeekClientX);
+    _pendingSeekClientX = null;
+  }
+}
+
+function scheduleSeek(clientX) {
+  _pendingSeekClientX = clientX;
+  if (!_seekRafId) {
+    _seekRafId = requestAnimationFrame(() => {
+      _seekRafId = null;
+      if (_pendingSeekClientX !== null) {
+        seekFromClientX(_pendingSeekClientX);
+        _pendingSeekClientX = null;
+      }
+    });
+  }
+}
 
 // ===== Event handlers =====
 
@@ -30,7 +54,7 @@ el.skipForwardButton.addEventListener('click', () => {
   if (state.isPlaying) pausePlayback();
   jumpToSegmentEnd();
 });
-el.playButton.addEventListener('click', () => { state.isPlaying ? pausePlayback() : startPlayback(); });
+el.playButton.addEventListener('click', () => { isPlaybackActive() ? pausePlayback() : startPlayback(); });
 
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
@@ -130,6 +154,7 @@ window.addEventListener('mouseup', () => {
   if (state.draggingPlayhead) {
     state.draggingPlayhead = false;
     removePlayheadCaretDraggingClass();
+    flushSeek();
     return;
   }
 });
@@ -146,6 +171,7 @@ window.addEventListener('touchend', () => {
   if (state.draggingPlayhead) {
     state.draggingPlayhead = false;
     removePlayheadCaretDraggingClass();
+    flushSeek();
   }
 });
 
@@ -163,7 +189,7 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
   if (state.draggingPlayhead) {
-    seekFromClientX(e.clientX);
+    scheduleSeek(e.clientX);
   }
 });
 
@@ -183,7 +209,7 @@ window.addEventListener('touchmove', (e) => {
     return;
   }
   if (state.draggingPlayhead) {
-    seekFromClientX(t.clientX);
+    scheduleSeek(t.clientX);
   }
 }, { passive: true });
 
@@ -224,6 +250,17 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // While the export modal is open, block editor shortcuts so the user can't
+  // mutate/delete the recording while encoding is in flight.
+  if (el.exportModal.classList.contains('visible')) {
+    if (e.code === 'Escape') closeExportModal();
+    return;
+  }
+
+  // Close the segment context menu before any editing shortcut so the menu's
+  // stale index doesn't mismatch after operations like delete or paste.
+  if (!el.segmentContextMenu.hidden) closeSegmentContextMenu();
+
   if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && !el.playbackView.hidden) {
     e.preventDefault();
     e.shiftKey ? redo() : undo();
@@ -244,7 +281,7 @@ document.addEventListener('keydown', (e) => {
   } else if (e.code === 'Space' && noMod) {
     if (!el.playbackView.hidden && state.recordedBuffer) {
       e.preventDefault();
-      state.isPlaying ? pausePlayback() : startPlayback();
+      isPlaybackActive() ? pausePlayback() : startPlayback();
     }
   } else if (isSplitShortcut && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
@@ -286,6 +323,16 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+window.addEventListener('blur', () => {
+  if (state.draggingSegmentIndex >= 0) finishSegmentReorderDrag();
+  if (state.pendingSegmentDrag) cancelSegmentReorderDrag();
+  if (state.draggingPlayhead) {
+    state.draggingPlayhead = false;
+    removePlayheadCaretDraggingClass();
+    flushSeek();
+  }
+});
+
 document.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
     arrowKeyUp(e.code);
@@ -295,6 +342,7 @@ document.addEventListener('keyup', (e) => {
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
+  invalidateRectCache();
   resizeTimer = setTimeout(() => {
     if (!el.playbackView.hidden && state.recordedBuffer) {
       state.cachedPeaks = null;
