@@ -55,6 +55,108 @@ export function computePeaksForRange(data, startSample, endSample, pixelWidth) {
   return peaks;
 }
 
+// ===== Timeline geometry (free-positioned multi-track) =====
+//
+// The multi-track editor lays clips on a linear time axis (unlike the legacy
+// single-track "cards with gaps" ratio model). A clip carries `tStart` — its
+// start position on the timeline, in samples of the project sample rate. The
+// x-position of any timeline sample is a plain linear map through the current
+// zoom (`pxPerSecond`) and horizontal scroll (`scrollLeftSec`). These are the
+// pure primitives the canvas renderer, playhead, and hit-testing build on.
+
+/** Samples in a clip (its source range length). */
+export function clipLengthSamples(clip) {
+  return clip.end - clip.start;
+}
+
+/** Timeline end sample of a clip (tStart + length). */
+export function clipTimelineEnd(clip) {
+  return (clip.tStart || 0) + (clip.end - clip.start);
+}
+
+/**
+ * Lay a track's clips end-to-end from 0, assigning each `tStart` in samples.
+ * This is the contiguous layout (single track, and the default before a clip
+ * is freely repositioned). Mutates and returns the clips array.
+ * @param {Array<{start:number,end:number,tStart?:number}>} clips
+ */
+export function layoutContiguous(clips) {
+  let acc = 0;
+  for (const c of clips) {
+    c.tStart = acc;
+    acc += (c.end - c.start);
+  }
+  return clips;
+}
+
+/** Timeline sample position → x pixel (same px unit as pxPerSecond). */
+export function timeToX(sample, sampleRate, pxPerSecond, scrollLeftSec) {
+  return ((sample / sampleRate) - scrollLeftSec) * pxPerSecond;
+}
+
+/** Inverse of timeToX: x pixel → nearest timeline sample. */
+export function xToTime(x, sampleRate, pxPerSecond, scrollLeftSec) {
+  return Math.round((x / pxPerSecond + scrollLeftSec) * sampleRate);
+}
+
+/** Longest timeline extent (samples) across every clip of every track. */
+export function projectDurationSamples(tracks) {
+  let max = 0;
+  for (const t of tracks) {
+    for (const c of t.segments) {
+      const end = clipTimelineEnd(c);
+      if (end > max) max = end;
+    }
+  }
+  return max;
+}
+
+/** Decibels → linear amplitude gain. */
+export function dbToGain(db) {
+  return Math.pow(10, db / 20);
+}
+
+/**
+ * The tracks that should be audible in the mixdown given mute/solo state:
+ * if any track is soloed, only soloed (and non-muted) tracks sound; otherwise
+ * every non-muted track sounds.
+ * @param {Array<{muted?:boolean,solo?:boolean}>} tracks
+ */
+export function audibleTracks(tracks) {
+  const anySolo = tracks.some(t => t.solo);
+  return tracks.filter(t => (anySolo ? (t.solo && !t.muted) : !t.muted));
+}
+
+/**
+ * Sum one clip's source samples into the mixdown channels at its timeline
+ * offset, scaled by `gain`. Channel-count mismatch falls back to reusing the
+ * source's last channel (mono spreads to every mix channel). Out-of-range
+ * destination samples are skipped, so a partially off-grid clip is safe.
+ *
+ * @param {Float32Array[]} mixChannels - destination, one Float32Array per channel
+ * @param {Float32Array[]} srcChannels - source track channels
+ * @param {number} srcStart - clip source range start (samples)
+ * @param {number} srcEnd - clip source range end (samples, exclusive)
+ * @param {number} tStartSample - timeline position to write the clip start at
+ * @param {number} gain - linear amplitude multiplier
+ */
+export function addClipToMix(mixChannels, srcChannels, srcStart, srcEnd, tStartSample, gain) {
+  const numMixCh = mixChannels.length;
+  const numSrcCh = srcChannels.length;
+  const len = srcEnd - srcStart;
+  for (let ch = 0; ch < numMixCh; ch++) {
+    const src = srcChannels[Math.min(ch, numSrcCh - 1)];
+    const dst = mixChannels[ch];
+    const dstLen = dst.length;
+    for (let i = 0; i < len; i++) {
+      const d = tStartSample + i;
+      if (d < 0) continue;
+      if (d >= dstLen) break;
+      dst[d] += src[srcStart + i] * gain;
+    }
+  }
+}
+
 // ===== Shared waveform path building =====
 
 function roundedRectPath(path, x, y, w, h, r) {
