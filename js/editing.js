@@ -450,12 +450,17 @@ export async function pasteInsertAtPlayhead() {
 }
 
 function applyHistorySnapshot(snapshot, render) {
+  // A pinned snapshot restores the exact pre-op originalBuffer (trim-silence,
+  // normalize, denoise replace PCM wholesale). Swap it back BEFORE the epoch
+  // check — the buffer reference changes, so a rebuild is mandatory.
+  if (snapshot.pinnedBuffer) state.originalBuffer = snapshot.pinnedBuffer;
+
   // Decide BEFORE assigning the snapshot's epoch: if the snapshot was taken at
   // the same buffer epoch as the current state, its concatenated PCM is
   // identical (e.g. undoing/redoing a split, which only rearranges segment
   // ranges without changing the underlying buffer) — skip the rebuild AND the
   // peak invalidation entirely.
-  const pcmMatches = !!state.recordedBuffer && snapshot.bufferEpoch === state.bufferEpoch;
+  const pcmMatches = !snapshot.pinnedBuffer && !!state.recordedBuffer && snapshot.bufferEpoch === state.bufferEpoch;
   state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
   state.bufferEpoch = snapshot.bufferEpoch;
 

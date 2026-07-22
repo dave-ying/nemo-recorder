@@ -3,7 +3,13 @@ import { el } from './dom.js';
 
 const MAX_HISTORY = 50;
 
-/** @typedef {{segments: Array<{start: number, end: number, origin: string}>, playbackOffset: number, bufferEpoch: number}} HistorySnapshot */
+/**
+ * @typedef {Object} HistorySnapshot
+ * @property {Array<{start: number, end: number, origin: string}>} segments
+ * @property {number} playbackOffset
+ * @property {number} bufferEpoch
+ * @property {AudioBuffer|null} pinnedBuffer - set only for PCM-replacing ops (trim-silence, normalize, denoise): the pre-op originalBuffer, kept alive by reference so undo can restore the exact pre-op PCM. Null for segment-only/append ops, whose ranges stay valid in the shared (append-only) buffer lineage.
+ */
 
 /** @type {HistorySnapshot[]} */
 let undoStack = [];
@@ -12,7 +18,7 @@ let redoStack = [];
 
 const cloneSegments = (segments) => segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
 
-const snapshotCurrent = () => ({ segments: cloneSegments(state.segments), playbackOffset: state.playbackOffset, bufferEpoch: state.bufferEpoch });
+const snapshotCurrent = () => ({ segments: cloneSegments(state.segments), playbackOffset: state.playbackOffset, bufferEpoch: state.bufferEpoch, pinnedBuffer: null });
 
 const canUndo = () => undoStack.length > 0;
 const canRedo = () => redoStack.length > 0;
@@ -24,8 +30,17 @@ function updateHistoryButtons() {
 
 // Call before mutating state.segments (split, delete, drag-resize start) to
 // snapshot the pre-mutation state for undo.
-export function pushHistory() {
-  undoStack.push(snapshotCurrent());
+//
+// Pass pinBuffer=true for PCM-REPLACING operations (trim-silence, loudness
+// normalize, denoise) that swap state.originalBuffer for unrelated new PCM.
+// The snapshot then keeps the pre-op buffer alive by reference so undo can
+// restore it exactly. Segment-only and append ops must NOT pin: appends keep
+// old ranges valid in the grown buffer, and pinning every append would pin
+// one full buffer per paste.
+export function pushHistory(pinBuffer = false) {
+  const snapshot = snapshotCurrent();
+  if (pinBuffer) snapshot.pinnedBuffer = state.originalBuffer;
+  undoStack.push(snapshot);
   if (undoStack.length > MAX_HISTORY) undoStack.shift();
   redoStack = [];
   reclaimOriginalBufferTail();
@@ -37,6 +52,11 @@ export function pushHistory() {
 // recording. The moment pushHistory clears the redo stack, any tail samples
 // referenced only by discarded redo snapshots become unreachable forever, so
 // reclaim them with one slice copy (only when there's actually a tail to cut).
+//
+// Pinned snapshots (PCM-replacing ops) reference their OWN buffers, not the
+// current one — counting their segment ranges here is conservative (may skip
+// a reclaim, never over-truncates). The reclaim builds a NEW buffer rather
+// than mutating in place, so pinned references are never corrupted.
 function reclaimOriginalBufferTail() {
   const orig = state.originalBuffer;
   if (!orig || !state.audioContext) return;
@@ -68,6 +88,7 @@ export function popUndo() {
   if (!canUndo()) return null;
   redoStack.push(snapshotCurrent());
   const snapshot = undoStack.pop();
+  pinOppositeSnapshotIfNeeded(snapshot, redoStack);
   updateHistoryButtons();
   return snapshot;
 }
@@ -77,6 +98,18 @@ export function popRedo() {
   if (!canRedo()) return null;
   undoStack.push(snapshotCurrent());
   const snapshot = redoStack.pop();
+  pinOppositeSnapshotIfNeeded(snapshot, undoStack);
   updateHistoryButtons();
   return snapshot;
+}
+
+// If the snapshot being restored carries a pinnedBuffer, applyHistorySnapshot
+// will swap state.originalBuffer back to it — making the CURRENT buffer
+// unreachable. Pin that current buffer into the just-pushed opposite-stack
+// snapshot so redo/undo across the boundary restores the exact PCM both ways.
+// Runs before the swap (state.originalBuffer is still the pre-restore buffer).
+function pinOppositeSnapshotIfNeeded(restoredSnapshot, oppositeStack) {
+  if (!restoredSnapshot || !restoredSnapshot.pinnedBuffer) return;
+  const opposite = oppositeStack[oppositeStack.length - 1];
+  if (opposite && !opposite.pinnedBuffer) opposite.pinnedBuffer = state.originalBuffer;
 }
