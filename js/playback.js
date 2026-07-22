@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, currentPlaybackRatio } from './state.js';
 import { el } from './dom.js';
 import { drawPlaybackWaveform } from './waveform.js';
 import { formatTime } from './utils.js';
@@ -69,7 +69,7 @@ export function pausePlayback() {
   state.isPlaying = false;
   el.playButton.classList.remove('playing');
   if (playbackRafId) cancelAnimationFrame(playbackRafId);
-  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const ratio = currentPlaybackRatio();
   drawPlaybackWaveform(ratio);
   suspendWhenIdle();
 }

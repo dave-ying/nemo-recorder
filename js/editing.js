@@ -1,4 +1,4 @@
-import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE, cloneSeg, enabledPerSegmentEffects } from './state.js';
+import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE, cloneSeg, enabledPerSegmentEffects, currentPlaybackRatio } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
@@ -22,7 +22,7 @@ export function jumpToSegmentStart() {
   }
   state.playbackOffset = acc / sr;
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  drawPlaybackWaveform(currentPlaybackRatio());
 }
 
 export function jumpToSegmentEnd() {
@@ -41,7 +41,7 @@ export function jumpToSegmentEnd() {
   for (let i = 0; i <= target.index; i++) acc += state.segments[i].end - state.segments[i].start;
   state.playbackOffset = acc / sr;
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  drawPlaybackWaveform(currentPlaybackRatio());
 }
 
 // Ctrl/Cmd+Arrow segment selection. With no segment selected, finds the
@@ -249,7 +249,7 @@ export function splitAtPlayhead() {
 
   hideSegmentTrash();
   clearSegmentHover();
-  drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  drawPlaybackWaveform(currentPlaybackRatio());
   updateSegmentCountDisplay();
   showToast(`Split: segment ${index + 1} → ${index + 1} and ${index + 2}`);
 }
@@ -280,7 +280,7 @@ export function deleteSegmentByIndex(index) {
 
   const oldSegments = state.segments.map(cloneSeg);
   const oldTotalSamples = state.recordedBuffer.length;
-  const oldPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const oldPlayheadRatio = currentPlaybackRatio();
   // Lift the doomed card's rendered pixels (in delete-red) off the canvas
   // while it's still part of the layout — this image is what disintegrates.
   const deletedSnap = captureSegmentBitmap(index);
@@ -310,7 +310,7 @@ export function deleteSegmentByIndex(index) {
 
   hideSegmentTrash();
   clearSegmentHover();
-  const newPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const newPlayheadRatio = currentPlaybackRatio();
   animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, newPlayheadRatio, deletedSnap);
   updateSegmentCountDisplay();
   showToast(`Deleted segment ${index + 1} · ${state.segments.length} remaining`);
@@ -345,7 +345,7 @@ export function toggleSegmentEffect(index, effectKey) {
   // pipeline rebuilds the playback buffer and redraws on commit.
   requestEffectsSync({ type: 'light' });
   // Instant chip feedback (the async sync redraws again when it commits).
-  drawPlaybackWaveform(state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  drawPlaybackWaveform(currentPlaybackRatio());
 }
 
 // Turn every enabled per-segment effect on (or off) for ALL segments at once —
@@ -365,7 +365,7 @@ export function setAllSegmentsEffects(on) {
     }
   }
   requestEffectsSync({ type: 'light' });
-  drawPlaybackWaveform(state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  drawPlaybackWaveform(currentPlaybackRatio());
 }
 
 // ===== Segment copy/paste (context menu) =====
@@ -488,7 +488,7 @@ async function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLab
   // The effects await above lets the user edit meanwhile — only select the
   // new segment if our segment layout is still the current one.
   if (state.segments === newSegments) showSegmentTrash(insertAt);
-  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const ratio = currentPlaybackRatio();
   drawPlaybackWaveform(ratio);
   showToast(toastMessage);
 }
@@ -610,7 +610,7 @@ export async function pasteInsertAtPlayhead() {
   // Guard like insertClonedAudioAfter: the effects await may have let the
   // user edit meanwhile, changing the segment layout out from under us.
   if (state.segments === newSegments) showSegmentTrash(pastedIndex);
-  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const ratio = currentPlaybackRatio();
   drawPlaybackWaveform(ratio);
   showToast(didSplit ? 'Pasted at playhead (split)' : 'Pasted at playhead');
 }
@@ -666,7 +666,7 @@ function applyHistorySnapshot(snapshot, render) {
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   updateSegmentCountDisplay();
   updateEmptyState();
-  render(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+  render(currentPlaybackRatio());
 }
 
 // If the transition being undone/redone is a clean single-segment delete,
@@ -693,7 +693,7 @@ function captureBeforeState() {
   return {
     segments: state.segments.map(cloneSeg),
     totalSamples: state.recordedBuffer ? state.recordedBuffer.length : 0,
-    ratio: state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0
+    ratio: currentPlaybackRatio()
   };
 }
 
@@ -770,9 +770,7 @@ export async function appendBufferToRecording(buffer, toastMessage) {
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   updateSegmentCountDisplay();
   updateEmptyState();
-  const ratio = state.recordedBuffer.duration > 0
-    ? state.playbackOffset / state.recordedBuffer.duration
-    : 0;
+  const ratio = currentPlaybackRatio();
   drawPlaybackWaveform(ratio);
   refreshTracksPanel();
   showToast(toastMessage);
@@ -907,7 +905,7 @@ export function finishSegmentReorderDrag() {
     // No-op drop: animate the floating card back to its original slot.
     // state.segments is unchanged, so the slot is just snap.targetBounds[src]
     // (which equals the original position under the identity arrangement).
-    startSettle(snap, snap.targetBounds[src].drawStart, snap.targetBounds[src].drawEnd, state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+    startSettle(snap, snap.targetBounds[src].drawStart, snap.targetBounds[src].drawEnd, currentPlaybackRatio());
     return;
   }
 
@@ -933,7 +931,7 @@ export function finishSegmentReorderDrag() {
   // The dragged segment's new index in state.segments is `target` (it was
   // spliced in there). Its final slot is newBounds[target].
   const finalSlot = newBounds[target];
-  const finalRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const finalRatio = currentPlaybackRatio();
 
   startSettle(snap, finalSlot.drawStart, finalSlot.drawEnd, finalRatio);
   updateSegmentCountDisplay();

@@ -292,10 +292,6 @@ let masterOffset = 0;
 let masterRaf = 0;
 let masterPlaying = false;
 
-export function isMasterPlaying() {
-  return masterPlaying;
-}
-
 export function toggleMasterPlayback() {
   if (masterPlaying) stopMasterPlayback();
   else startMasterPlayback();

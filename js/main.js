@@ -18,13 +18,17 @@ const RESIZE_DEBOUNCE_MS = 120;
 let _pendingSeekClientX = null;
 let _seekRafId = null;
 
-function flushSeek() {
-  if (_seekRafId) cancelAnimationFrame(_seekRafId);
-  _seekRafId = null;
+function commitPendingSeek() {
   if (_pendingSeekClientX !== null) {
     seekFromClientX(_pendingSeekClientX);
     _pendingSeekClientX = null;
   }
+}
+
+function flushSeek() {
+  if (_seekRafId) cancelAnimationFrame(_seekRafId);
+  _seekRafId = null;
+  commitPendingSeek();
 }
 
 function scheduleSeek(clientX) {
@@ -32,10 +36,7 @@ function scheduleSeek(clientX) {
   if (!_seekRafId) {
     _seekRafId = requestAnimationFrame(() => {
       _seekRafId = null;
-      if (_pendingSeekClientX !== null) {
-        seekFromClientX(_pendingSeekClientX);
-        _pendingSeekClientX = null;
-      }
+      commitPendingSeek();
     });
   }
 }
@@ -212,7 +213,7 @@ document.addEventListener('pointerdown', (e) => {
   }
 });
 
-window.addEventListener('mouseup', () => {
+function handleDragEnd() {
   if (state.pendingSegmentDrag) {
     cancelSegmentReorderDrag();
     return;
@@ -227,60 +228,31 @@ window.addEventListener('mouseup', () => {
     flushSeek();
     return;
   }
-});
+}
+window.addEventListener('mouseup', handleDragEnd);
+window.addEventListener('touchend', handleDragEnd);
 
-window.addEventListener('touchend', () => {
+function handleDragMove(clientX, clientY) {
   if (state.pendingSegmentDrag) {
-    cancelSegmentReorderDrag();
-    return;
-  }
-  if (state.draggingSegmentIndex >= 0) {
-    finishSegmentReorderDrag();
-    return;
-  }
-  if (state.draggingPlayhead) {
-    state.draggingPlayhead = false;
-    removePlayheadCaretDraggingClass();
-    flushSeek();
-  }
-});
-
-window.addEventListener('mousemove', (e) => {
-  if (state.pendingSegmentDrag) {
-    const dx = e.clientX - state.pendingSegmentDrag.startClientX;
-    const dy = e.clientY - state.pendingSegmentDrag.startClientY;
+    const dx = clientX - state.pendingSegmentDrag.startClientX;
+    const dy = clientY - state.pendingSegmentDrag.startClientY;
     if (dx * dx + dy * dy >= SEGMENT_DRAG_THRESHOLD_CSS_PX * SEGMENT_DRAG_THRESHOLD_CSS_PX) {
-      beginSegmentReorderDrag(e.clientX, e.clientY);
+      beginSegmentReorderDrag(clientX, clientY);
     }
     return;
   }
   if (state.draggingSegmentIndex >= 0) {
-    applySegmentReorderDrag(e.clientX);
+    applySegmentReorderDrag(clientX);
     return;
   }
   if (state.draggingPlayhead) {
-    scheduleSeek(e.clientX);
+    scheduleSeek(clientX);
   }
-});
-
+}
+window.addEventListener('mousemove', (e) => handleDragMove(e.clientX, e.clientY));
 window.addEventListener('touchmove', (e) => {
   const t = e.touches[0];
-  if (!t) return;
-  if (state.pendingSegmentDrag) {
-    const dx = t.clientX - state.pendingSegmentDrag.startClientX;
-    const dy = t.clientY - state.pendingSegmentDrag.startClientY;
-    if (dx * dx + dy * dy >= SEGMENT_DRAG_THRESHOLD_CSS_PX * SEGMENT_DRAG_THRESHOLD_CSS_PX) {
-      beginSegmentReorderDrag(t.clientX, t.clientY);
-    }
-    return;
-  }
-  if (state.draggingSegmentIndex >= 0) {
-    applySegmentReorderDrag(t.clientX);
-    return;
-  }
-  if (state.draggingPlayhead) {
-    scheduleSeek(t.clientX);
-  }
+  if (t) handleDragMove(t.clientX, t.clientY);
 }, { passive: true });
 
 document.addEventListener('keydown', (e) => {

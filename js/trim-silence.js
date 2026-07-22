@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, currentPlaybackRatio } from './state.js';
 
 export const TRIM_SILENCE_WINDOW_MS = 50;
 export const TRIM_SILENCE_HOP_MS = 25;
@@ -340,7 +340,7 @@ export async function applyTrimSilence() {
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
 
   updateEmptyState();
-  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const ratio = currentPlaybackRatio();
   drawPlaybackWaveform(ratio);
 
   const removedSamples = origTotal - newTotal;
