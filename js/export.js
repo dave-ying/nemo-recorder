@@ -4,13 +4,15 @@ import { formatSize } from './utils.js';
 import { showToast } from './ui.js';
 import { wavWorkerCode, mp3WorkerCode } from './worker-code.js';
 
-const URL_REVOKE_DELAY_MS = 2000;
+const URL_REVOKE_DELAY_MS = 15000;
 const EXPORT_BUTTON_HTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> Export & Download`;
 
 /** @type {Worker|null} */
 let wavWorker = null;
 /** @type {Worker|null} */
 let mp3Worker = null;
+
+let exportSnapshot = null;
 
 function resetExportUI() {
   state.isDownloading = false;
@@ -29,45 +31,54 @@ function failExport(message) {
 function getExportWorker(format) {
   if (format === 'wav') {
     if (!wavWorker) {
-      wavWorker = new Worker(URL.createObjectURL(new Blob([wavWorkerCode], { type: 'application/javascript' })));
+      const url = URL.createObjectURL(new Blob([wavWorkerCode], { type: 'application/javascript' }));
+      wavWorker = new Worker(url);
+      URL.revokeObjectURL(url);
       wavWorker.onmessage = (e) => handleExportResult(e, 'wav');
-      wavWorker.onerror = () => failExport('Export failed — try again');
+      wavWorker.onerror = () => { failExport('Export failed — try again'); wavWorker.terminate(); wavWorker = null; };
     }
     return wavWorker;
   }
   if (!mp3Worker) {
-    mp3Worker = new Worker(URL.createObjectURL(new Blob([mp3WorkerCode], { type: 'application/javascript' })));
+    const url = URL.createObjectURL(new Blob([mp3WorkerCode], { type: 'application/javascript' }));
+    mp3Worker = new Worker(url);
+    URL.revokeObjectURL(url);
     mp3Worker.onmessage = (e) => handleExportResult(e, 'mp3');
-    mp3Worker.onerror = () => failExport('Export failed — try again');
+    mp3Worker.onerror = () => { failExport('Export failed — try again'); mp3Worker.terminate(); mp3Worker = null; };
   }
   return mp3Worker;
 }
 
 function handleExportResult(e, format) {
-  if (e.data.error) {
-    failExport(`Export failed: ${e.data.error}`);
-    return;
+  try {
+    if (e.data.error) {
+      failExport(`Export failed: ${e.data.error}`);
+      return;
+    }
+    const blob = e.data.blob;
+    const snap = exportSnapshot;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ts = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    const ext = format;
+    const label = format === 'wav'
+      ? `${snap.sampleRate}hz_${snap.quality}bit`
+      : `${snap.quality}kbps`;
+    const chLabel = snap.numberOfChannels === 1 ? 'mono' : 'stereo';
+    a.href = url;
+    a.download = `audio_${ts}_${label}_${chLabel}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), URL_REVOKE_DELAY_MS);
+    resetExportUI();
+    closeExportModal();
+    showToast(`Downloaded ${formatSize(blob.size)}`);
+  } catch (error) {
+    failExport(`Export failed: ${error.message}`);
   }
-  const blob = e.data.blob;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  const ts = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  const ext = format;
-  const label = format === 'wav'
-    ? `${state.recordedBuffer.sampleRate}hz_${state.exportSettings.quality}bit`
-    : `${state.exportSettings.quality}kbps`;
-  const chLabel = state.recordedBuffer.numberOfChannels === 1 ? 'mono' : 'stereo';
-  a.href = url;
-  a.download = `audio_${ts}_${label}_${chLabel}.${ext}`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), URL_REVOKE_DELAY_MS);
-  resetExportUI();
-  closeExportModal();
-  showToast(`Downloaded ${formatSize(blob.size)}`);
 }
 
 export function openExportModal() {
@@ -92,7 +103,9 @@ export function renderExportQualityOptions() {
     options = [64, 96, 128, 192, 256, 320];
   }
 
-  state.exportSettings.quality = options[options.length - 1];
+  if (!options.includes(state.exportSettings.quality)) {
+    state.exportSettings.quality = options[options.length - 1];
+  }
 
   options.forEach(opt => {
     const btn = document.createElement('button');
@@ -131,29 +144,64 @@ export function updateExportInfo() {
   }
 }
 
-export function executeExport() {
+export async function executeExport() {
   if (!state.recordedBuffer || state.isDownloading) return;
   state.isDownloading = true;
 
   el.exportConfirm.disabled = true;
   el.exportConfirm.innerHTML = `<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Encoding...`;
 
-  const channels = [];
-  for (let c = 0; c < state.recordedBuffer.numberOfChannels; c++) {
-    channels.push(state.recordedBuffer.getChannelData(c).slice());
+  exportSnapshot = {
+    sampleRate: state.recordedBuffer.sampleRate,
+    numberOfChannels: state.recordedBuffer.numberOfChannels,
+    quality: state.exportSettings.quality,
+    format: state.exportSettings.format
+  };
+
+  // WAV header wraps past ~4 GB (RIFF size is 32-bit)
+  if (state.exportSettings.format === 'wav') {
+    const dataSize = state.recordedBuffer.length * state.recordedBuffer.numberOfChannels * (state.exportSettings.quality / 8);
+    if (dataSize > 0xFFFFFFFF - 44) {
+      failExport('Audio too large for WAV format — file would exceed 4 GB');
+      return;
+    }
+  }
+
+  let channels;
+  let sampleRate;
+
+  if (state.exportSettings.format === 'mp3' && state.recordedBuffer.sampleRate > 48000) {
+    // Resample to 48k for MP3 (lamejs only supports ≤48 kHz)
+    const ctx = new OfflineAudioContext(state.recordedBuffer.numberOfChannels, Math.ceil(state.recordedBuffer.duration * 48000), 48000);
+    const src = ctx.createBufferSource();
+    src.buffer = state.recordedBuffer;
+    src.connect(ctx.destination);
+    src.start();
+    const resampled = await ctx.startRendering();
+    sampleRate = 48000;
+    channels = [];
+    for (let c = 0; c < resampled.numberOfChannels; c++) {
+      channels.push(resampled.getChannelData(c).slice());
+    }
+  } else {
+    sampleRate = state.recordedBuffer.sampleRate;
+    channels = [];
+    for (let c = 0; c < state.recordedBuffer.numberOfChannels; c++) {
+      channels.push(state.recordedBuffer.getChannelData(c).slice());
+    }
   }
 
   const worker = getExportWorker(state.exportSettings.format);
   if (state.exportSettings.format === 'wav') {
     worker.postMessage({
       channels: channels,
-      sampleRate: state.recordedBuffer.sampleRate,
+      sampleRate: sampleRate,
       bitDepth: state.exportSettings.quality
     }, channels.map(c => c.buffer));
   } else if (state.exportSettings.format === 'mp3') {
     worker.postMessage({
       channels: channels,
-      sampleRate: state.recordedBuffer.sampleRate,
+      sampleRate: sampleRate,
       bitrate: state.exportSettings.quality
     }, channels.map(c => c.buffer));
   }

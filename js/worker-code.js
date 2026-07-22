@@ -91,12 +91,27 @@ export const mp3WorkerCode = `
     }
     try {
       const { channels, sampleRate, bitrate } = e.data;
-      const numChannels = channels.length;
+      let effectiveChannels = channels;
+      if (channels.length > 2) {
+        const len = channels[0].length;
+        const left = new Float32Array(len);
+        const right = new Float32Array(len);
+        for (let i = 0; i < len; i++) {
+          left[i] = channels[0][i];
+          right[i] = channels[1][i];
+          for (let c = 2; c < channels.length; c++) {
+            left[i] += channels[c][i] * 0.5;
+            right[i] += channels[c][i] * 0.5;
+          }
+        }
+        effectiveChannels = [left, right];
+      }
+      const numChannels = effectiveChannels.length;
       const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, bitrate);
       const mp3Data = [];
       const blockLength = 1152;
 
-      const int16Channels = channels.map(ch => {
+      const int16Channels = effectiveChannels.map(ch => {
         const int16 = new Int16Array(ch.length);
         for (let i = 0; i < ch.length; i++) {
           let s = Math.max(-1, Math.min(1, ch[i]));

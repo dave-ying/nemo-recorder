@@ -15,21 +15,27 @@ let scrubState = null;
 const heldArrows = new Set();
 
 export function stepBySeconds(deltaSec) {
-  if (!state.recordedBuffer) return;
+  if (!state.recordedBuffer) return false;
   if (state.isPlaying) pausePlayback();
   const dur = state.recordedBuffer.duration;
   const clamped = Math.max(0, Math.min(dur, state.playbackOffset + deltaSec));
-  if (clamped === state.playbackOffset) return;
+  if (clamped === state.playbackOffset) return false;
   state.playbackOffset = clamped;
   el.timeCurrent.textContent = formatTime(clamped);
   drawPlaybackWaveform(dur > 0 ? clamped / dur : 0);
+  return true;
 }
 
-function stopScrub() {
+export function stopScrub() {
   if (!scrubState) return;
   if (scrubState.rafId) cancelAnimationFrame(scrubState.rafId);
   scrubState = null;
 }
+
+window.addEventListener('blur', () => { heldArrows.clear(); stopScrub(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { heldArrows.clear(); stopScrub(); }
+});
 
 function scrubFrame() {
   if (!scrubState) return;
@@ -47,7 +53,8 @@ function scrubFrame() {
   const accelSeconds = (heldMs - SCRUB_HOLD_DELAY_MS) / 1000;
   const speed = Math.min(SCRUB_MAX_SPEED, SCRUB_MIN_SPEED + accelSeconds * SCRUB_ACCEL_PER_SECOND);
   const dt = (now - scrubState.lastTime) / 1000;
-  stepBySeconds(scrubState.direction * speed * dt);
+  const moved = stepBySeconds(scrubState.direction * speed * dt);
+  if (!moved) { stopScrub(); return; }
   scrubState.lastTime = now;
   scrubState.rafId = requestAnimationFrame(scrubFrame);
 }

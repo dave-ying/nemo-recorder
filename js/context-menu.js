@@ -4,7 +4,7 @@ import { deleteSegmentByIndex, copySegmentByIndex, pasteSegmentAfterIndex, dupli
 
 let openIndex = -1;
 
-function closeSegmentContextMenu() {
+export function closeSegmentContextMenu() {
   el.segmentContextMenu.hidden = true;
   openIndex = -1;
 }
