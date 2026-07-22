@@ -7,6 +7,7 @@ import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
 import { loadBufferAsRecording } from './editing.js';
 import { resetEffectsCaches } from './effects.js';
+import { deriveMicCapabilities } from './mic-detect.js';
 
 let liveRafId;
 
@@ -51,6 +52,43 @@ navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
   renderMicDeviceOptions();
 });
 
+// Determine whether a device can genuinely deliver stereo. getCapabilities()
+// .channelCount.max is unreliable — it commonly reports 2 for mono-only mics
+// because it describes the audio pipeline's upmix ceiling, not the physical
+// device — so we instead ask the device explicitly for exactly 2 channels and
+// see what happens: a mono-only device rejects the request with an
+// OverconstrainedError, while a real stereo device honors it. Returns
+// true (stereo), false (mono-only), or null (inconclusive — caller falls back
+// to the natively-delivered channel count).
+async function probeStereoSupport(deviceId, nativeChannels) {
+  // Already delivering 2+ channels unconstrained: genuinely multi-channel.
+  if (typeof nativeChannels === 'number' && nativeChannels >= 2) return true;
+  try {
+    const probe = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+        channelCount: { exact: 2 },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {})
+      },
+      video: false
+    });
+    const ch = probe.getAudioTracks()[0]?.getSettings().channelCount;
+    probe.getTracks().forEach(t => t.stop());
+    // Request was honored, so stereo is available. channelCount may be undefined
+    // on browsers that don't expose it, but the exact:2 constraint succeeding is
+    // itself the confirmation.
+    return ch === undefined ? true : ch >= 2;
+  } catch (err) {
+    // The device can't satisfy exactly-2-channels → mono-only. We just opened
+    // this same device successfully, so an OverconstrainedError here is the
+    // channelCount constraint, not a missing device.
+    if (err.name === 'OverconstrainedError') return false;
+    // Anything else (device busy, permission race) is inconclusive.
+    console.warn('[nemo-recorder]', err.message);
+    return null;
+  }
+}
+
 export async function connectMicrophone(deviceId) {
   try {
     const audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
@@ -66,47 +104,32 @@ export async function connectMicrophone(deviceId) {
     try { trackSettings = track.getSettings() || {}; } catch (e) { console.warn('[nemo-recorder]', e.message); }
 
     state.micDeviceId = trackSettings.deviceId || deviceId || null;
-    await refreshMicDeviceList();
 
-    // Same unreliability as channelCount above: getCapabilities().sampleRate
-    // reports the range the audio backend could resample to (often a huge
-    // span like 3kHz-384kHz for every device), not the mic's true native
-    // rate. Offering that whole range as "supported" rates would default new
-    // recordings to the highest one (e.g. 192k) even on ordinary hardware —
-    // inflating file size with interpolated data, not real extra fidelity.
-    // getSettings().sampleRate is what the track is actually delivering, so
-    // it's the only rate treated as genuinely detected.
-    const candidateRates = [44100, 48000, 96000, 192000];
-    let nativeRate = null;
-    if (trackSettings.sampleRate) {
-      nativeRate = trackSettings.sampleRate;
-    } else if (caps.sampleRate && typeof caps.sampleRate === 'object') {
-      nativeRate = candidateRates.find(r => r >= caps.sampleRate.min && r <= caps.sampleRate.max) || caps.sampleRate.min || 48000;
-    }
-    const supportedRates = [nativeRate || 48000];
-
-    // getSettings().channelCount reflects the channel count the track is
-    // actually running at, which is an accurate read of the hardware. Chrome's
-    // getCapabilities().channelCount.max is unreliable and commonly reports 2
-    // for mono-only mics (it describes what the audio pipeline could upmix to,
-    // not the physical device), so it's only used as a fallback.
-    let maxChannels = 1;
-    if (trackSettings.channelCount) maxChannels = trackSettings.channelCount;
-    else if (caps.channelCount && typeof caps.channelCount === 'object') maxChannels = caps.channelCount.max || 1;
-    const supportedChannels = maxChannels >= 2 ? [1, 2] : [1];
-
-    const supportedBitDepths = [16, 24, 32];
-
-    state.micCapabilities = { supportedRates, supportedChannels, supportedBitDepths };
-
-    state.settings.sampleRate = supportedRates[supportedRates.length - 1];
-    state.settings.channels = supportedChannels[supportedChannels.length - 1];
-    state.settings.bitDepth = 32;
-
-    // Capabilities and label are captured above; release the mic immediately so
-    // the tab doesn't hold a live capture stream (and show Chrome's recording
+    // Release the initial capture stream before probing — some devices are
+    // exclusive-access and would reject a second concurrent getUserMedia. The
+    // settings/capabilities we need were already read above, and stopping now
+    // means the tab doesn't hold a live capture (and Chrome's recording
     // indicator) while idle. ensureMediaStream() re-acquires it on record.
     stream.getTracks().forEach(t => t.stop());
+
+    await refreshMicDeviceList();
+
+    // Actively determine stereo support instead of trusting the unreliable
+    // getCapabilities().channelCount.max (see probeStereoSupport). null means
+    // the probe was inconclusive; deriveMicCapabilities then falls back to the
+    // channel count the track was actually delivering.
+    const stereoSupported = await probeStereoSupport(state.micDeviceId, trackSettings.channelCount);
+
+    const { capabilities, defaults } = deriveMicCapabilities({
+      settings: trackSettings,
+      capabilities: caps,
+      stereoSupported,
+    });
+    state.micCapabilities = capabilities;
+    state.settings.sampleRate = defaults.sampleRate;
+    state.settings.channels = defaults.channels;
+    state.settings.bitDepth = defaults.bitDepth;
+
     el.micName.textContent = state.micLabel;
 
     renderQualityOptions();
