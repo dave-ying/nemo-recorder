@@ -462,6 +462,17 @@ function setBusy(busy, deps) {
   deps.setTransportDisabled(busy || !state.recordedBuffer);
 }
 
+/**
+ * Re-sync the effects toolbar (noise/loudness toggles + scope control) to the
+ * ACTIVE track's effect state. Called when the active track changes, since
+ * denoise/loudness/effectScope are per-track — without this the toolbar would
+ * show the previously-active track's settings.
+ */
+export async function refreshEffectsUI() {
+  const deps = await loadDeps();
+  updateEffectsUI(deps);
+}
+
 function updateEffectsUI(deps) {
   const { el } = deps;
   el.removeNoiseButton.classList.toggle('effect-active', state.denoise.enabled);

@@ -22,7 +22,7 @@ import { openRecordModal } from './record-modal.js';
 import { updateEmptyState, updateSegmentCountDisplay, setTransportDisabled, showToast } from './ui.js';
 import { formatTime } from './utils.js';
 import { computePeaksForRange } from './waveform-math.js';
-import { trackSourceBuffer } from './effects.js';
+import { trackSourceBuffer, refreshEffectsUI } from './effects.js';
 
 const MINI_DPR_CAP = 2;
 export const TRACK_GAIN_MIN_DB = -30;
@@ -111,6 +111,7 @@ function reloadActiveTrackEditor() {
   state.cachedPeaks = null;
   state.cachedPath = null;
   drawPlaybackWaveform(0);
+  refreshEffectsUI(); // sync the per-track effects toolbar to this track
 }
 
 // ===== Per-track control mutations =====
