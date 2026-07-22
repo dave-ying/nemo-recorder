@@ -1,8 +1,30 @@
+# Dependencies
 node_modules/
+
+# Secrets / env — never commit
+.env
+.env.*
+*.env
+!.env.example
+
+# Local config
+*.local
+.vscode/
+.idea/
+
+# Agent tooling (keep .claude/ tracked, ignore the rest)
+.agents/
+
+# Logs & backups
 *.bak
 *.swp
 *.swo
 *.log
+
+# Build / test artifacts
+*.tsbuildinfo
+coverage/
+
+# OS
 .DS_Store
 Thumbs.db
-.vscode/
