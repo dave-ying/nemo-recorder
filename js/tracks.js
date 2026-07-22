@@ -25,6 +25,17 @@ import { computePeaksForRange } from './waveform-math.js';
 import { trackSourceBuffer, refreshEffectsUI } from './effects.js';
 
 const MINI_DPR_CAP = 2;
+
+/**
+ * Mini-waveform peak cache, keyed by a track's source AudioBuffer. Computing
+ * peaks over a track's whole buffer is O(samples); the rail re-renders on every
+ * mute/solo toggle, so without this each toggle recomputes every lane's overview
+ * from scratch. Keying by buffer identity auto-invalidates: any edit that
+ * changes a track's audio produces a new buffer, so the stale entry is simply
+ * never hit again (and the WeakMap lets it be GC'd).
+ * @type {WeakMap<AudioBuffer, {width: number, peaks: Float32Array}>}
+ */
+const _miniPeaksCache = new WeakMap();
 export const TRACK_GAIN_MIN_DB = -30;
 export const TRACK_GAIN_MAX_DB = 6;
 
@@ -130,11 +141,19 @@ export function toggleSolo(index) {
   refreshMix();
 }
 
-export function setGainDb(index, db) {
+/**
+ * @param {number} index
+ * @param {number} db
+ * @param {{rebuild?: boolean}} [opts] - rebuild:false updates the value + master
+ *   controls only, skipping the O(all-samples) mixdown. Used for the live
+ *   `input` events while dragging the volume slider; the `change` event (drag
+ *   end) then does the single rebuild.
+ */
+export function setGainDb(index, db, { rebuild = true } = {}) {
   const t = state.tracks[index];
   if (!t) return;
   t.gainDb = Math.max(TRACK_GAIN_MIN_DB, Math.min(TRACK_GAIN_MAX_DB, db));
-  rebuildMix();
+  if (rebuild) rebuildMix();
   updateMasterControls();
 }
 
@@ -208,7 +227,10 @@ function renderTrackList() {
     vol.step = '1';
     vol.value = String(track.gainDb);
     vol.title = `Volume ${track.gainDb} dB`;
-    vol.addEventListener('input', () => { setGainDb(i, Number(vol.value)); vol.title = `Volume ${track.gainDb} dB`; });
+    // Live label update on drag (cheap); the actual mixdown rebuild happens
+    // once on `change` (drag end) rather than on every `input` tick.
+    vol.addEventListener('input', () => { setGainDb(i, Number(vol.value), { rebuild: false }); vol.title = `Volume ${track.gainDb} dB`; });
+    vol.addEventListener('change', () => setGainDb(i, Number(vol.value)));
     ctls.append(vol);
 
     // Timeline offset (seconds) — free positioning on the master timeline
@@ -249,8 +271,13 @@ function drawMini(canvas, track, active) {
   if (!src || track.segments.length === 0) return;
   const W = canvas.width;
   const midY = canvas.height / 2;
-  const data = src.getChannelData(0);
-  const peaks = computePeaksForRange(data, 0, data.length, W);
+  let entry = _miniPeaksCache.get(src);
+  if (!entry || entry.width !== W) {
+    const data = src.getChannelData(0);
+    entry = { width: W, peaks: computePeaksForRange(data, 0, data.length, W) };
+    _miniPeaksCache.set(src, entry);
+  }
+  const peaks = entry.peaks;
   ctx.fillStyle = active ? 'rgba(77, 216, 200, 0.9)' : 'rgba(77, 216, 200, 0.45)';
   ctx.beginPath();
   for (let x = 0; x < W; x++) {
