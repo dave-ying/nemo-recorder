@@ -1,56 +1,55 @@
-import { state, segmentEffectOn, PER_SEGMENT_EFFECTS, currentPlaybackRatio } from './state.js';
-import { createNormalizedBuffer } from './loudness-normalize.js';
+import { state, currentPlaybackRatio } from './state.js';
 import { denoiseChannel } from './rnnoise.js';
+import { applyNoiseGate } from './noise-gate.js';
+import { applyEq } from './eq.js';
+import { applyDeEsser } from './deesser.js';
 import { buildCompactedChannels } from './trim-silence.js';
 
-// ===== Persistent audio effects (denoise → loudness) =====
+// ===== Per-track "source cleanup" effects (denoise → gate → EQ → de-esser) =====
 //
-// Loudness normalization and noise removal are EFFECTS, not one-time
-// operations: while enabled they apply to ALL audio, including audio added
-// later (record append, upload append, fresh record, fresh upload). The raw
-// capture in state.originalBuffer is never mutated by effects. Instead this
-// module maintains state.effectsBuffer — a processed full-length parallel of
-// originalBuffer (every effect is length-preserving, so segment {start, end}
-// ranges index into both interchangeably) — and editing.js renders/plays/
-// exports from getSourceBuffer().
+// These are per-track EFFECTS, not one-time operations: while enabled they
+// apply to ALL of that track's audio, including audio added later (append/
+// paste/duplicate/upload). The raw capture in state.originalBuffer is never
+// mutated. Instead this module maintains state.effectsBuffer — a processed
+// full-length parallel of originalBuffer (every effect is length-preserving,
+// so segment {start, end} ranges index into both interchangeably) — and
+// editing.js renders/plays/exports from getSourceBuffer() / trackSourceBuffer().
 //
-// Pipeline order is denoise first, then loudness (cleanup before the
-// loudness measurement so steady noise doesn't skew the gain). Denoise is
-// expensive and async (RNNoise WASM in a worker), so its result is cached
-// per raw buffer and appended regions are processed incrementally; loudness
-// is a fast synchronous single pass and simply re-runs whenever its inputs
-// (source buffer or settings) change.
+// The chain is denoise → gate → EQ → de-esser. Denoise is expensive and async
+// (RNNoise WASM in a worker), so its result is cached per raw buffer and
+// appended regions are processed incrementally; the gate/EQ/de-esser stages
+// are fast synchronous passes that re-run whenever their settings change.
 //
-// Effects are non-destructive and live OUTSIDE undo history: toggling one
-// off restores the raw audio exactly, so no history snapshot is needed.
+// Loudness normalization is NOT here anymore — it's a MASTER finishing effect
+// applied to the summed mix in editing.js's rebuildMix() (state.master.loudness).
 //
-// Concurrency: all sync requests funnel through a single drain queue
-// (requestEffectsSync). A run snapshots the raw buffer reference and aborts
-// if the buffer changed underneath it mid-await — every raw mutation
-// enqueues its own hint, so the queue always converges to the latest state.
+// This module is active-track-centric: it reads state.denoise/gate/eq/deesser
+// (proxies onto the active track) and processes state.originalBuffer. A track's
+// FX are edited by first making that track active (tracks.js does this), so the
+// pipeline always targets the active track; other tracks keep their previously
+// computed effectsBuffer (raw unchanged → still valid), which the mix reads.
 //
-// This module statically imports only DOM-free modules so it stays
-// Node-testable; DOM-touching deps (dom/editing/waveform/ui/playback) are
-// loaded lazily, the same pattern trim-silence.js uses.
-
-const SPINNER_SVG = '<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
+// Effects are non-destructive and live OUTSIDE undo history.
+//
+// Statically imports only DOM-free modules so it stays Node-testable; DOM-
+// touching deps (dom/editing/waveform/ui/playback/tracks) are lazy-loaded.
 
 let _depsPromise = null;
 function loadDeps() {
   if (_depsPromise) return _depsPromise;
   _depsPromise = Promise.all([
-    import('./dom.js'),
     import('./editing.js'),
     import('./waveform.js'),
     import('./ui.js'),
-    import('./playback.js')
-  ]).then(([domMod, editMod, waveMod, uiMod, playMod]) => ({
-    el: domMod.el,
+    import('./playback.js'),
+    import('./tracks.js')
+  ]).then(([editMod, waveMod, uiMod, playMod, tracksMod]) => ({
     rebuildPlaybackBuffer: editMod.rebuildPlaybackBuffer,
     drawPlaybackWaveform: waveMod.drawPlaybackWaveform,
     showToast: uiMod.showToast,
     setTransportDisabled: uiMod.setTransportDisabled,
-    pausePlayback: playMod.pausePlayback
+    pausePlayback: playMod.pausePlayback,
+    refreshTrackFxUI: tracksMod.refreshTrackFxUI
   }));
   return _depsPromise;
 }
@@ -59,8 +58,8 @@ function loadDeps() {
 
 /**
  * A channel-data cache shaped like an AudioBuffer (numberOfChannels /
- * length / sampleRate / getChannelData) so it can feed straight into
- * createNormalizedBuffer and buildCompactedChannels.
+ * length / sampleRate / getChannelData) so it can feed straight into the
+ * DSP modules and buildCompactedChannels.
  *
  * @param {Float32Array[]} channels
  * @param {number} length
@@ -74,6 +73,13 @@ export function createChannelCache(channels, length, sampleRate) {
     sampleRate,
     getChannelData: (c) => channels[c]
   };
+}
+
+/** Allocate a fresh channel-cache (used as the DSP modules' createBuffer). */
+function makeCache(nch, len, sr) {
+  const channels = [];
+  for (let c = 0; c < nch; c++) channels.push(new Float32Array(len));
+  return createChannelCache(channels, len, sr);
 }
 
 /**
@@ -113,19 +119,11 @@ export function fitToLength(src, length) {
   return fitted;
 }
 
-/**
- * A signature of the per-segment noise-removal opt-outs, so a chip toggle (or
- * a range shift while a segment has noise off) invalidates the fingerprint and
- * forces a recomposite. Empty in whole-recording scope (composite == denoise
- * cache) — reordering segments then never triggers a needless recomposite.
- */
-export function perSegmentNoiseSignature() {
-  if (state.effectScope !== 'segment') return '';
-  let sig = '';
-  for (const s of state.segments) {
-    if (s.fxOff && s.fxOff.includes('noise')) sig += s.start + '-' + s.end + ';';
-  }
-  return sig;
+/** Stable signature of one effect's enabled flag + tracked settings. */
+function fxSignature(fx, keys) {
+  let s = fx.enabled ? '1' : '0';
+  for (const k of keys) s += ':' + fx[k];
+  return s;
 }
 
 /** Snapshot of every input the effects output depends on. */
@@ -136,11 +134,9 @@ function computeEffectsFingerprint() {
     length: buf ? buf.length : 0,
     sampleRate: buf ? buf.sampleRate : 0,
     denoiseEnabled: state.denoise.enabled,
-    loudnessEnabled: state.loudness.enabled,
-    targetLufs: state.loudness.targetLufs,
-    truePeakDbtp: state.loudness.truePeakDbtp,
-    effectScope: state.effectScope,
-    segNoiseSig: perSegmentNoiseSignature()
+    gateSig: fxSignature(state.gate, ['thresholdDb', 'attackMs', 'holdMs', 'releaseMs']),
+    eqSig: fxSignature(state.eq, ['lowGainDb', 'midGainDb', 'highGainDb']),
+    deesserSig: fxSignature(state.deesser, ['thresholdDb', 'amount'])
   };
 }
 
@@ -150,53 +146,16 @@ export function effectsFingerprintsEqual(a, b) {
     && a.length === b.length
     && a.sampleRate === b.sampleRate
     && a.denoiseEnabled === b.denoiseEnabled
-    && a.loudnessEnabled === b.loudnessEnabled
-    && a.targetLufs === b.targetLufs
-    && a.truePeakDbtp === b.truePeakDbtp
-    && a.effectScope === b.effectScope
-    && a.segNoiseSig === b.segNoiseSig;
-}
-
-/**
- * Build the noise stage's output as a full-length parallel buffer. In
- * whole-recording scope this is just the denoise cache (every sample denoised).
- * In per-segment scope, segments that opted out of noise removal (fxOff
- * includes 'noise') read their raw samples instead — so the processed buffer
- * is a composite: denoised where the effect is on, raw where it's off. Kept
- * full-length so getSourceBuffer()'s length-parity invariant holds and segment
- * ranges still index into it. Pure over (raw, cache, state.segments) — exported
- * for Node tests.
- *
- * @param {AudioBuffer} raw
- * @param {ReturnType<typeof createChannelCache>} cache - full-length denoised channels
- */
-export function buildDenoiseComposite(raw, cache) {
-  const anyOff = state.effectScope === 'segment'
-    && state.segments.some(s => s.fxOff && s.fxOff.includes('noise'));
-  if (!anyOff) return cache;
-
-  const nch = cache.numberOfChannels;
-  const len = cache.length;
-  const channels = [];
-  for (let c = 0; c < nch; c++) channels.push(cache.getChannelData(c).slice());
-  for (const s of state.segments) {
-    if (segmentEffectOn(s, 'noise')) continue; // stays denoised
-    const start = Math.max(0, Math.min(len, s.start));
-    const end = Math.max(0, Math.min(len, s.end));
-    if (end <= start) continue;
-    for (let c = 0; c < nch; c++) {
-      const rawCh = raw.getChannelData(Math.min(c, raw.numberOfChannels - 1));
-      channels[c].set(rawCh.subarray(start, end), start);
-    }
-  }
-  return createChannelCache(channels, len, cache.sampleRate);
+    && a.gateSig === b.gateSig
+    && a.eqSig === b.eqSig
+    && a.deesserSig === b.deesserSig;
 }
 
 /**
  * @typedef {Object} EffectsSyncHint
  * @property {'full'|'append'|'light'} type - full: re-denoise everything;
  *   append: re-denoise only the region [oldLen, end) (raw buffer grew);
- *   light: keep the denoise cache, re-run only the loudness stage
+ *   light: keep the denoise cache, re-run only the fast sync stages
  * @property {number} [oldLen] - pre-append raw length (append hints only)
  */
 
@@ -221,23 +180,20 @@ export function mergeSyncHints(a, b) {
 let denoiseCache = null;
 /** @type {ReturnType<typeof computeEffectsFingerprint>|null} */
 let lastCommitted = null;
-/** @type {{measuredLufs: number, limited: boolean}|null} — loudness-stage details from the last commit, for toggle toasts */
-let lastSyncResult = null;
 /** @type {EffectsSyncHint|null} */
 let queuedHint = null;
 /** @type {Promise<void>|null} */
 let drainPromise = null;
 
 export function isEffectsActive() {
-  return state.loudness.enabled || state.denoise.enabled;
+  return state.denoise.enabled || state.gate.enabled || state.eq.enabled || state.deesser.enabled;
 }
 
 /**
  * The buffer playback/waveform/export/copy must read from: the processed
  * parallel buffer when effects are on, else the raw capture. Length parity
  * is the validity invariant — a raw mutation that hasn't been synced yet
- * changes the length, and raw is the safe fallback until the pipeline
- * commits.
+ * changes the length, and raw is the safe fallback until the pipeline commits.
  */
 export function getSourceBuffer() {
   return trackSourceBuffer(state.tracks[state.activeTrackIndex]);
@@ -260,7 +216,7 @@ export function trackSourceBuffer(track) {
 /**
  * Drop every cache. Called when the recording is replaced
  * (loadBufferAsRecording) or torn down (disconnectMicrophone), and by the
- * drain when there's nothing to process. Effect toggles are session settings
+ * drain when there's nothing to process. Effect toggles are per-track settings
  * and survive — and so does queuedHint: hints queued against the old buffer
  * degrade gracefully (cache validation fails → full resync), so wiping the
  * queue here would only risk dropping a needed sync.
@@ -268,7 +224,6 @@ export function trackSourceBuffer(track) {
 export function resetEffectsCaches() {
   denoiseCache = null;
   lastCommitted = null;
-  lastSyncResult = null;
   state.effectsBuffer = null;
 }
 
@@ -312,9 +267,6 @@ export function applyEffectsRemap(entries) {
 export function requestEffectsSync(hint) {
   queuedHint = mergeSyncHints(queuedHint, hint);
   if (!drainPromise) {
-    // The drain body never rejects: per-run errors are handled inside, and
-    // anything unexpected (e.g. a deps-load failure) is logged — awaiters
-    // must never see an unhandled rejection for background effect work.
     drainPromise = (async () => {
       try {
         const deps = await loadDeps();
@@ -325,12 +277,12 @@ export function requestEffectsSync(hint) {
             await runOneSync(hintToRun, deps);
           } catch (err) {
             console.warn('[nemo-recorder]', err);
-            // A permanent failure (e.g. WASM failed to load) would otherwise
-            // error-toast on every future append — turn the effect off and
+            // A permanent denoise failure (e.g. WASM failed to load) would
+            // otherwise error-toast on every future append — turn it off and
             // rebuild without it.
             if (state.denoise.enabled) {
               state.denoise.enabled = false;
-              updateEffectsUI(deps);
+              deps.refreshTrackFxUI();
               deps.showToast(`Noise removal failed and was turned off: ${err.message}`, true);
               queuedHint = mergeSyncHints(queuedHint, { type: 'light' });
             } else {
@@ -373,8 +325,8 @@ async function runOneSync(hint, deps) {
       && denoiseCache.sampleRate === buf.sampleRate;
     let regionStart = 0;
     if (hint.type === 'light' && cacheValid) {
-      // Loudness-only pass (toggle/settings change) — the denoise cache
-      // already covers the whole buffer, so skip the expensive stage.
+      // Sync-stage-only pass (gate/EQ/de-esser toggle or settings change) — the
+      // denoise cache already covers the whole buffer, so skip the slow stage.
       regionStart = buf.length;
     } else if (hint.type === 'append' && denoiseCache
         && denoiseCache.length === hint.oldLen
@@ -409,25 +361,21 @@ async function runOneSync(hint, deps) {
   deps.drawPlaybackWaveform(currentPlaybackRatio());
 }
 
-// Loudness stage (sync DSP over the full program source) + commit. Split
-// out so applyEffectsRemap can run it synchronously.
+// Chain the fast synchronous stages (gate → EQ → de-esser) onto the denoise
+// base and commit the processed buffer. Split out so applyEffectsRemap can run
+// it synchronously.
 function rebuildEffectsBufferFromCaches(fingerprint = null) {
   const buf = state.originalBuffer;
-  // Noise stage: whole-recording → the denoise cache; per-segment → a
-  // composite (denoised where on, raw where a segment opted out).
-  const base = state.denoise.enabled
-    ? (denoiseCache && buf ? buildDenoiseComposite(buf, denoiseCache) : denoiseCache)
-    : buf;
-  if (!base) { state.effectsBuffer = null; lastCommitted = null; lastSyncResult = null; return; }
-  if (state.loudness.enabled) {
-    const result = createNormalizedBuffer(base, state.loudness.targetLufs, state.loudness.truePeakDbtp,
-      (channels, length, sampleRate) => state.audioContext.createBuffer(channels, length, sampleRate));
-    state.effectsBuffer = result.buffer;
-    lastSyncResult = { measuredLufs: result.measuredLufs, limited: result.limited };
-  } else {
-    state.effectsBuffer = toAudioBuffer(base);
-    lastSyncResult = null;
-  }
+  if (!buf) { state.effectsBuffer = null; lastCommitted = null; return; }
+  // Base: the denoise cache when denoise is on, else the raw buffer.
+  /** @type {{numberOfChannels:number,length:number,sampleRate:number,getChannelData:(c:number)=>Float32Array}} */
+  let cur = state.denoise.enabled && denoiseCache ? denoiseCache : buf;
+  if (state.gate.enabled) cur = applyNoiseGate(cur, state.gate, makeCache);
+  if (state.eq.enabled) cur = applyEq(cur, state.eq, makeCache);
+  if (state.deesser.enabled) cur = applyDeEsser(cur, state.deesser, makeCache);
+  // If nothing produced a new buffer (all stages off), there's no processed
+  // parallel — getSourceBuffer falls back to raw.
+  state.effectsBuffer = cur === buf ? null : toAudioBuffer(cur);
   lastCommitted = fingerprint || computeEffectsFingerprint();
 }
 
@@ -439,130 +387,68 @@ function toAudioBuffer(bufferLike) {
   return buf;
 }
 
-
 // ===== UI =====
 
 function setBusy(busy, deps) {
-  const { el } = deps;
   state.denoise.processing = busy;
-  if (busy) {
-    if (!el.removeNoiseButton.dataset.icon) el.removeNoiseButton.dataset.icon = el.removeNoiseButton.innerHTML;
-    el.removeNoiseButton.innerHTML = SPINNER_SVG;
-  } else if (el.removeNoiseButton.dataset.icon) {
-    el.removeNoiseButton.innerHTML = el.removeNoiseButton.dataset.icon;
-  }
-  updateEffectsUI(deps);
-  // Transport and the other tools stay disabled while a denoise run owns
-  // the pipeline; ui.js also honors state.denoise.processing for the button.
+  deps.refreshTrackFxUI();
+  // Transport and the other tools stay disabled while a denoise run owns the
+  // pipeline.
   deps.setTransportDisabled(busy || !state.recordedBuffer);
 }
 
 /**
- * Re-sync the effects toolbar (noise/loudness toggles + scope control) to the
- * ACTIVE track's effect state. Called when the active track changes, since
- * denoise/loudness/effectScope are per-track — without this the toolbar would
- * show the previously-active track's settings.
+ * Re-sync the per-track FX UI to the ACTIVE track's effect state. Called when
+ * the active track changes, since denoise/gate/eq/deesser are per-track.
  */
 export async function refreshEffectsUI() {
   const deps = await loadDeps();
-  updateEffectsUI(deps);
+  deps.refreshTrackFxUI();
 }
 
-function updateEffectsUI(deps) {
-  const { el } = deps;
-  el.removeNoiseButton.classList.toggle('effect-active', state.denoise.enabled);
-  el.removeNoiseButton.setAttribute('aria-pressed', String(state.denoise.enabled));
-  el.removeNoiseButton.title = state.denoise.processing
-    ? 'Removing noise...'
-    : state.denoise.enabled
-      ? 'Noise removal on — applies to all audio, click to turn off'
-      : 'Remove background noise';
-  el.normalizeLoudnessButton.classList.toggle('effect-active', state.loudness.enabled);
-  el.normalizeLoudnessButton.setAttribute('aria-pressed', String(state.loudness.enabled));
-  el.normalizeLoudnessEnabled.checked = state.loudness.enabled;
-  updateScopeUI(deps);
-}
-
-// The scope segmented control is only meaningful when a per-segmentable effect
-// is on (loudness alone can't be scoped). When none is on it's shown disabled;
-// the "All on / All off" shortcuts appear only in per-segment scope.
-function updateScopeUI(deps) {
-  const { el } = deps;
-  const active = PER_SEGMENT_EFFECTS.some(e => e.isEnabled());
-  el.effectScopeControl.setAttribute('data-disabled', String(!active));
-  el.effectScopeAll.classList.toggle('is-selected', state.effectScope === 'all');
-  el.effectScopeSegment.classList.toggle('is-selected', state.effectScope === 'segment');
-  el.effectScopeAll.setAttribute('aria-pressed', String(state.effectScope === 'all'));
-  el.effectScopeSegment.setAttribute('aria-pressed', String(state.effectScope === 'segment'));
-  el.segFxQuick.hidden = !(active && state.effectScope === 'segment');
-}
-
-/**
- * Switch the per-segmentable effects between whole-recording and per-segment
- * scope. Redraws immediately so the per-segment chips appear/disappear at once,
- * then recomposites the processed buffer for the new scope.
- * @param {'all'|'segment'} scope
- */
-export async function setEffectScope(scope) {
-  if (scope !== 'all' && scope !== 'segment') return;
-  if (state.effectScope === scope) return;
-  const deps = await loadDeps();
-  state.effectScope = scope;
-  updateScopeUI(deps);
-  deps.drawPlaybackWaveform(currentPlaybackRatio());
-  if (state.originalBuffer && isEffectsActive()) await requestEffectsSync({ type: 'light' });
-}
-
-// ===== Toggle handlers (wired in main.js) =====
-
-export async function toggleLoudness(enabled) {
-  const deps = await loadDeps();
-  if (state.isPlaying) deps.pausePlayback();
-  state.loudness.enabled = !!enabled;
-  updateEffectsUI(deps);
-  if (!state.originalBuffer) return;
-  await requestEffectsSync({ type: 'light' });
-  if (!state.loudness.enabled) {
-    deps.showToast('Loudness normalization off');
-    return;
-  }
-  const target = state.loudness.targetLufs;
-  const ceiling = state.loudness.truePeakDbtp;
-  const result = lastSyncResult;
-  if (result && !Number.isFinite(result.measuredLufs) && !result.limited) {
-    deps.showToast('Loudness normalization on — audio too quiet to measure');
-  } else if (result && !Number.isFinite(result.measuredLufs)) {
-    deps.showToast(`Loudness normalization on · limited to ${ceiling.toFixed(1)} dBTP`);
-  } else if (result && result.limited) {
-    deps.showToast(`Loudness normalization on · ${target.toFixed(1)} LUFS · limited at ${ceiling.toFixed(1)} dBTP`);
-  } else if (result) {
-    deps.showToast(`Loudness normalization on · ${target.toFixed(1)} LUFS (was ${result.measuredLufs.toFixed(1)})`);
-  } else {
-    deps.showToast('Loudness normalization on');
-  }
-}
+// ===== Toggle handlers (wired in tracks.js) =====
 
 export async function toggleDenoise(enabled) {
   if (state.denoise.processing) return;
   const deps = await loadDeps();
   if (state.isPlaying) deps.pausePlayback();
   state.denoise.enabled = !!enabled;
-  updateEffectsUI(deps);
+  deps.refreshTrackFxUI();
   if (!state.originalBuffer) {
     deps.showToast(enabled ? 'Noise removal on' : 'Noise removal off');
     return;
   }
   await requestEffectsSync({ type: enabled ? 'full' : 'light' });
-  // The drain may have flipped the effect back off on failure (it toasts
-  // itself) — don't contradict that with a success toast.
+  // The drain may have flipped denoise back off on failure (it toasts itself).
   if (state.denoise.enabled === !!enabled) {
     deps.showToast(enabled ? 'Noise removal on' : 'Noise removal off');
   }
 }
 
-// Live re-apply when the popover's target/ceiling inputs change while the
-// effect is on. Silent — the waveform redraw is the feedback.
-export async function refreshLoudness() {
-  if (!state.loudness.enabled || !state.originalBuffer) return;
+/**
+ * Toggle one of the fast synchronous per-track effects (gate/EQ/de-esser).
+ * @param {{enabled: boolean}} fx - the live effect object (e.g. state.gate)
+ * @param {boolean} enabled
+ * @param {string} label - toast label, e.g. 'Noise gate'
+ */
+async function toggleSyncEffect(fx, enabled, label) {
+  const deps = await loadDeps();
+  if (state.isPlaying) deps.pausePlayback();
+  fx.enabled = !!enabled;
+  deps.refreshTrackFxUI();
+  if (state.originalBuffer) await requestEffectsSync({ type: 'light' });
+  deps.showToast(`${label} ${enabled ? 'on' : 'off'}`);
+}
+
+export const toggleGate = (enabled) => toggleSyncEffect(state.gate, enabled, 'Noise gate');
+export const toggleEq = (enabled) => toggleSyncEffect(state.eq, enabled, 'EQ');
+export const toggleDeesser = (enabled) => toggleSyncEffect(state.deesser, enabled, 'De-esser');
+
+/**
+ * Live re-apply when a per-track effect's settings change while it's enabled.
+ * Silent — the waveform redraw is the feedback.
+ */
+export async function refreshSyncEffects() {
+  if (!state.originalBuffer || !isEffectsActive()) return;
   await requestEffectsSync({ type: 'light' });
 }

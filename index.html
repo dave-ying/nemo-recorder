@@ -70,43 +70,6 @@
                   <button class="btn btn-primary tool-apply" id="trimSilenceApply">Apply</button>
                 </div>
               </div>
-              <div class="tool-anchor">
-                <button class="btn btn-edit btn-icon" id="normalizeLoudnessButton" title="Normalize loudness" aria-pressed="false" disabled>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>
-                  </svg>
-                </button>
-                <div class="tool-popover" id="normalizeLoudnessPopover" hidden>
-                  <label class="tool-toggle" for="normalizeLoudnessEnabled">
-                    <input id="normalizeLoudnessEnabled" type="checkbox">
-                    <span>Enable · applies to all audio</span>
-                  </label>
-                  <label class="tool-field" for="normalizeTargetLufs"><span>Target LUFS</span></label>
-                  <input id="normalizeTargetLufs" type="number" step="0.1" min="-70" max="0" value="-16">
-                  <label class="tool-field" for="normalizeTruePeak"><span>True peak dBTP</span></label>
-                  <input id="normalizeTruePeak" type="number" step="0.1" max="0" value="-1">
-                </div>
-              </div>
-              <button class="btn btn-edit btn-icon effect-noise" id="removeNoiseButton" title="Remove background noise" aria-pressed="false" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>
-                </svg>
-              </button>
-              <div class="action-divider"></div>
-              <div class="effect-scope" id="effectScopeControl" role="group" aria-label="Effect scope" data-disabled="true" title="Turn on a per-segment effect to choose its scope">
-                <button class="effect-scope-btn is-selected" id="effectScopeAll" type="button" data-scope="all" title="Apply effects to the whole recording">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/></svg>
-                  <span>Whole recording</span>
-                </button>
-                <button class="effect-scope-btn" id="effectScopeSegment" type="button" data-scope="segment" title="Choose which segments get the effects">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="5" height="12" rx="1.2"/><rect x="10" y="6" width="5" height="12" rx="1.2"/><rect x="17" y="6" width="4" height="12" rx="1.2"/></svg>
-                  <span>Per segment</span>
-                </button>
-              </div>
-              <div class="seg-fx-quick" id="segFxQuick" hidden>
-                <button class="seg-fx-quick-btn" id="segFxAllOn" type="button" title="Turn effects on for every segment">All on</button>
-                <button class="seg-fx-quick-btn" id="segFxAllOff" type="button" title="Turn effects off for every segment">All off</button>
-              </div>
             </div>
           </div>
           <div class="waveform-container" id="waveformContainer">
@@ -206,6 +169,28 @@
                   <span>Play mix</span>
                 </button>
                 <span class="master-time" id="masterTime">00:00.000 / 00:00.000</span>
+                <div class="tool-anchor master-fx-anchor">
+                  <button class="master-fx-button" id="masterFxButton" title="Finishing effects for the whole mix" aria-haspopup="true" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
+                    <span>Finishing</span>
+                  </button>
+                  <div class="tool-popover master-fx-popover" id="masterFxPopover" hidden>
+                    <div class="fx-popover-title">Master · applies to the whole mix</div>
+                    <label class="tool-toggle" for="masterLoudnessEnabled">
+                      <input id="masterLoudnessEnabled" type="checkbox">
+                      <span>Loudness normalization</span>
+                    </label>
+                    <div class="fx-presets" id="loudnessPresets">
+                      <button class="fx-preset" type="button" data-lufs="-14">YouTube · −14</button>
+                      <button class="fx-preset" type="button" data-lufs="-16">Podcast · −16</button>
+                      <button class="fx-preset" type="button" data-lufs="-9">Music · −9</button>
+                    </div>
+                    <label class="tool-field" for="masterTargetLufs"><span>Target LUFS</span></label>
+                    <input id="masterTargetLufs" type="number" step="0.1" min="-70" max="0" value="-16">
+                    <label class="tool-field" for="masterTruePeak"><span>True peak dBTP</span></label>
+                    <input id="masterTruePeak" type="number" step="0.1" max="0" value="-1">
+                  </div>
+                </div>
               </div>
             </div>
             <div class="track-list" id="trackList"></div>
@@ -213,6 +198,33 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
               Add track
             </button>
+            <div class="track-fx-popover" id="trackFxPopover" hidden>
+              <div class="fx-popover-title" id="trackFxTitle">Track effects</div>
+              <label class="tool-toggle" for="fxDenoiseEnabled">
+                <input id="fxDenoiseEnabled" type="checkbox"><span>Noise removal</span>
+              </label>
+              <label class="tool-toggle" for="fxGateEnabled">
+                <input id="fxGateEnabled" type="checkbox"><span>Noise gate</span>
+              </label>
+              <div class="fx-settings" id="fxGateSettings">
+                <label class="tool-field" for="fxGateThreshold"><span>Threshold dB</span></label>
+                <input id="fxGateThreshold" type="number" step="1" min="-80" max="0" value="-45">
+              </div>
+              <label class="tool-toggle" for="fxEqEnabled">
+                <input id="fxEqEnabled" type="checkbox"><span>EQ</span>
+              </label>
+              <div class="fx-settings fx-eq-grid" id="fxEqSettings">
+                <label class="fx-slider"><span>Low</span><input id="fxEqLow" type="range" min="-12" max="12" step="1" value="0"></label>
+                <label class="fx-slider"><span>Mid</span><input id="fxEqMid" type="range" min="-12" max="12" step="1" value="0"></label>
+                <label class="fx-slider"><span>High</span><input id="fxEqHigh" type="range" min="-12" max="12" step="1" value="0"></label>
+              </div>
+              <label class="tool-toggle" for="fxDeesserEnabled">
+                <input id="fxDeesserEnabled" type="checkbox"><span>De-esser</span>
+              </label>
+              <div class="fx-settings" id="fxDeesserSettings">
+                <label class="fx-slider"><span>Amount</span><input id="fxDeesserAmount" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -480,10 +492,10 @@
         <div class="help-group changelog-group">
           <div class="help-group-title">July 22, 2026</div>
           <ul class="changelog-list">
-            <li>Effects can now be applied to the whole recording or to individual segments. Use the “Whole recording / Per segment” switch in the toolbar: in Per segment mode, each segment shows a colored chip you can click to turn an effect on or off just for that segment, and “All on / All off” toggles them all at once. Loudness normalization always applies to the whole recording.</li>
+            <li>Reworked audio effects into two clear tiers. Each track now has its own <strong>Effects</strong> menu for source cleanup — Noise removal, Noise gate, EQ, and De-esser — that applies to everything on that track. To keep part of a recording out of an effect, move that segment to its own track.</li>
+            <li>Loudness normalization is now a <strong>master “Finishing”</strong> control on the tracks panel. It normalizes the whole mix (not each track separately, which gives an unpredictable final level), with one-click presets for YouTube, podcasts, and music. Preview it with “Play mix”.</li>
             <li>Added a Trim Silence tool that removes silent stretches from the recording, with adjustable threshold and minimum duration.</li>
-            <li>Added a Normalize Loudness effect that brings all audio to a target loudness (LUFS) with a true-peak ceiling. Once enabled it stays on and automatically applies to any audio you record or upload later; it never alters your original audio, so you can turn it off at any time.</li>
-            <li>Added a Remove Noise effect that cleans up steady background noise (fans, hum, hiss) while keeping each channel intact. Like loudness normalization, it stays on once enabled and automatically applies to newly added audio.</li>
+            <li>Effects are non-destructive — they never alter your original audio, apply automatically to anything you record or upload later, and can be turned off at any time.</li>
             <li>Added a Help panel with keyboard shortcuts, the changelog, and information about Nemo Recorder.</li>
             <li>Added keyboard shortcuts for common playback, editing, and segment-navigation actions.</li>
             <li>Added a right-click menu for copying, pasting, duplicating, and deleting segments.</li>

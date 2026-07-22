@@ -1,4 +1,4 @@
-import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE, cloneSeg, enabledPerSegmentEffects, currentPlaybackRatio } from './state.js';
+import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE, cloneSeg, currentPlaybackRatio } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
@@ -7,6 +7,7 @@ import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTar
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
 import { isEffectsActive, getSourceBuffer, trackSourceBuffer, requestEffectsSync, resetEffectsCaches } from './effects.js';
+import { createNormalizedBuffer } from './loudness-normalize.js';
 
 export function jumpToSegmentStart() {
   if (!state.recordedBuffer) return;
@@ -215,7 +216,26 @@ export function rebuildMix() {
     }
   }
 
-  state.mixBuffer = buf;
+  // Master "finishing" stage: loudness-normalize the summed mix (not the
+  // individual tracks — normalizing per-track then summing gives an
+  // unpredictable final loudness). Length-preserving.
+  const ml = state.master.loudness;
+  if (ml.enabled) {
+    const result = createNormalizedBuffer(buf, ml.targetLufs, ml.truePeakDbtp,
+      (channels, length, sampleRate) => state.audioContext.createBuffer(channels, length, sampleRate));
+    state.mixBuffer = result.buffer;
+  } else {
+    state.mixBuffer = buf;
+  }
+}
+
+/**
+ * Re-run the mixdown after a master finishing-effect change (loudness toggle or
+ * settings). Master playback / export read state.mixBuffer, so a rebuild is all
+ * that's needed. Master effects live outside undo history.
+ */
+export function refreshMasterLoudness() {
+  rebuildMix();
 }
 
 export function splitAtPlayhead() {
@@ -234,11 +254,10 @@ export function splitAtPlayhead() {
   }
 
   const splitPoint = seg.start + offsetInSeg;
-  const inherited = state.segments[index].fxOff ? state.segments[index].fxOff.slice() : [];
   pushHistory();
   state.segments.splice(index, 1,
-    { start: seg.start, end: splitPoint, origin: 'split', fxOff: inherited.slice() },
-    { start: splitPoint, end: seg.end, origin: 'split', fxOff: inherited.slice() }
+    { start: seg.start, end: splitPoint, origin: 'split' },
+    { start: splitPoint, end: seg.end, origin: 'split' }
   );
 
   // Snap the playhead to the exact split point — the start of the right
@@ -325,48 +344,6 @@ export function deleteSegmentAtPlayhead() {
   if (target) deleteSegmentByIndex(target.index);
 }
 
-// ===== Per-segment effect scoping =====
-//
-// In per-segment scope, each segment can opt out of a per-segmentable effect
-// (currently noise removal). Toggling is a normal undoable edit that flips the
-// effect key in the segment's `fxOff` list, then asks the effects pipeline to
-// recomposite (a light sync: no re-denoise, just rebuild the processed buffer
-// with this segment's new on/off state and re-run loudness). The immediate
-// redraw gives instant chip feedback while the async recomposite lands.
-export function toggleSegmentEffect(index, effectKey) {
-  if (!state.recordedBuffer || index < 0 || index >= state.segments.length) return;
-  const seg = state.segments[index];
-  if (!seg.fxOff) seg.fxOff = [];
-  pushHistory();
-  const at = seg.fxOff.indexOf(effectKey);
-  if (at >= 0) seg.fxOff.splice(at, 1);
-  else seg.fxOff.push(effectKey);
-  // Recomposite the processed buffer for the new per-segment state, then the
-  // pipeline rebuilds the playback buffer and redraws on commit.
-  requestEffectsSync({ type: 'light' });
-  // Instant chip feedback (the async sync redraws again when it commits).
-  drawPlaybackWaveform(currentPlaybackRatio());
-}
-
-// Turn every enabled per-segment effect on (or off) for ALL segments at once —
-// the escape hatch for "I only want the effect on one of ten segments" (All
-// off, then click the one). A single undoable edit.
-export function setAllSegmentsEffects(on) {
-  if (!state.recordedBuffer || state.segments.length === 0) return;
-  const keys = enabledPerSegmentEffects().map(e => e.key);
-  if (keys.length === 0) return;
-  pushHistory();
-  for (const seg of state.segments) {
-    if (!seg.fxOff) seg.fxOff = [];
-    for (const key of keys) {
-      const at = seg.fxOff.indexOf(key);
-      if (on && at >= 0) seg.fxOff.splice(at, 1);
-      else if (!on && at < 0) seg.fxOff.push(key);
-    }
-  }
-  requestEffectsSync({ type: 'light' });
-  drawPlaybackWaveform(currentPlaybackRatio());
-}
 
 // ===== Segment copy/paste (context menu) =====
 
@@ -476,7 +453,7 @@ async function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLab
   const oldLen = state.originalBuffer.length;
   const insertAt = Math.max(0, Math.min(afterIndex + 1, state.segments.length));
   const newSegments = state.segments.map(cloneSeg);
-  newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel, fxOff: [] });
+  newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel });
 
   await commitAppendedAudio(newLen, fillChannel, newSegments, oldLen);
   if (!state.recordedBuffer) return;
@@ -576,22 +553,21 @@ export async function pasteInsertAtPlayhead() {
   if (atSegStart) {
     pastedIndex = index;
     newSegments = state.segments.map(cloneSeg);
-    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste', fxOff: [] });
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
   } else if (atRecordingEnd) {
     pastedIndex = index + 1;
     newSegments = state.segments.map(cloneSeg);
-    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste', fxOff: [] });
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
   } else {
     const splitPoint = seg.start + offsetInSeg;
     pastedIndex = index + 1;
     didSplit = true;
-    const inherited = state.segments[index].fxOff ? state.segments[index].fxOff.slice() : [];
     newSegments = [];
     for (let i = 0; i < state.segments.length; i++) {
       if (i === index) {
-        newSegments.push({ start: seg.start, end: splitPoint, origin: 'split', fxOff: inherited.slice() });
-        newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'paste', fxOff: [] });
-        newSegments.push({ start: splitPoint, end: seg.end, origin: 'split', fxOff: inherited.slice() });
+        newSegments.push({ start: seg.start, end: splitPoint, origin: 'split' });
+        newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'paste' });
+        newSegments.push({ start: splitPoint, end: seg.end, origin: 'split' });
       } else {
         newSegments.push(cloneSeg(state.segments[i]));
       }
@@ -763,7 +739,7 @@ export async function appendBufferToRecording(buffer, toastMessage) {
   const oldLen = state.originalBuffer.length;
   const newLen = adapted.length;
   const newSegments = state.segments.map(cloneSeg);
-  newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append', fxOff: [] });
+  newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append' });
   await commitAppendedAudio(newLen, (c) => adapted.getChannelData(c), newSegments, oldLen);
   if (!state.recordedBuffer) return;
 

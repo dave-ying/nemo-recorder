@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_HEADROOM_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE, SEGMENT_DRAG_SCALE_MAX, SEGMENT_CHIP_SIZE_CSS_PX, SEGMENT_CHIP_GAP_CSS_PX, SEGMENT_CHIP_MARGIN_CSS_PX, perSegmentUiActive, enabledPerSegmentEffects, segmentEffectOn, currentPlaybackRatio } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_HEADROOM_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE, SEGMENT_DRAG_SCALE_MAX, currentPlaybackRatio } from './state.js';
 import { el, waveCtx, rulerCtx, dragOverlayCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
@@ -393,125 +393,6 @@ function drawSegmentCards(ctx, path, segBounds, cardPaths, playheadX, H, dpr) {
     }
   }
 
-  if (perSegmentUiActive()) drawSegmentChips(ctx, segBounds, H, dpr);
-}
-
-// ===== Per-segment effect chips =====
-//
-// In per-segment scope, each card shows a small chip per enabled per-segment
-// effect in its top-right corner: filled in the effect's identity color when
-// the effect is on for that segment, hollow (faint fill + dim outline) when
-// off. Chips stack leftward from the right edge; the first effect sits nearest
-// the corner. Geometry is pure (unit-agnostic) so drawing (device px) and
-// hit-testing (CSS px) share the same layout math.
-
-/**
- * @param {number} cardStart @param {number} cardEnd @param {number} topInset
- * @param {number} size @param {number} gap @param {number} margin @param {number} count
- * @returns {Array<{x:number,y:number,w:number,h:number}>} up to `count` rects
- */
-function chipLayout(cardStart, cardEnd, topInset, size, gap, margin, count) {
-  const rects = [];
-  const y = topInset + margin;
-  let right = cardEnd - margin;
-  for (let i = 0; i < count; i++) {
-    const x = right - size;
-    if (x < cardStart + margin) break; // out of room on a narrow card
-    rects.push({ x, y, w: size, h: size });
-    right = x - gap;
-  }
-  return rects;
-}
-
-function drawSegmentChips(ctx, segBounds, H, dpr) {
-  const effects = enabledPerSegmentEffects();
-  if (effects.length === 0) return;
-  const topInset = SEGMENT_VERTICAL_INSET_CSS_PX * dpr;
-  const size = SEGMENT_CHIP_SIZE_CSS_PX * dpr;
-  const gap = SEGMENT_CHIP_GAP_CSS_PX * dpr;
-  const margin = SEGMENT_CHIP_MARGIN_CSS_PX * dpr;
-  const radius = 4 * dpr;
-  // First pass: dim any card that receives NONE of the enabled per-segment
-  // effects, so "off" segments visibly recede at a glance (the chips then say
-  // precisely which effects are off). A neutral dark wash, distinct from the
-  // teal played/unplayed shading.
-  for (let i = 0; i < segBounds.length; i++) {
-    if (i === state.draggingSegmentIndex) continue;
-    const seg = state.segments[i];
-    if (effects.every(e => !segmentEffectOn(seg, e.key))) {
-      const sb = segBounds[i];
-      const cardPath = _buildOneCardPath(sb.drawStart, sb.drawEnd - sb.drawStart, H, dpr);
-      if (!cardPath) continue;
-      ctx.save();
-      ctx.fillStyle = 'rgba(8, 8, 11, 0.5)';
-      ctx.fill(cardPath);
-      ctx.restore();
-    }
-  }
-  for (let i = 0; i < segBounds.length; i++) {
-    if (i === state.draggingSegmentIndex) continue;
-    const sb = segBounds[i];
-    const rects = chipLayout(sb.drawStart, sb.drawEnd, topInset, size, gap, margin, effects.length);
-    const seg = state.segments[i];
-    for (let j = 0; j < rects.length; j++) {
-      const r = rects[j];
-      const eff = effects[j];
-      const on = segmentEffectOn(seg, eff.key);
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(r.x, r.y, r.w, r.h, radius);
-      if (on) {
-        ctx.fillStyle = eff.color;
-        ctx.shadowColor = eff.color;
-        ctx.shadowBlur = 6 * dpr;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        // A small check mark reads unambiguously as "on" even for viewers who
-        // don't register the color/fill difference.
-        ctx.strokeStyle = 'rgba(10, 10, 12, 0.9)';
-        ctx.lineWidth = 1.6 * dpr;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        ctx.moveTo(r.x + r.w * 0.28, r.y + r.h * 0.52);
-        ctx.lineTo(r.x + r.w * 0.44, r.y + r.h * 0.68);
-        ctx.lineTo(r.x + r.w * 0.74, r.y + r.h * 0.34);
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = eff.colorSoft;
-        ctx.fill();
-        ctx.strokeStyle = eff.color;
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = 1.4 * dpr;
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-  }
-}
-
-/**
- * Which per-segment effect chip (if any) is under a client point. Returns the
- * segment index + effect key so a click can toggle it. Only hit-tests when the
- * per-segment UI is active (segment scope + an enabled per-segment effect).
- */
-export function getSegmentChipAtClientPoint(clientX, clientY) {
-  if (!state.recordedBuffer || !perSegmentUiActive()) return null;
-  const effects = enabledPerSegmentEffects();
-  if (effects.length === 0) return null;
-  const rect = el.waveformContainer.getBoundingClientRect();
-  const x = clientX - rect.left;
-  const y = clientY - rect.top;
-  const segBounds = _computeSegmentBounds(rect.width, state.recordedBuffer.length, SEGMENT_GAP_CSS_PX);
-  for (let i = 0; i < segBounds.length; i++) {
-    const rects = chipLayout(segBounds[i].drawStart, segBounds[i].drawEnd,
-      SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_CHIP_SIZE_CSS_PX, SEGMENT_CHIP_GAP_CSS_PX, SEGMENT_CHIP_MARGIN_CSS_PX, effects.length);
-    for (let j = 0; j < rects.length; j++) {
-      const r = rects[j];
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return { index: i, key: effects[j].key };
-    }
-  }
-  return null;
 }
 
 function lerpColorAlpha(dimRgba, brightRgba, t) {
@@ -1322,14 +1203,6 @@ export function getSegmentIndexAtClientPoint(clientX, clientY) {
 
 el.waveformContainer.addEventListener('pointerdown', (e) => {
   if (!state.recordedBuffer) return;
-  // In per-segment scope, a click on an effect chip toggles that effect for
-  // that segment — it must not start a reorder drag or a seek/selection.
-  const chip = getSegmentChipAtClientPoint(e.clientX, e.clientY);
-  if (chip) {
-    e.preventDefault();
-    import('./editing.js').then(m => m.toggleSegmentEffect(chip.index, chip.key));
-    return;
-  }
   const rect = el.waveformContainer.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
@@ -1380,10 +1253,6 @@ el.waveformContainer.addEventListener('mousemove', (e) => {
     state.hoverSegmentIndex = i;
     el.waveformContainer.style.cursor = 'default';
     scheduleHoverRedraw();
-  }
-  // Chips are clickable — show a pointer cursor over them.
-  if (getSegmentChipAtClientPoint(e.clientX, e.clientY)) {
-    el.waveformContainer.style.cursor = 'pointer';
   }
 });
 

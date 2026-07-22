@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { state, segmentEffectOn } from '../js/state.js';
+import { state } from '../js/state.js';
 import {
   createChannelCache,
   concatChannelCaches,
@@ -9,9 +9,7 @@ import {
   mergeSyncHints,
   isEffectsActive,
   getSourceBuffer,
-  resetEffectsCaches,
-  buildDenoiseComposite,
-  perSegmentNoiseSignature
+  resetEffectsCaches
 } from '../js/effects.js';
 
 // effects.js's pure cache/fingerprint/hint helpers plus the state-reading
@@ -74,7 +72,7 @@ test('effectsFingerprintsEqual compares every effect input', () => {
   const buffer = {};
   const base = {
     buffer, length: 100, sampleRate: 48000,
-    denoiseEnabled: true, loudnessEnabled: true, targetLufs: -16, truePeakDbtp: -1
+    denoiseEnabled: true, gateSig: '1:-45:5:100:200', eqSig: '1:3:0:2', deesserSig: '0:-28:0.6'
   };
   assert.ok(effectsFingerprintsEqual(base, { ...base }));
   assert.ok(!effectsFingerprintsEqual(base, null));
@@ -83,69 +81,10 @@ test('effectsFingerprintsEqual compares every effect input', () => {
   assert.ok(!effectsFingerprintsEqual(base, { ...base, length: 101 }));
   assert.ok(!effectsFingerprintsEqual(base, { ...base, sampleRate: 44100 }));
   assert.ok(!effectsFingerprintsEqual(base, { ...base, denoiseEnabled: false }));
-  assert.ok(!effectsFingerprintsEqual(base, { ...base, loudnessEnabled: false }));
-  assert.ok(!effectsFingerprintsEqual(base, { ...base, targetLufs: -14 }));
-  assert.ok(!effectsFingerprintsEqual(base, { ...base, truePeakDbtp: -2 }));
-  // Scope + per-segment signature are part of the fingerprint so a chip toggle
-  // or a scope switch forces a recomposite.
-  const scoped = { ...base, effectScope: 'segment', segNoiseSig: '0-3;' };
-  assert.ok(effectsFingerprintsEqual(scoped, { ...scoped }));
-  assert.ok(!effectsFingerprintsEqual(scoped, { ...scoped, effectScope: 'all' }));
-  assert.ok(!effectsFingerprintsEqual(scoped, { ...scoped, segNoiseSig: '' }));
-});
-
-test('segmentEffectOn: whole-recording scope applies to every segment', () => {
-  withState({ effectScope: 'all' }, () => {
-    assert.equal(segmentEffectOn({ fxOff: ['noise'] }, 'noise'), true);
-  });
-  withState({ effectScope: 'segment' }, () => {
-    assert.equal(segmentEffectOn({ fxOff: [] }, 'noise'), true);
-    assert.equal(segmentEffectOn({ fxOff: ['noise'] }, 'noise'), false);
-    assert.equal(segmentEffectOn({}, 'noise'), true);
-  });
-});
-
-test('perSegmentNoiseSignature: empty unless in segment scope with opt-outs', () => {
-  withState({ effectScope: 'all', segments: [{ start: 0, end: 3, origin: 'x', fxOff: ['noise'] }] }, () => {
-    assert.equal(perSegmentNoiseSignature(), '');
-  });
-  withState({ effectScope: 'segment', segments: [{ start: 0, end: 3, origin: 'x', fxOff: [] }] }, () => {
-    assert.equal(perSegmentNoiseSignature(), '');
-  });
-  withState({ effectScope: 'segment', segments: [
-    { start: 0, end: 3, origin: 'x', fxOff: [] },
-    { start: 3, end: 6, origin: 'x', fxOff: ['noise'] }
-  ] }, () => {
-    assert.equal(perSegmentNoiseSignature(), '3-6;');
-  });
-});
-
-test('buildDenoiseComposite returns the denoise cache when nothing opts out', () => {
-  const raw = mockAudioBuffer([new Float32Array([1, 1, 1, 1])]);
-  const cache = createChannelCache([new Float32Array([9, 9, 9, 9])], 4, 48000);
-  // Whole-recording scope: opt-outs are ignored, so the full cache is used.
-  withState({ effectScope: 'all', segments: [{ start: 0, end: 4, origin: 'x', fxOff: ['noise'] }] }, () => {
-    assert.equal(buildDenoiseComposite(raw, cache), cache);
-  });
-  // Segment scope but no segment opted out → still the full cache (no copy).
-  withState({ effectScope: 'segment', segments: [{ start: 0, end: 4, origin: 'x', fxOff: [] }] }, () => {
-    assert.equal(buildDenoiseComposite(raw, cache), cache);
-  });
-});
-
-test('buildDenoiseComposite splices raw into segments that opted out of noise', () => {
-  const raw = mockAudioBuffer([new Float32Array([1, 2, 3, 4, 5, 6])]);
-  const cache = createChannelCache([new Float32Array([9, 9, 9, 9, 9, 9])], 6, 48000);
-  withState({ effectScope: 'segment', segments: [
-    { start: 0, end: 3, origin: 'x', fxOff: [] },        // noise on → denoised
-    { start: 3, end: 6, origin: 'x', fxOff: ['noise'] }  // noise off → raw
-  ] }, () => {
-    const out = buildDenoiseComposite(raw, cache);
-    assert.notEqual(out, cache);
-    assert.deepEqual([...out.getChannelData(0)], [9, 9, 9, 4, 5, 6]);
-    // The denoise cache itself is never mutated.
-    assert.deepEqual([...cache.getChannelData(0)], [9, 9, 9, 9, 9, 9]);
-  });
+  // A gate/EQ/de-esser setting change (its signature) forces a re-sync.
+  assert.ok(!effectsFingerprintsEqual(base, { ...base, gateSig: '1:-40:5:100:200' }));
+  assert.ok(!effectsFingerprintsEqual(base, { ...base, eqSig: '0:0:0:0' }));
+  assert.ok(!effectsFingerprintsEqual(base, { ...base, deesserSig: '1:-28:0.6' }));
 });
 
 test('mergeSyncHints keeps the stronger hint', () => {
@@ -167,13 +106,22 @@ test('mergeSyncHints keeps the stronger hint', () => {
   assert.deepEqual(mergeSyncHints(light, light), light);
 });
 
-test('isEffectsActive reflects the two effect toggles', () => {
-  withState({ loudness: { enabled: false }, denoise: { enabled: false } }, () => {
+test('isEffectsActive reflects any of the four per-track cleanup toggles', () => {
+  withState({
+    denoise: { enabled: false }, gate: { enabled: false },
+    eq: { enabled: false }, deesser: { enabled: false }
+  }, () => {
     assert.equal(isEffectsActive(), false);
-    state.loudness.enabled = true;
-    assert.equal(isEffectsActive(), true);
-    state.loudness.enabled = false;
     state.denoise.enabled = true;
+    assert.equal(isEffectsActive(), true);
+    state.denoise.enabled = false;
+    state.gate.enabled = true;
+    assert.equal(isEffectsActive(), true);
+    state.gate.enabled = false;
+    state.eq.enabled = true;
+    assert.equal(isEffectsActive(), true);
+    state.eq.enabled = false;
+    state.deesser.enabled = true;
     assert.equal(isEffectsActive(), true);
   });
 });

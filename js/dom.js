@@ -17,18 +17,23 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLInputElement} trimSilenceThreshold
  * @property {HTMLInputElement} trimSilenceMinMs
  * @property {HTMLButtonElement} trimSilenceApply
- * @property {HTMLButtonElement} normalizeLoudnessButton
- * @property {HTMLDivElement} normalizeLoudnessPopover
- * @property {HTMLInputElement} normalizeLoudnessEnabled
- * @property {HTMLInputElement} normalizeTargetLufs
- * @property {HTMLInputElement} normalizeTruePeak
- * @property {HTMLButtonElement} removeNoiseButton
- * @property {HTMLDivElement} effectScopeControl
- * @property {HTMLButtonElement} effectScopeAll
- * @property {HTMLButtonElement} effectScopeSegment
- * @property {HTMLDivElement} segFxQuick
- * @property {HTMLButtonElement} segFxAllOn
- * @property {HTMLButtonElement} segFxAllOff
+ * @property {HTMLButtonElement} masterFxButton
+ * @property {HTMLDivElement} masterFxPopover
+ * @property {HTMLInputElement} masterLoudnessEnabled
+ * @property {HTMLInputElement} masterTargetLufs
+ * @property {HTMLInputElement} masterTruePeak
+ * @property {HTMLDivElement} loudnessPresets
+ * @property {HTMLDivElement} trackFxPopover
+ * @property {HTMLDivElement} trackFxTitle
+ * @property {HTMLInputElement} fxDenoiseEnabled
+ * @property {HTMLInputElement} fxGateEnabled
+ * @property {HTMLInputElement} fxGateThreshold
+ * @property {HTMLInputElement} fxEqEnabled
+ * @property {HTMLInputElement} fxEqLow
+ * @property {HTMLInputElement} fxEqMid
+ * @property {HTMLInputElement} fxEqHigh
+ * @property {HTMLInputElement} fxDeesserEnabled
+ * @property {HTMLInputElement} fxDeesserAmount
  * @property {HTMLButtonElement} undoButton
  * @property {HTMLButtonElement} redoButton
  * @property {HTMLButtonElement} playheadCaretTop
@@ -125,12 +130,14 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   splitButton: $('splitButton'), deleteSegmentButton: $('deleteSegmentButton'),
   trimSilenceButton: $('trimSilenceButton'), trimSilencePopover: $('trimSilencePopover'),
   trimSilenceThreshold: $('trimSilenceThreshold'), trimSilenceMinMs: $('trimSilenceMinMs'), trimSilenceApply: $('trimSilenceApply'),
-  normalizeLoudnessButton: $('normalizeLoudnessButton'), normalizeLoudnessPopover: $('normalizeLoudnessPopover'),
-  normalizeLoudnessEnabled: $('normalizeLoudnessEnabled'),
-  normalizeTargetLufs: $('normalizeTargetLufs'), normalizeTruePeak: $('normalizeTruePeak'),
-  removeNoiseButton: $('removeNoiseButton'),
-  effectScopeControl: $('effectScopeControl'), effectScopeAll: $('effectScopeAll'), effectScopeSegment: $('effectScopeSegment'),
-  segFxQuick: $('segFxQuick'), segFxAllOn: $('segFxAllOn'), segFxAllOff: $('segFxAllOff'),
+  masterFxButton: $('masterFxButton'), masterFxPopover: $('masterFxPopover'),
+  masterLoudnessEnabled: $('masterLoudnessEnabled'),
+  masterTargetLufs: $('masterTargetLufs'), masterTruePeak: $('masterTruePeak'), loudnessPresets: $('loudnessPresets'),
+  trackFxPopover: $('trackFxPopover'), trackFxTitle: $('trackFxTitle'),
+  fxDenoiseEnabled: $('fxDenoiseEnabled'),
+  fxGateEnabled: $('fxGateEnabled'), fxGateThreshold: $('fxGateThreshold'),
+  fxEqEnabled: $('fxEqEnabled'), fxEqLow: $('fxEqLow'), fxEqMid: $('fxEqMid'), fxEqHigh: $('fxEqHigh'),
+  fxDeesserEnabled: $('fxDeesserEnabled'), fxDeesserAmount: $('fxDeesserAmount'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'),
   stage: $('stage'),
