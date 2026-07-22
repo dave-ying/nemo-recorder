@@ -6,6 +6,10 @@ let openIndex = -1;
 
 export function closeSegmentContextMenu() {
   el.segmentContextMenu.hidden = true;
+  // Make sure we don't leave the trash-hover flag stuck on if the menu closes
+  // while the pointer is still over the Delete item (mouseleave may not fire
+  // reliably when the menu is hidden mid-hover).
+  state.isHoveringTrash = false;
   openIndex = -1;
 }
 
@@ -52,6 +56,8 @@ export function initSegmentContextMenu() {
     if (openIndex >= 0) deleteSegmentByIndex(openIndex);
     closeSegmentContextMenu();
   });
+  el.segmentContextDelete.addEventListener('mouseenter', () => { state.isHoveringTrash = true; });
+  el.segmentContextDelete.addEventListener('mouseleave', () => { state.isHoveringTrash = false; });
 
   document.addEventListener('pointerdown', (e) => {
     if (el.segmentContextMenu.hidden) return;
