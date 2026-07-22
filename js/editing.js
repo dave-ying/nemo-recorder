@@ -78,6 +78,8 @@ export function selectAdjacentSegment(direction) {
 // (loadUploadedFile): both produce a full-length AudioBuffer that becomes the
 // new original/edited recording, and land in the same playback-ready state.
 export function loadBufferAsRecording(buffer, toastMessage) {
+  if (state.isPlaying) pausePlayback();
+  state.clipboardSegment = null;
   state.originalBuffer = buffer;
   state.recordedBuffer = buffer;
   state.segments = [{ start: 0, end: buffer.length, origin: 'capture' }];
@@ -199,11 +201,13 @@ export function deleteSegmentByIndex(index) {
   pushHistory();
   state.segments.splice(index, 1);
   rebuildPlaybackBuffer();
+  state.bufferEpoch++;
 
   if (!state.recordedBuffer) {
     hideSegmentTrash();
     clearSegmentHover();
     el.playButton.classList.remove('playing');
+    state.playbackOffset = 0;
     el.timeCurrent.textContent = '00:00.000';
     el.timeTotal.textContent = '00:00.000';
     setTransportDisabled(true);
@@ -248,20 +252,43 @@ export function copySegmentByIndex(index) {
   showToast(`Copied segment ${index + 1}`);
 }
 
-// Appends `newLen` samples (produced per channel by `fillChannel`) onto
-// originalBuffer. Shared by every paste/duplicate path, which each only
-// differ in where the new samples come from and where the resulting segment
-// gets spliced in.
-function concatClipOntoOriginal(newLen, fillChannel) {
-  const nch = state.originalBuffer.numberOfChannels;
-  const oldLen = state.originalBuffer.length;
-  const combined = state.audioContext.createBuffer(nch, oldLen + newLen, state.originalBuffer.sampleRate);
+// Builds a new originalBuffer (old samples + new samples appended) AND a new
+// recordedBuffer (from the pre-computed final segment layout) in a single pass,
+// so each source sample is read once instead of twice.
+// `newSegments` is the final segment array (after splice/insert) — ranges with
+// start < oldLen read from originalBuffer; the range at oldLen reads from
+// `fillChannel`. The caller must compute `newSegments` before calling this.
+function concatAndRebuild(newLen, fillChannel, newSegments, oldLen) {
+  const orig = state.originalBuffer;
+  const nch = orig.numberOfChannels;
+
+  let totalRec = 0;
+  for (const s of newSegments) totalRec += (s.end - s.start);
+  const combined = state.audioContext.createBuffer(nch, oldLen + newLen, orig.sampleRate);
+  const recorded = state.audioContext.createBuffer(nch, totalRec, orig.sampleRate);
+
   for (let c = 0; c < nch; c++) {
-    const dst = combined.getChannelData(c);
-    dst.set(state.originalBuffer.getChannelData(c), 0);
-    dst.set(fillChannel(c), oldLen);
+    const origCh = orig.getChannelData(c);
+    const combDst = combined.getChannelData(c);
+    const recDst = recorded.getChannelData(c);
+
+    combDst.set(origCh, 0);
+    const newCh = fillChannel(c);
+    combDst.set(newCh, oldLen);
+
+    let off = 0;
+    for (const s of newSegments) {
+      const len = s.end - s.start;
+      if (s.start >= oldLen) {
+        recDst.set(newCh.subarray(s.start - oldLen, s.end - oldLen), off);
+      } else {
+        recDst.set(origCh.subarray(s.start, s.end), off);
+      }
+      off += len;
+    }
   }
-  return { combined, oldLen };
+
+  return { combined, recorded };
 }
 
 // Shared tail for paste-after/duplicate: appends `newLen` samples (produced
@@ -271,34 +298,42 @@ function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLabel, to
   if (!state.originalBuffer || !state.audioContext) return;
   if (state.isPlaying) pausePlayback();
 
-  const { combined, oldLen } = concatClipOntoOriginal(newLen, fillChannel);
+  const oldLen = state.originalBuffer.length;
+  const insertAt = Math.max(0, Math.min(afterIndex + 1, state.segments.length));
+  const newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
+  newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel });
+
+  const { combined, recorded } = concatAndRebuild(newLen, fillChannel, newSegments, oldLen);
 
   pushHistory();
+  state.bufferEpoch++;
   state.originalBuffer = combined;
-  const insertAt = Math.max(0, Math.min(afterIndex + 1, state.segments.length));
-  state.segments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel });
-  rebuildPlaybackBuffer();
+  state.recordedBuffer = recorded;
+  state.segments = newSegments;
+  state.cachedPeaks = null;
+  state.cachedPath = null;
 
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   updateSegmentCountDisplay();
   updateEmptyState();
   clearSegmentHover();
-  // Select the segment that was just created: visual confirmation of what
-  // landed and where. It also makes repeated paste/duplicate chain forward —
-  // each new block becomes the anchor for the next one — instead of stacking
-  // every copy in the same slot.
   showSegmentTrash(insertAt);
   const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
   drawPlaybackWaveform(ratio);
   showToast(toastMessage);
 }
 
-export function pasteSegmentAfterIndex(index) {
+export async function pasteSegmentAfterIndex(index) {
   const clip = state.clipboardSegment;
   if (!clip) { showToast('Nothing to paste — copy a segment first'); return; }
+  const target = state.originalBuffer;
+  const adapted = await adaptClipboardForPaste(clip);
+  if (!adapted) return;
+  // The recording may have been replaced while the clip was being resampled
+  if (state.originalBuffer !== target) { showToast('Cannot paste — recording was replaced', true); return; }
   insertClonedAudioAfter(
-    index, clip.length,
-    (c) => clip.channels[Math.min(c, clip.channels.length - 1)],
+    index, adapted.length,
+    (c) => adapted.channels[Math.min(c, adapted.channels.length - 1)],
     'paste', `Pasted after segment ${index + 1}`
   );
 }
@@ -344,49 +379,64 @@ export function isPlayheadMidSegment() {
 // playhead shifts right to make room. If the playhead sits exactly on a
 // segment boundary (or at the very end of the recording), no split is
 // needed; the paste just slots in there directly.
-export function pasteInsertAtPlayhead() {
+export async function pasteInsertAtPlayhead() {
   const clip = state.clipboardSegment;
   if (!clip) { showToast('Nothing to paste — copy a segment first'); return; }
   if (!state.recordedBuffer || !state.originalBuffer || !state.audioContext) return;
   if (state.isPlaying) pausePlayback();
+
+  const targetBuffer = state.originalBuffer;
+  const adapted = await adaptClipboardForPaste(clip);
+  if (!adapted) return;
+  if (state.originalBuffer !== targetBuffer) { showToast('Cannot paste — recording was replaced', true); return; }
 
   const info = classifyPlayheadPosition();
   if (!info) return;
   const { target, atSegStart, atRecordingEnd } = info;
   const { index, offsetInSeg, seg } = target;
 
-  const newLen = clip.length;
-  const { combined, oldLen } = concatClipOntoOriginal(newLen, (c) => clip.channels[Math.min(c, clip.channels.length - 1)]);
+  const newLen = adapted.length;
+  const fillChannel = (c) => adapted.channels[Math.min(c, adapted.channels.length - 1)];
+  const oldLen = state.originalBuffer.length;
 
-  pushHistory();
-  state.originalBuffer = combined;
-  const pasted = { start: oldLen, end: oldLen + newLen, origin: 'paste' };
-
+  let newSegments;
   let pastedIndex;
   let didSplit = false;
+
   if (atSegStart) {
     pastedIndex = index;
-    state.segments.splice(pastedIndex, 0, pasted);
+    newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
   } else if (atRecordingEnd) {
     pastedIndex = index + 1;
-    state.segments.splice(pastedIndex, 0, pasted);
+    newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
   } else {
     const splitPoint = seg.start + offsetInSeg;
-    state.segments.splice(index, 1,
-      { start: seg.start, end: splitPoint, origin: 'split' },
-      pasted,
-      { start: splitPoint, end: seg.end, origin: 'split' }
-    );
     pastedIndex = index + 1;
     didSplit = true;
+    newSegments = [];
+    for (let i = 0; i < state.segments.length; i++) {
+      if (i === index) {
+        newSegments.push({ start: seg.start, end: splitPoint, origin: 'split' });
+        newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'paste' });
+        newSegments.push({ start: splitPoint, end: seg.end, origin: 'split' });
+      } else {
+        newSegments.push({ start: state.segments[i].start, end: state.segments[i].end, origin: state.segments[i].origin });
+      }
+    }
   }
 
-  rebuildPlaybackBuffer();
+  const { combined, recorded } = concatAndRebuild(newLen, fillChannel, newSegments, oldLen);
 
-  // Every segment before pastedIndex is untouched by this edit, and by
-  // construction its total sample length equals editedSample — so the
-  // playhead's sample position in the new buffer is unchanged; it now sits
-  // at the start of the freshly pasted clip.
+  pushHistory();
+  state.bufferEpoch++;
+  state.originalBuffer = combined;
+  state.recordedBuffer = recorded;
+  state.segments = newSegments;
+  state.cachedPeaks = null;
+  state.cachedPath = null;
+
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
 
@@ -400,8 +450,18 @@ export function pasteInsertAtPlayhead() {
 }
 
 function applyHistorySnapshot(snapshot, render) {
+  // Decide BEFORE assigning the snapshot's epoch: if the snapshot was taken at
+  // the same buffer epoch as the current state, its concatenated PCM is
+  // identical (e.g. undoing/redoing a split, which only rearranges segment
+  // ranges without changing the underlying buffer) — skip the rebuild AND the
+  // peak invalidation entirely.
+  const pcmMatches = !!state.recordedBuffer && snapshot.bufferEpoch === state.bufferEpoch;
   state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
-  rebuildPlaybackBuffer();
+  state.bufferEpoch = snapshot.bufferEpoch;
+
+  if (!pcmMatches) {
+    rebuildPlaybackBuffer();
+  }
 
   hideSegmentTrash();
   clearSegmentHover();
@@ -414,8 +474,6 @@ function applyHistorySnapshot(snapshot, render) {
     setTransportDisabled(true);
     updateSegmentCountDisplay();
     render(0);
-    // The delete animation reveals the empty state in its onComplete; for
-    // a plain redraw (non-animated transition), do it now.
     if (render === drawPlaybackWaveform) updateEmptyState();
     return;
   }
@@ -495,24 +553,44 @@ async function adaptBuffer(buffer, targetSampleRate, targetChannels) {
   return ctx.startRendering();
 }
 
+// If the clipboard sample rate differs from the current originalBuffer, wrap
+// the clip's raw channels in a temporary AudioBuffer and resample/remix via
+// adaptBuffer so pasted audio plays back at the correct speed/pitch.
+async function adaptClipboardForPaste(clip) {
+  if (!state.audioContext || !state.originalBuffer) return null;
+  if (clip.sampleRate === state.originalBuffer.sampleRate && clip.channels.length === state.originalBuffer.numberOfChannels) return clip;
+  const nch = clip.channels.length;
+  const temp = state.audioContext.createBuffer(nch, clip.length, clip.sampleRate);
+  for (let c = 0; c < nch; c++) temp.copyToChannel(clip.channels[c], c);
+  const adapted = await adaptBuffer(temp, state.originalBuffer.sampleRate, state.originalBuffer.numberOfChannels);
+  const outChannels = [];
+  for (let c = 0; c < adapted.numberOfChannels; c++) outChannels.push(adapted.getChannelData(c));
+  return { channels: outChannels, length: adapted.length, sampleRate: adapted.sampleRate };
+}
+
 export async function appendBufferToRecording(buffer, toastMessage) {
   if (state.isPlaying) pausePlayback();
-  if (!state.originalBuffer) return;
-  const adapted = await adaptBuffer(buffer, state.originalBuffer.sampleRate, state.originalBuffer.numberOfChannels);
+  const target = state.originalBuffer;
+  if (!target) return;
+  const adapted = await adaptBuffer(buffer, target.sampleRate, target.numberOfChannels);
+  // Bail if originalBuffer was replaced or disconnected during the async wait
+  if (state.originalBuffer !== target || !state.audioContext) {
+    showToast('Cannot append — recording was replaced', true);
+    return;
+  }
   const oldLen = state.originalBuffer.length;
   const newLen = adapted.length;
-  const orig = state.originalBuffer;
-  const nch = orig.numberOfChannels;
-  const combined = state.audioContext.createBuffer(nch, oldLen + newLen, orig.sampleRate);
-  for (let c = 0; c < nch; c++) {
-    const dst = combined.getChannelData(c);
-    dst.set(orig.getChannelData(c), 0);
-    dst.set(adapted.getChannelData(c), oldLen);
-  }
+  const newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
+  newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append' });
+  const { combined, recorded } = concatAndRebuild(newLen, (c) => adapted.getChannelData(c), newSegments, oldLen);
+
   pushHistory();
+  state.bufferEpoch++;
   state.originalBuffer = combined;
-  state.segments.push({ start: oldLen, end: oldLen + newLen, origin: 'append' });
-  rebuildPlaybackBuffer();
+  state.recordedBuffer = recorded;
+  state.segments = newSegments;
+  state.cachedPeaks = null;
+  state.cachedPath = null;
   if (state.recordedBuffer) {
     el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   }
@@ -668,6 +746,7 @@ export function finishSegmentReorderDrag() {
   const [moved] = state.segments.splice(src, 1);
   state.segments.splice(target, 0, moved);
   rebuildPlaybackBuffer();
+  state.bufferEpoch++;
 
   // Preserve the playhead on the same audio content: find the (now-relocated)
   // segment by its {start, end} identity and reposition the playhead to the

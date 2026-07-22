@@ -108,9 +108,11 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {boolean} isRecording
  * @property {boolean} isPlaying
  * @property {Float32Array[][]} recordedChunks
+ * @property {number} recordedTotalSamples - total samples captured so far (for duration cap warning)
  * @property {AudioBuffer|null} originalBuffer
  * @property {AudioBuffer|null} recordedBuffer
  * @property {Array<{start: number, end: number, origin: string}>} segments
+ * @property {number} bufferEpoch - incremented on every PCM-mutating operation (paste/delete/append/duplicate/reorder); used by undo to skip rebuild for PCM-neutral edits (split)
  * @property {AudioBufferSourceNode|null} playbackSource
  * @property {number} playbackStartTime
  * @property {number} playbackOffset
@@ -158,9 +160,11 @@ export const state = {
   isRecording: false,
   isPlaying: false,
   recordedChunks: [],
+  recordedTotalSamples: 0,
   originalBuffer: null,
   recordedBuffer: null,
   segments: [],
+  bufferEpoch: 0,
   playbackSource: null,
   playbackStartTime: 0,
   playbackOffset: 0,

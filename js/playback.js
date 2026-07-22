@@ -6,6 +6,7 @@ import { formatTime } from './utils.js';
 const PLAYBACK_END_THRESHOLD = 0.01;
 const PLAYBACK_END_TOLERANCE = 0.05;
 let playbackRafId;
+let playbackStarting = false;
 
 // The context is suspended whenever nothing is audible (see suspendWhenIdle),
 // so a running state here always means audio is actually flowing.
@@ -15,34 +16,47 @@ function suspendWhenIdle() {
   }
 }
 
+export function isPlaybackActive() {
+  return state.isPlaying || playbackStarting;
+}
+
 export async function startPlayback() {
   if (!state.recordedBuffer || !state.audioContext) return;
-  if (state.audioContext.state === 'suspended') await state.audioContext.resume();
-  if (state.playbackOffset >= state.recordedBuffer.duration - PLAYBACK_END_THRESHOLD) state.playbackOffset = 0;
+  if (playbackStarting || state.isPlaying) return;
+  playbackStarting = true;
+  try {
+    if (state.audioContext.state === 'suspended') await state.audioContext.resume();
+    if (state.playbackOffset >= state.recordedBuffer.duration - PLAYBACK_END_THRESHOLD) state.playbackOffset = 0;
 
-  state.playbackSource = state.audioContext.createBufferSource();
-  state.playbackSource.buffer = state.recordedBuffer;
-  state.playbackSource.connect(state.audioContext.destination);
+    const src = state.audioContext.createBufferSource();
+    state.playbackSource = src;
+    src.buffer = state.recordedBuffer;
+    src.connect(state.audioContext.destination);
 
-  state.playbackSource.onended = () => {
-    if (state.isPlaying) {
-      const elapsed = state.audioContext.currentTime - state.playbackStartTime + state.playbackOffset;
-      if (elapsed >= state.recordedBuffer.duration - PLAYBACK_END_TOLERANCE) {
-        state.isPlaying = false;
-        state.playbackOffset = 0;
-        el.playButton.classList.remove('playing');
-        drawPlaybackWaveform(0);
-        el.timeCurrent.textContent = '00:00.000';
-        suspendWhenIdle();
+    src.onended = () => {
+      if (src !== state.playbackSource) return;
+      if (state.isPlaying) {
+        const elapsed = state.audioContext.currentTime - state.playbackStartTime + state.playbackOffset;
+        if (elapsed >= state.recordedBuffer.duration - PLAYBACK_END_TOLERANCE) {
+          state.isPlaying = false;
+          state.playbackSource = null;
+          state.playbackOffset = 0;
+          el.playButton.classList.remove('playing');
+          drawPlaybackWaveform(0);
+          el.timeCurrent.textContent = '00:00.000';
+          suspendWhenIdle();
+        }
       }
-    }
-  };
+    };
 
-  state.playbackStartTime = state.audioContext.currentTime;
-  state.playbackSource.start(0, state.playbackOffset);
-  state.isPlaying = true;
-  el.playButton.classList.add('playing');
-  animatePlayback();
+    state.playbackStartTime = state.audioContext.currentTime;
+    src.start(0, state.playbackOffset);
+    state.isPlaying = true;
+    el.playButton.classList.add('playing');
+    animatePlayback();
+  } finally {
+    playbackStarting = false;
+  }
 }
 
 export function pausePlayback() {
@@ -65,6 +79,7 @@ function animatePlayback() {
   const elapsed = state.audioContext.currentTime - state.playbackStartTime + state.playbackOffset;
   if (elapsed >= state.recordedBuffer.duration) {
     state.isPlaying = false;
+    if (state.playbackSource) { try { state.playbackSource.disconnect(); } catch(e) {} state.playbackSource = null; }
     state.playbackOffset = 0;
     el.playButton.classList.remove('playing');
     drawPlaybackWaveform(0);
@@ -79,6 +94,7 @@ function animatePlayback() {
 }
 
 export function seekToRatio(ratio) {
+  if (!state.recordedBuffer || !state.audioContext) return;
   ratio = Math.max(0, Math.min(1, ratio));
   const wasPlaying = state.isPlaying;
   if (state.isPlaying) pausePlayback();

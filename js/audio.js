@@ -142,6 +142,7 @@ function releaseMicStream() {
 
 export function disconnectMicrophone() {
   if (state.isPlaying) pausePlayback();
+  state.clipboardSegment = null;
   stopRecordingNodes();
   releaseMicStream();
   if (state.audioContext) {
@@ -276,6 +277,14 @@ export async function startRecording() {
     state.workletNode.port.onmessage = (e) => {
       if (e.data.type === 'audio') {
         state.recordedChunks.push(e.data.channels);
+        const prevTotal = state.recordedTotalSamples;
+        state.recordedTotalSamples += e.data.channels[0].length;
+        // Warn once when crossing ~30 minutes (block sizes skip exact
+        // thresholds, so test for a crossing, not equality)
+        const threshold = 30 * 60 * state.audioContext.sampleRate;
+        if (prevTotal < threshold && state.recordedTotalSamples >= threshold) {
+          showToast('Recording has reached 30 minutes — consider saving to avoid memory issues', true);
+        }
         processLiveAudio(e.data.channels);
       }
     };
@@ -288,6 +297,7 @@ export async function startRecording() {
     state.liveFilled = 0;
     state.liveLevel = 0;
     state.recordedChunks = [];
+    state.recordedTotalSamples = 0;
     state.recordStartTime = performance.now();
     state.isRecording = true;
 
@@ -315,6 +325,7 @@ function teardownCaptureSession() {
 export function cancelRecordingCapture() {
   teardownCaptureSession();
   state.recordedChunks = [];
+  state.recordedTotalSamples = 0;
 }
 
 function processLiveAudio(channels) {
@@ -454,19 +465,17 @@ export async function stopRecording() {
 
   const numChannels = state.recordedChunks[0].length;
   const totalLength = state.recordedChunks.reduce((sum, chs) => sum + chs[0].length, 0);
-  const combined = [];
-  for (let c = 0; c < numChannels; c++) {
-    const arr = new Float32Array(totalLength);
-    let offset = 0;
-    for (const chs of state.recordedChunks) {
-      arr.set(chs[c], offset);
-      offset += chs[c].length;
-    }
-    combined.push(arr);
-  }
 
   const buffer = state.audioContext.createBuffer(numChannels, totalLength, state.audioContext.sampleRate);
-  for (let c = 0; c < numChannels; c++) buffer.copyToChannel(combined[c], c);
+  for (let c = 0; c < numChannels; c++) {
+    let offset = 0;
+    for (const chs of state.recordedChunks) {
+      const src = /** @type {Float32Array<ArrayBuffer>} */ (/** @type {*} */ (chs[c]));
+      buffer.copyToChannel(src, c, offset);
+      offset += src.length;
+    }
+  }
+  state.recordedChunks = [];
 
   // Called from the record modal: stash the take for its review flow. The
   // modal decides whether to load or append it (see record-modal.js).
