@@ -34,57 +34,19 @@ export const WAVEFORM_STYLE = {
   tickColor: 'rgba(110, 110, 122, 0.5)'
 };
 
-// ===== Per-segment effect scoping =====
+// ===== Effects model =====
 //
-// Effects default to the whole recording (state.effectScope === 'all'). The
-// user can switch to per-segment scope ('segment'), where each per-segmentable
-// effect can be toggled on/off per segment. Loudness normalization is
-// deliberately NOT per-segmentable — it exists to make the whole program
-// consistent, so it always applies to everything and ignores effectScope.
-//
-// Each per-segment-capable effect carries its own IDENTITY COLOR so multiple
-// effects stay legible at a glance: in per-segment mode every card shows one
-// small chip per enabled per-segment effect, filled in that effect's color
-// when on, hollow when off. Colors are chosen distinct from the teal waveform
-// and the orange accent/selection so a chip never reads as "selected".
-//
-// `color` is the on/identity color; `colorSoft` is the faint fill used behind
-// an "off" chip. `isEnabled` reads whether the effect is globally on (its
-// toolbar toggle) — chips only appear for enabled effects.
-/** @type {Array<{key: string, label: string, color: string, colorSoft: string, isEnabled: () => boolean}>} */
-export const PER_SEGMENT_EFFECTS = [
-  { key: 'noise', label: 'Noise removal', color: 'rgba(167, 139, 250, 1)', colorSoft: 'rgba(167, 139, 250, 0.16)', isEnabled: () => state.denoise.enabled }
-];
+// Effects are split into two tiers:
+//   - Per-track "source cleanup" — denoise, noise gate, EQ, de-esser. Each
+//     lives on the Track (see below) and applies to everything on that track.
+//   - Master "finishing" — loudness normalization (state.master.loudness),
+//     applied to the summed mix in editing.js's rebuildMix().
+// There is no per-segment scoping: to exclude part of a recording from an
+// effect, move that segment to its own track.
 
-export const SEGMENT_CHIP_SIZE_CSS_PX = 15;
-export const SEGMENT_CHIP_GAP_CSS_PX = 4;
-export const SEGMENT_CHIP_MARGIN_CSS_PX = 6;
-
-/** The per-segment effects whose global toggle is currently on. */
-export function enabledPerSegmentEffects() {
-  return PER_SEGMENT_EFFECTS.filter(e => e.isEnabled());
-}
-
-/** True when per-segment chips should render/hit-test (segment scope + at least one enabled per-segment effect). */
-export function perSegmentUiActive() {
-  return state.effectScope === 'segment' && PER_SEGMENT_EFFECTS.some(e => e.isEnabled());
-}
-
-/**
- * Does the given effect apply to this segment right now? In whole-recording
- * scope every effect applies to every segment; in per-segment scope a segment
- * opts out by listing the effect key in its `fxOff` array.
- * @param {{fxOff?: string[]}} seg
- * @param {string} key
- */
-export function segmentEffectOn(seg, key) {
-  if (state.effectScope !== 'segment') return true;
-  return !(seg.fxOff && seg.fxOff.includes(key));
-}
-
-/** Clone a segment (including its per-segment effect opt-outs). */
+/** Clone a segment. */
 export function cloneSeg(s) {
-  return { start: s.start, end: s.end, origin: s.origin, fxOff: s.fxOff ? s.fxOff.slice() : [] };
+  return { start: s.start, end: s.end, origin: s.origin };
 }
 
 export const SELECTION_PULSE_PERIOD_SEC = 2;
@@ -153,10 +115,11 @@ export const APPEND_BUTTON_SIZE_CSS_PX = 32;
  * more of these, and `state.activeTrackIndex` selects the one that record /
  * upload / paste / edit operations target. Everything that used to be a
  * top-level `state` field for the (single) recording now lives per-track;
- * `state.originalBuffer`, `state.segments`, `state.effectScope`,
- * `state.denoise`, `state.loudness`, and `state.effectsBuffer` are accessor
- * proxies onto the active track (see the `state` object below) so existing
- * single-track code keeps working unchanged.
+ * `state.originalBuffer`, `state.segments`, `state.effectsBuffer`, and the
+ * per-track cleanup effects `state.denoise`/`state.gate`/`state.eq`/
+ * `state.deesser` are accessor proxies onto the active track (see the `state`
+ * object below) so existing single-track code keeps working unchanged.
+ * (Loudness is NOT per-track — it's a master finishing effect in state.master.)
  *
  * `state.recordedBuffer` is NOT per-track — it is the mixed-down master
  * (all tracks summed) that playback and export consume.
@@ -166,10 +129,11 @@ export const APPEND_BUTTON_SIZE_CSS_PX = 32;
  * @property {string} name - user-facing lane label
  * @property {AudioBuffer|null} originalBuffer - untouched captured/loaded PCM for this track
  * @property {AudioBuffer|null} effectsBuffer - processed full-length parallel of originalBuffer (see effects.js); null when no effects on
- * @property {Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>} segments - {start,end} ranges into originalBuffer for this track
- * @property {'all'|'segment'} effectScope
- * @property {{enabled: boolean, targetLufs: number, truePeakDbtp: number}} loudness
- * @property {{enabled: boolean, processing: boolean}} denoise
+ * @property {Array<{start: number, end: number, origin: string, tStart?: number}>} segments - {start,end} ranges into originalBuffer for this track
+ * @property {{enabled: boolean, processing: boolean}} denoise - RNNoise noise removal
+ * @property {{enabled: boolean, thresholdDb: number, attackMs: number, holdMs: number, releaseMs: number}} gate - noise gate
+ * @property {{enabled: boolean, lowGainDb: number, midGainDb: number, highGainDb: number}} eq - 3-band EQ
+ * @property {{enabled: boolean, thresholdDb: number, amount: number}} deesser - de-esser
  * @property {boolean} muted - excluded from the mixdown when true
  * @property {boolean} solo - when any track is soloed, only soloed tracks are mixed
  * @property {number} gainDb - per-track mix gain in dB (0 = unity)
@@ -190,9 +154,10 @@ export function createTrack(overrides = {}) {
     originalBuffer: null,
     effectsBuffer: null,
     segments: [],
-    effectScope: 'all',
-    loudness: { enabled: false, targetLufs: -16, truePeakDbtp: -1 },
     denoise: { enabled: false, processing: false },
+    gate: { enabled: false, thresholdDb: -45, attackMs: 5, holdMs: 100, releaseMs: 200 },
+    eq: { enabled: false, lowGainDb: 0, midGainDb: 0, highGainDb: 0 },
+    deesser: { enabled: false, thresholdDb: -28, amount: 0.6 },
     muted: false,
     solo: false,
     gainDb: 0,
@@ -226,8 +191,7 @@ export function getActiveTrack() {
  * @property {AudioBuffer|null} originalBuffer
  * @property {AudioBuffer|null} recordedBuffer - the ACTIVE track's editor buffer (its kept segments concatenated); what the waveform editor draws and edits
  * @property {AudioBuffer|null} mixBuffer - the master mixdown of ALL audible tracks at their offsets/gains; what master playback and export consume
- * @property {Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>} segments - fxOff lists per-segmentable effect keys turned off for that segment (per-segment scope only; see PER_SEGMENT_EFFECTS)
- * @property {'all'|'segment'} effectScope - scope for per-segmentable effects: 'all' applies them to the whole recording (default), 'segment' honors each segment's fxOff. Loudness ignores this. Session setting, outside undo history.
+ * @property {Array<{start: number, end: number, origin: string, tStart?: number}>} segments
  * @property {number} bufferEpoch - incremented on every PCM-mutating operation (paste/delete/append/duplicate/reorder); used by undo to skip rebuild for PCM-neutral edits (split)
  * @property {AudioBufferSourceNode|null} playbackSource
  * @property {number} playbackStartTime
@@ -248,7 +212,7 @@ export function getActiveTrack() {
  * @property {(() => void)|null} liveResizeHandler
  * @property {boolean} isDownloading
  * @property {AudioBuffer|null} effectsBuffer - processed full-length parallel of originalBuffer (same length) with the enabled effects applied (see js/effects.js); null when no effects are on. Segment {start, end} ranges index into it interchangeably because every effect is length-preserving.
- * @property {{enabled: boolean, targetLufs: number, truePeakDbtp: number}} loudness - loudness-normalization effect: persistent toggle + settings (see js/effects.js)
+ * @property {{loudness: {enabled: boolean, targetLufs: number, truePeakDbtp: number}}} master - master "finishing" effects applied to the summed mix (see rebuildMix in editing.js); loudness normalization for now
  * @property {{thresholdDb: number, minSilenceMs: number}} trimSilence - settings for the Trim Silence button (see js/trim-silence.js)
  * @property {{sampleRate: number, bitDepth: number, channels: number}} settings
  * @property {{format: string, quality: number}} exportSettings
@@ -262,7 +226,10 @@ export function getActiveTrack() {
  * @property {number} previewStartTime
  * @property {number} previewOffset
  * @property {boolean} isPreviewing
- * @property {{enabled: boolean, processing: boolean}} denoise - noise-removal effect: persistent toggle + busy flag (see js/effects.js)
+ * @property {{enabled: boolean, processing: boolean}} denoise - active track's noise-removal effect (proxy; see js/effects.js)
+ * @property {{enabled: boolean, thresholdDb: number, attackMs: number, holdMs: number, releaseMs: number}} gate - active track's noise gate (proxy)
+ * @property {{enabled: boolean, lowGainDb: number, midGainDb: number, highGainDb: number}} eq - active track's EQ (proxy)
+ * @property {{enabled: boolean, thresholdDb: number, amount: number}} deesser - active track's de-esser (proxy)
  * @property {ClipboardSegment|null} clipboardSegment - last segment copied via Copy (context menu or Ctrl+C)
  */
 
@@ -279,12 +246,16 @@ export const state = {
   set effectsBuffer(v) { this.tracks[this.activeTrackIndex].effectsBuffer = v; },
   get segments() { return this.tracks[this.activeTrackIndex].segments; },
   set segments(v) { this.tracks[this.activeTrackIndex].segments = v; },
-  get effectScope() { return this.tracks[this.activeTrackIndex].effectScope; },
-  set effectScope(v) { this.tracks[this.activeTrackIndex].effectScope = v; },
-  get loudness() { return this.tracks[this.activeTrackIndex].loudness; },
-  set loudness(v) { this.tracks[this.activeTrackIndex].loudness = v; },
   get denoise() { return this.tracks[this.activeTrackIndex].denoise; },
   set denoise(v) { this.tracks[this.activeTrackIndex].denoise = v; },
+  get gate() { return this.tracks[this.activeTrackIndex].gate; },
+  set gate(v) { this.tracks[this.activeTrackIndex].gate = v; },
+  get eq() { return this.tracks[this.activeTrackIndex].eq; },
+  set eq(v) { this.tracks[this.activeTrackIndex].eq = v; },
+  get deesser() { return this.tracks[this.activeTrackIndex].deesser; },
+  set deesser(v) { this.tracks[this.activeTrackIndex].deesser = v; },
+  // Master "finishing" effects — applied to the summed mix, not per-track.
+  master: { loudness: { enabled: false, targetLufs: -16, truePeakDbtp: -1 } },
   audioContext: null,
   mediaStream: null,
   sourceNode: null,

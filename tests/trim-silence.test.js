@@ -282,20 +282,6 @@ test('remapSegments: full-segment silence drops the segment', () => {
   assert.equal(entries.length, 2);
 });
 
-test('remapSegments: carries per-segment effect opt-outs (fxOff) across compaction', () => {
-  const segs = [
-    { start: 0, end: 1000, origin: 'capture', fxOff: ['noise'] },
-    { start: 1000, end: 2000, origin: 'capture' }
-  ];
-  // Silence trims the tail of the first segment; its fxOff must survive.
-  const silences = [{ start: 900, end: 1000 }];
-  const { newSegments } = remapSegments(segs, silences);
-  assert.deepEqual(newSegments, [
-    { start: 0, end: 900, origin: 'capture', fxOff: ['noise'] },
-    { start: 900, end: 1900, origin: 'capture' }
-  ]);
-});
-
 test('remapSegments: silence inside a segment splits it into one non-silent entry', () => {
   const segs = [{ start: 0, end: 3000, origin: 'capture' }];
   const silences = [{ start: 1000, end: 2000 }];

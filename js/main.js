@@ -2,17 +2,16 @@ import { state, SEGMENT_DRAG_THRESHOLD_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState, attachToolbarPopover } from './ui.js';
 import { applyTrimSilence } from './trim-silence.js';
-import { toggleLoudness, toggleDenoise, refreshLoudness, setEffectScope } from './effects.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint, invalidateRectCache } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead, setAllSegmentsEffects } from './editing.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead } from './editing.js';
 import { startPlayback, pausePlayback, isPlaybackActive } from './playback.js';
 import { arrowKeyDown, arrowKeyUp, stepBySeconds } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 import { closeHelpModal, initHelpModal } from './help-modal.js';
 import { openSegmentContextMenu, initSegmentContextMenu, closeSegmentContextMenu } from './context-menu.js';
-import { addTrack, toggleMasterPlayback, stopMasterPlayback, updateTracksPanel } from './tracks.js';
+import { addTrack, toggleMasterPlayback, stopMasterPlayback, updateTracksPanel, initEffectsUI } from './tracks.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
 let _pendingSeekClientX = null;
@@ -71,17 +70,17 @@ el.deleteSegmentButton.addEventListener('click', () => {
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
 
-// ===== Audio tools (trim silence / loudness normalize / noise removal) =====
+// ===== Audio tools =====
+//
+// Trim silence is a one-shot destructive tool (stays in the editor toolbar).
+// Per-track cleanup effects (denoise/gate/EQ/de-esser) and the master
+// "finishing" loudness control live in the tracks rail — wired by tracks.js.
 
 const closeTrimPopover = attachToolbarPopover(el.trimSilenceButton, el.trimSilencePopover);
-attachToolbarPopover(el.normalizeLoudnessButton, el.normalizeLoudnessPopover);
 
 // Seed the popover inputs from state (single source of truth for defaults).
 el.trimSilenceThreshold.value = String(state.trimSilence.thresholdDb);
 el.trimSilenceMinMs.value = String(state.trimSilence.minSilenceMs);
-el.normalizeLoudnessEnabled.checked = state.loudness.enabled;
-el.normalizeTargetLufs.value = String(state.loudness.targetLufs);
-el.normalizeTruePeak.value = String(state.loudness.truePeakDbtp);
 
 el.trimSilenceThreshold.addEventListener('change', () => {
   const v = Math.round(Number(el.trimSilenceThreshold.value));
@@ -98,42 +97,8 @@ el.trimSilenceApply.addEventListener('click', () => {
   applyTrimSilence();
 });
 
-// Loudness normalization is a persistent effect (effects.js): the toggle
-// turns it on/off for ALL audio — including anything recorded or uploaded
-// later — and the settings re-apply live while it's enabled.
-el.normalizeLoudnessEnabled.addEventListener('change', () => {
-  toggleLoudness(el.normalizeLoudnessEnabled.checked);
-});
-el.normalizeTargetLufs.addEventListener('change', () => {
-  const v = Number(el.normalizeTargetLufs.value);
-  if (Number.isFinite(v)) state.loudness.targetLufs = Math.max(-70, Math.min(0, v));
-  el.normalizeTargetLufs.value = String(state.loudness.targetLufs);
-  refreshLoudness();
-});
-el.normalizeTruePeak.addEventListener('change', () => {
-  const v = Number(el.normalizeTruePeak.value);
-  if (Number.isFinite(v)) state.loudness.truePeakDbtp = Math.min(0, v);
-  el.normalizeTruePeak.value = String(state.loudness.truePeakDbtp);
-  refreshLoudness();
-});
-
-el.removeNoiseButton.addEventListener('click', () => {
-  toggleDenoise(!state.denoise.enabled);
-});
-
-// Effect scope: whole recording vs per segment. The control is only live once
-// a per-segmentable effect is on (it carries data-disabled otherwise, and CSS
-// blocks pointer events), so the guard here is belt-and-suspenders.
-el.effectScopeAll.addEventListener('click', () => {
-  if (el.effectScopeControl.getAttribute('data-disabled') === 'true') return;
-  setEffectScope('all');
-});
-el.effectScopeSegment.addEventListener('click', () => {
-  if (el.effectScopeControl.getAttribute('data-disabled') === 'true') return;
-  setEffectScope('segment');
-});
-el.segFxAllOn.addEventListener('click', () => setAllSegmentsEffects(true));
-el.segFxAllOff.addEventListener('click', () => setAllSegmentsEffects(false));
+// Per-track FX dropdown + master finishing popover.
+initEffectsUI();
 
 const closeAppendMenu = () => { el.appendMenu.hidden = true; };
 
