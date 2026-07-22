@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { el, reviewCtx } from './dom.js';
 import { formatTime } from './utils.js';
-import { updateEmptyState, setTransportDisabled, confirmDialog } from './ui.js';
+import { updateEmptyState, setTransportDisabled, confirmDialog, renderMicDeviceOptions } from './ui.js';
 import { connectMicrophone, disconnectMicrophone, startRecording, stopRecording, cancelRecordingCapture } from './audio.js';
 import { loadBufferAsRecording, appendBufferToRecording } from './editing.js';
 import { computePeaksForRange, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
@@ -70,6 +70,8 @@ function showDisconnectedState() {
   el.rmSettingsBtn.hidden = true;
   el.rmDisconnectBtn.hidden = true;
   el.rmSettingsWrap.classList.remove('expanded');
+  el.micDeviceSelect.hidden = true;
+  el.micName.hidden = false;
   showView('nomic');
   el.rmRecordingControls.hidden = true;
   el.rmReviewControls.hidden = true;
@@ -87,12 +89,15 @@ function showReadyState() {
   el.rmRecordingControls.hidden = true;
   el.rmReviewControls.hidden = true;
   el.rmActionsRight.hidden = true;
+  renderMicDeviceOptions();
 }
 
 function showRecordingState() {
   el.rmSettingsBtn.hidden = true;
   el.rmDisconnectBtn.hidden = true;
   el.rmSettingsWrap.classList.remove('expanded');
+  el.micDeviceSelect.hidden = true;
+  el.micName.hidden = false;
   showView('live');
   el.rmRecordingControls.hidden = false;
   el.rmReviewControls.hidden = true;
@@ -105,6 +110,8 @@ function showReviewState() {
   el.rmReviewControls.hidden = false;
   el.rmActionsRight.hidden = false;
   el.rmPlayBtn.classList.remove('playing');
+  el.micDeviceSelect.hidden = true;
+  el.micName.hidden = false;
   cachedReviewPeaks = null;
   _reviewBaseKey = '';
   el.rmReviewCurrent.textContent = '00:00.000';

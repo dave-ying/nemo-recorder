@@ -32,7 +32,6 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLSpanElement} timeCurrent
  * @property {HTMLSpanElement} timeTotal
  * @property {HTMLDivElement} micName
- * @property {HTMLDivElement} micDeviceRow
  * @property {HTMLSelectElement} micDeviceSelect
  * @property {HTMLDivElement} rateOptions
  * @property {HTMLDivElement} bitOptions
@@ -111,7 +110,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   liveTimer: $('liveTimer'), levelFill: $('levelFill'),
   timeCurrent: $('timeCurrent'), timeTotal: $('timeTotal'),
   micName: $('micName'),
-  micDeviceRow: $('micDeviceRow'), micDeviceSelect: $('micDeviceSelect'),
+  micDeviceSelect: $('micDeviceSelect'),
   rateOptions: $('rateOptions'), bitOptions: $('bitOptions'), chOptions: $('chOptions'),
   bitrateReadout: $('bitrateReadout'), toast: $('toast'), toastMessage: $('toastMessage'),
   exportModal: $('exportModal'), exportClose: $('exportClose'),

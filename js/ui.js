@@ -114,14 +114,22 @@ export const renderQualityOptions = () => {
     { 1: 'Mono', 2: 'Stereo' }, 'channels');
 };
 
-// Only shown when there's an actual choice to make — a single detected
-// device (or none yet) has nothing worth picking between.
+// The picker is the dropdown in the mic status chip. It swaps in for the
+// plain mic-name text only when there's an actual choice to make AND we're in
+// a state where the device can be changed — connected with 2+ mics, not mid-
+// recording, not reviewing a take. Every other state (disconnected, single
+// mic, recording, review) falls back to the static name so the chip always
+// reads as a single coherent line.
 export const renderMicDeviceOptions = () => {
-  if (!state.micDevices || state.micDevices.length < 2) {
-    el.micDeviceRow.hidden = true;
-    return;
-  }
-  el.micDeviceRow.hidden = false;
+  const showPicker = !!(state.micCapabilities
+    && state.micDevices
+    && state.micDevices.length >= 2
+    && !state.isRecording
+    && !state.pendingTakeBuffer);
+  el.micDeviceSelect.hidden = !showPicker;
+  el.micName.hidden = showPicker;
+
+  if (!state.micDevices || state.micDevices.length < 2) return;
   el.micDeviceSelect.innerHTML = '';
   state.micDevices.forEach((d, i) => {
     const opt = document.createElement('option');
@@ -130,4 +138,5 @@ export const renderMicDeviceOptions = () => {
     if (d.deviceId === state.micDeviceId) opt.selected = true;
     el.micDeviceSelect.appendChild(opt);
   });
+  el.micDeviceSelect.title = state.micLabel || '';
 };
