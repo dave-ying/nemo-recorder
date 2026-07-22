@@ -240,8 +240,19 @@ export function isEffectsActive() {
  * commits.
  */
 export function getSourceBuffer() {
-  const fx = state.effectsBuffer;
-  const raw = state.originalBuffer;
+  return trackSourceBuffer(state.tracks[state.activeTrackIndex]);
+}
+
+/**
+ * Same read-point rule as getSourceBuffer, but for an arbitrary track (used by
+ * the multi-track mixdown, which must pull every track's processed audio, not
+ * just the active one). Returns the processed parallel buffer when it is
+ * length-valid, else the raw capture.
+ * @param {{effectsBuffer: AudioBuffer|null, originalBuffer: AudioBuffer|null}} track
+ */
+export function trackSourceBuffer(track) {
+  const fx = track.effectsBuffer;
+  const raw = track.originalBuffer;
   if (fx && raw && fx.length === raw.length) return fx;
   return raw;
 }
@@ -449,6 +460,17 @@ function setBusy(busy, deps) {
   // Transport and the other tools stay disabled while a denoise run owns
   // the pipeline; ui.js also honors state.denoise.processing for the button.
   deps.setTransportDisabled(busy || !state.recordedBuffer);
+}
+
+/**
+ * Re-sync the effects toolbar (noise/loudness toggles + scope control) to the
+ * ACTIVE track's effect state. Called when the active track changes, since
+ * denoise/loudness/effectScope are per-track — without this the toolbar would
+ * show the previously-active track's settings.
+ */
+export async function refreshEffectsUI() {
+  const deps = await loadDeps();
+  updateEffectsUI(deps);
 }
 
 function updateEffectsUI(deps) {

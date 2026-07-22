@@ -104,6 +104,11 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLDivElement} helpPanelShortcuts
  * @property {HTMLDivElement} helpPanelChangelog
  * @property {HTMLDivElement} helpPanelAbout
+ * @property {HTMLDivElement} tracksPanel
+ * @property {HTMLDivElement} trackList
+ * @property {HTMLButtonElement} addTrackButton
+ * @property {HTMLButtonElement} masterPlayButton
+ * @property {HTMLSpanElement} masterTime
  * @property {HTMLDivElement} segmentContextMenu
  * @property {HTMLButtonElement} segmentContextCopy
  * @property {HTMLButtonElement} segmentContextPaste
@@ -163,6 +168,8 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   helpButton: $('helpButton'), helpModal: $('helpModal'), helpModalClose: $('helpModalClose'),
   helpTabs: $('helpTabs'), helpPanelShortcuts: $('helpPanelShortcuts'), helpPanelChangelog: $('helpPanelChangelog'),
   helpPanelAbout: $('helpPanelAbout'),
+  tracksPanel: $('tracksPanel'), trackList: $('trackList'), addTrackButton: $('addTrackButton'),
+  masterPlayButton: $('masterPlayButton'), masterTime: $('masterTime'),
   segmentContextMenu: $('segmentContextMenu'),
   segmentContextCopy: $('segmentContextCopy'), segmentContextPaste: $('segmentContextPaste'),
   segmentContextPasteAtPlayhead: $('segmentContextPasteAtPlayhead'),

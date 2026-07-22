@@ -150,7 +150,67 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  */
 
 /**
+ * A single audio track. The app is multi-track: `state.tracks` holds one or
+ * more of these, and `state.activeTrackIndex` selects the one that record /
+ * upload / paste / edit operations target. Everything that used to be a
+ * top-level `state` field for the (single) recording now lives per-track;
+ * `state.originalBuffer`, `state.segments`, `state.effectScope`,
+ * `state.denoise`, `state.loudness`, and `state.effectsBuffer` are accessor
+ * proxies onto the active track (see the `state` object below) so existing
+ * single-track code keeps working unchanged.
+ *
+ * `state.recordedBuffer` is NOT per-track — it is the mixed-down master
+ * (all tracks summed) that playback and export consume.
+ *
+ * @typedef {Object} Track
+ * @property {number} id - stable unique id (for keying UI / undo)
+ * @property {string} name - user-facing lane label
+ * @property {AudioBuffer|null} originalBuffer - untouched captured/loaded PCM for this track
+ * @property {AudioBuffer|null} effectsBuffer - processed full-length parallel of originalBuffer (see effects.js); null when no effects on
+ * @property {Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>} segments - {start,end} ranges into originalBuffer for this track
+ * @property {'all'|'segment'} effectScope
+ * @property {{enabled: boolean, targetLufs: number, truePeakDbtp: number}} loudness
+ * @property {{enabled: boolean, processing: boolean}} denoise
+ * @property {boolean} muted - excluded from the mixdown when true
+ * @property {boolean} solo - when any track is soloed, only soloed tracks are mixed
+ * @property {number} gainDb - per-track mix gain in dB (0 = unity)
+ * @property {number} offsetSamples - timeline start offset (samples): the track's clips begin this far into the master timeline (free positioning, Model B)
+ */
+
+let _trackIdCounter = 0;
+
+/**
+ * Build a fresh, empty track with per-track effect defaults.
+ * @param {Partial<Track>} [overrides]
+ * @returns {Track}
+ */
+export function createTrack(overrides = {}) {
+  return {
+    id: ++_trackIdCounter,
+    name: 'Track 1',
+    originalBuffer: null,
+    effectsBuffer: null,
+    segments: [],
+    effectScope: 'all',
+    loudness: { enabled: false, targetLufs: -16, truePeakDbtp: -1 },
+    denoise: { enabled: false, processing: false },
+    muted: false,
+    solo: false,
+    gainDb: 0,
+    offsetSamples: 0,
+    ...overrides
+  };
+}
+
+/** The track that record/upload/edit/paste operations currently target. */
+export function getActiveTrack() {
+  return state.tracks[state.activeTrackIndex];
+}
+
+/**
  * @typedef {Object} AppState
+ * @property {Track[]} tracks - all audio tracks (>=1)
+ * @property {number} activeTrackIndex - index into `tracks` of the operation target
  * @property {AudioContext|null} audioContext
  * @property {MediaStream|null} mediaStream
  * @property {MediaStreamAudioSourceNode|null} sourceNode
@@ -165,8 +225,9 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {Float32Array[][]} recordedChunks
  * @property {number} recordedTotalSamples - total samples captured so far (for duration cap warning)
  * @property {AudioBuffer|null} originalBuffer
- * @property {AudioBuffer|null} recordedBuffer
- * @property {Array<{start: number, end: number, origin: string, fxOff?: string[]}>} segments - fxOff lists per-segmentable effect keys turned off for that segment (per-segment scope only; see PER_SEGMENT_EFFECTS)
+ * @property {AudioBuffer|null} recordedBuffer - the ACTIVE track's editor buffer (its kept segments concatenated); what the waveform editor draws and edits
+ * @property {AudioBuffer|null} mixBuffer - the master mixdown of ALL audible tracks at their offsets/gains; what master playback and export consume
+ * @property {Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>} segments - fxOff lists per-segmentable effect keys turned off for that segment (per-segment scope only; see PER_SEGMENT_EFFECTS)
  * @property {'all'|'segment'} effectScope - scope for per-segmentable effects: 'all' applies them to the whole recording (default), 'segment' honors each segment's fxOff. Loudness ignores this. Session setting, outside undo history.
  * @property {number} bufferEpoch - incremented on every PCM-mutating operation (paste/delete/append/duplicate/reorder); used by undo to skip rebuild for PCM-neutral edits (split)
  * @property {AudioBufferSourceNode|null} playbackSource
@@ -208,6 +269,23 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
 
 /** @type {AppState} */
 export const state = {
+  tracks: [createTrack()],
+  activeTrackIndex: 0,
+  // Per-track fields are proxied onto the active track so single-track code
+  // (which reads state.originalBuffer / state.segments / etc. directly) keeps
+  // working while the multi-track model lives underneath. See createTrack().
+  get originalBuffer() { return this.tracks[this.activeTrackIndex].originalBuffer; },
+  set originalBuffer(v) { this.tracks[this.activeTrackIndex].originalBuffer = v; },
+  get effectsBuffer() { return this.tracks[this.activeTrackIndex].effectsBuffer; },
+  set effectsBuffer(v) { this.tracks[this.activeTrackIndex].effectsBuffer = v; },
+  get segments() { return this.tracks[this.activeTrackIndex].segments; },
+  set segments(v) { this.tracks[this.activeTrackIndex].segments = v; },
+  get effectScope() { return this.tracks[this.activeTrackIndex].effectScope; },
+  set effectScope(v) { this.tracks[this.activeTrackIndex].effectScope = v; },
+  get loudness() { return this.tracks[this.activeTrackIndex].loudness; },
+  set loudness(v) { this.tracks[this.activeTrackIndex].loudness = v; },
+  get denoise() { return this.tracks[this.activeTrackIndex].denoise; },
+  set denoise(v) { this.tracks[this.activeTrackIndex].denoise = v; },
   audioContext: null,
   mediaStream: null,
   sourceNode: null,
@@ -221,10 +299,8 @@ export const state = {
   isPlaying: false,
   recordedChunks: [],
   recordedTotalSamples: 0,
-  originalBuffer: null,
   recordedBuffer: null,
-  segments: [],
-  effectScope: 'all',
+  mixBuffer: null,
   bufferEpoch: 0,
   playbackSource: null,
   playbackStartTime: 0,
@@ -244,9 +320,6 @@ export const state = {
   cachedPath: null,
   liveResizeHandler: null,
   isDownloading: false,
-  effectsBuffer: null,
-  /** @type {{enabled: boolean, targetLufs: number, truePeakDbtp: number}} */
-  loudness: { enabled: false, targetLufs: -16, truePeakDbtp: -1 },
   /** @type {{thresholdDb: number, minSilenceMs: number}} */
   trimSilence: { thresholdDb: -40, minSilenceMs: 500 },
   settings: { sampleRate: 48000, bitDepth: 24, channels: 1 },
@@ -261,8 +334,6 @@ export const state = {
   previewStartTime: 0,
   previewOffset: 0,
   isPreviewing: false,
-  /** @type {{enabled: boolean, processing: boolean}} */
-  denoise: { enabled: false, processing: false },
   clipboardSegment: null
 };
 

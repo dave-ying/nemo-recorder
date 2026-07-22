@@ -122,12 +122,19 @@ export function renderExportQualityOptions() {
   });
 }
 
+/** The buffer export encodes: the master mixdown (all tracks), falling back to
+ * the active-track editor buffer when no mix exists yet. */
+function masterBuffer() {
+  return state.mixBuffer || state.recordedBuffer;
+}
+
 export function calculateExportSize(format, quality) {
-  if (!state.recordedBuffer) return 0;
-  const duration = state.recordedBuffer.duration;
-  const channels = state.recordedBuffer.numberOfChannels;
+  const master = masterBuffer();
+  if (!master) return 0;
+  const duration = master.duration;
+  const channels = master.numberOfChannels;
   if (format === 'wav') {
-    return duration * state.recordedBuffer.sampleRate * channels * (quality / 8);
+    return duration * master.sampleRate * channels * (quality / 8);
   } else if (format === 'mp3') {
     return duration * (quality * 1000) / 8;
   }
@@ -145,22 +152,23 @@ export function updateExportInfo() {
 }
 
 export async function executeExport() {
-  if (!state.recordedBuffer || state.isDownloading) return;
+  const master = masterBuffer();
+  if (!master || state.isDownloading) return;
   state.isDownloading = true;
 
   el.exportConfirm.disabled = true;
   el.exportConfirm.innerHTML = `<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Encoding...`;
 
   exportSnapshot = {
-    sampleRate: state.recordedBuffer.sampleRate,
-    numberOfChannels: state.recordedBuffer.numberOfChannels,
+    sampleRate: master.sampleRate,
+    numberOfChannels: master.numberOfChannels,
     quality: state.exportSettings.quality,
     format: state.exportSettings.format
   };
 
   // WAV header wraps past ~4 GB (RIFF size is 32-bit)
   if (state.exportSettings.format === 'wav') {
-    const dataSize = state.recordedBuffer.length * state.recordedBuffer.numberOfChannels * (state.exportSettings.quality / 8);
+    const dataSize = master.length * master.numberOfChannels * (state.exportSettings.quality / 8);
     if (dataSize > 0xFFFFFFFF - 44) {
       failExport('Audio too large for WAV format — file would exceed 4 GB');
       return;
@@ -170,11 +178,11 @@ export async function executeExport() {
   let channels;
   let sampleRate;
 
-  if (state.exportSettings.format === 'mp3' && state.recordedBuffer.sampleRate > 48000) {
+  if (state.exportSettings.format === 'mp3' && master.sampleRate > 48000) {
     // Resample to 48k for MP3 (lamejs only supports ≤48 kHz)
-    const ctx = new OfflineAudioContext(state.recordedBuffer.numberOfChannels, Math.ceil(state.recordedBuffer.duration * 48000), 48000);
+    const ctx = new OfflineAudioContext(master.numberOfChannels, Math.ceil(master.duration * 48000), 48000);
     const src = ctx.createBufferSource();
-    src.buffer = state.recordedBuffer;
+    src.buffer = master;
     src.connect(ctx.destination);
     src.start();
     const resampled = await ctx.startRendering();
@@ -184,10 +192,10 @@ export async function executeExport() {
       channels.push(resampled.getChannelData(c).slice());
     }
   } else {
-    sampleRate = state.recordedBuffer.sampleRate;
+    sampleRate = master.sampleRate;
     channels = [];
-    for (let c = 0; c < state.recordedBuffer.numberOfChannels; c++) {
-      channels.push(state.recordedBuffer.getChannelData(c).slice());
+    for (let c = 0; c < master.numberOfChannels; c++) {
+      channels.push(master.getChannelData(c).slice());
     }
   }
 
