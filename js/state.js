@@ -43,6 +43,12 @@ export const SEGMENT_DELETE_ANIM_MS = 480;
 // settle phase (after pointerup) uses a fixed-duration ease-out so the
 // floating card snaps cleanly into its final slot.
 export const SEGMENT_DRAG_LIFT_CSS_PX = 14;
+// Vertical headroom above the waveform canvas for the dragged card, used by
+// the drag overlay canvas in waveform.js. Must equal the `top`/`height` offset
+// on `.drag-overlay-canvas` in styles.css. Sized to cover the lift (14) +
+// 1.03× scale-up + edge glow with margin; stays inside `.waveform-container`'s
+// 32px top margin and the 26px ruler band above.
+export const SEGMENT_DRAG_HEADROOM_CSS_PX = 28;
 export const SEGMENT_DRAG_SETTLE_MS = 220;
 export const SEGMENT_DRAG_SHADOW_BLUR_CSS_PX = 20;
 export const SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX = 9;

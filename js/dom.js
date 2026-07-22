@@ -24,6 +24,7 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLCanvasElement} liveCanvas
  * @property {HTMLCanvasElement} waveformCanvas
  * @property {HTMLCanvasElement} timelineRulerCanvas
+ * @property {HTMLCanvasElement} dragOverlayCanvas
  * @property {HTMLDivElement} waveformContainer
  * @property {HTMLDivElement} segmentCountEl
  * @property {HTMLDivElement} liveTimer
@@ -105,7 +106,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'),
   stage: $('stage'),
   playbackView: $('playbackView'), editorSection: $('editorSection'), editorTopBar: $('editorTopBar'), transportBar: $('transportBar'),
-  liveCanvas: $('liveCanvas'), waveformCanvas: $('waveformCanvas'), timelineRulerCanvas: $('timelineRulerCanvas'),
+  liveCanvas: $('liveCanvas'), waveformCanvas: $('waveformCanvas'), timelineRulerCanvas: $('timelineRulerCanvas'), dragOverlayCanvas: $('dragOverlayCanvas'),
   waveformContainer: $('waveformContainer'), segmentCountEl: $('segmentCount'),
   liveTimer: $('liveTimer'), levelFill: $('levelFill'),
   timeCurrent: $('timeCurrent'), timeTotal: $('timeTotal'),
@@ -147,4 +148,5 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
 export const liveCtx = /** @type {CanvasRenderingContext2D} */ (el.liveCanvas.getContext('2d'));
 export const waveCtx = /** @type {CanvasRenderingContext2D} */ (el.waveformCanvas.getContext('2d'));
 export const rulerCtx = /** @type {CanvasRenderingContext2D} */ (el.timelineRulerCanvas.getContext('2d'));
+export const dragOverlayCtx = /** @type {CanvasRenderingContext2D} */ (el.dragOverlayCanvas.getContext('2d'));
 export const reviewCtx = /** @type {CanvasRenderingContext2D} */ (el.rmReviewCanvas.getContext('2d'));

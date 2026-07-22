@@ -129,6 +129,16 @@ body::after {
 .waveform-canvas { width: 100%; height: 100%; display: block; }
 .timeline-ruler-canvas { position: absolute; left: 0; top: -26px; width: 100%; height: 26px; cursor: pointer; z-index: 1; }
 
+/* Drag overlay canvas — used only while a segment reorder drag is active (see
+   drawDragFrame in waveform.js). Lets the lifted floating card paint above the
+   ruler band instead of being hard-clipped at the waveform canvas's top edge
+   (its 14px lift + scale-up + glow otherwise land above y=0, hidden behind the
+   ruler). Sized to match SEGMENT_DRAG_HEADROOM_CSS_PX in state.js. z-index 3
+   sits above the ruler (1) and the 'WAVEFORM' label (2), but below the
+   playhead caret (8) so the caret still paints on top. pointer-events:none
+   keeps it strictly an output layer (the ruler still owns clicks above). */
+.drag-overlay-canvas { position: absolute; left: 0; top: -28px; width: 100%; height: calc(100% + 28px); pointer-events: none; z-index: 3; }
+
 .append-button {
   /* Fixed 32px (not var(--ctl)): its position is computed in JS from
      APPEND_BUTTON_SIZE_CSS_PX (state.js), which must match this exactly. */

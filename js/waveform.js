@@ -1,5 +1,5 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE, SEGMENT_DRAG_SCALE_MAX } from './state.js';
-import { el, waveCtx, rulerCtx } from './dom.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_HEADROOM_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE, SEGMENT_DRAG_SCALE_MAX } from './state.js';
+import { el, waveCtx, rulerCtx, dragOverlayCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
 import { updateEmptyState } from './ui.js';
@@ -669,6 +669,7 @@ export function ensureDragAnimRunning() {
   dragAnimLastTime = performance.now();
   const tick = (now) => {
     if (!state._segmentDragSnapshot) {
+      releaseDragOverlay();
       dragAnimRaf = null;
       return;
     }
@@ -683,6 +684,7 @@ export function ensureDragAnimRunning() {
       state.draggingSegmentIndex = -1;
       state.hoverSegmentIndex = -1;
       el.waveformContainer.style.cursor = 'default';
+      releaseDragOverlay();
       dragAnimRaf = null;
       // Restore normal rendering. cachedPeaks/cachedPath were nulled by
       // rebuildPlaybackBuffer at settle start, so this rebuilds them too.
@@ -692,6 +694,17 @@ export function ensureDragAnimRunning() {
     dragAnimRaf = requestAnimationFrame(tick);
   };
   dragAnimRaf = requestAnimationFrame(tick);
+}
+
+/**
+ * Hide + clear the drag overlay canvas when no drag is active. Called from
+ * every rAF loop exit branch so a stale frame from a previous drag can't
+ * linger (and so we don't waste cycles clearing it next drag start).
+ */
+function releaseDragOverlay() {
+  if (!el.dragOverlayCanvas.hidden) el.dragOverlayCanvas.hidden = true;
+  const overlay = el.dragOverlayCanvas;
+  dragOverlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 }
 
 /**
@@ -922,6 +935,20 @@ function drawDragFrame() {
   if (el.waveformCanvas.width !== W) el.waveformCanvas.width = W;
   if (el.waveformCanvas.height !== H) el.waveformCanvas.height = H;
 
+  // The drag overlay canvas extends SEGMENT_DRAG_HEADROOM_CSS_PX above the
+  // main canvas (see .drag-overlay-canvas CSS). The floating lifted card
+  // draws here so the 14px lift + scale-up + edge glow isn't clipped at the
+  // waveform canvas's top edge — that's what was making the card top appear
+  // to slide under the ruler above. Coordinate space: overlay y = main y +
+  // headroomDev, achieved per draw via translate() so drawDragCard stays
+  // canvas-agnostic.
+  const headroomDev = SEGMENT_DRAG_HEADROOM_CSS_PX * dpr;
+  const overlayH = H + headroomDev;
+  if (el.dragOverlayCanvas.width !== W) el.dragOverlayCanvas.width = W;
+  if (el.dragOverlayCanvas.height !== overlayH) el.dragOverlayCanvas.height = overlayH;
+  if (el.dragOverlayCanvas.hidden) el.dragOverlayCanvas.hidden = false;
+  dragOverlayCtx.clearRect(0, 0, W, overlayH);
+
   waveCtx.clearRect(0, 0, W, H);
 
   const isSettling = !!snap.settle;
@@ -963,7 +990,8 @@ function drawDragFrame() {
 
   // Render non-dragged segments in live-arrangement order. The dragged segment
   // is skipped here — during live drag its slot is a drop zone outline and the
-  // floating card is drawn separately; during settle it's rendered below.
+  // floating card is drawn separately on the overlay; during settle the
+  // dragged segment is also rendered on the overlay so its lift isn't clipped.
   for (let k = 0; k < arrangement.length; k++) {
     const originalIdx = arrangement[k];
     if (originalIdx === srcIdx) continue;
@@ -990,7 +1018,9 @@ function drawDragFrame() {
       const liftFrac = maxLift > 0 ? Math.max(0, Math.min(1, snap.liftPx / maxLift)) : 0;
       const floatEnd = floatStart + pathWidth;
       const splitX = splitForCard(srcK, floatStart, floatEnd, pathWidth);
-      drawDragCard(waveCtx, snap.segPaths[srcIdx], pathWidth,
+      dragOverlayCtx.save();
+      dragOverlayCtx.translate(0, headroomDev);
+      drawDragCard(dragOverlayCtx, snap.segPaths[srcIdx], pathWidth,
         floatStart, floatEnd, splitX, H, dpr, {
           edgeWidth,
           lift: snap.liftPx,
@@ -1000,17 +1030,23 @@ function drawDragFrame() {
           shadowOffsetY: SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX * dpr,
           strokeColor: WAVEFORM_STYLE.selectedEdgeColor,
         });
+      dragOverlayCtx.restore();
     }
   } else {
     // Settle: render the dragged segment at its eased position, with lift +
     // deep shadow + opaque bg + scale all fading back to normal as it lands.
+    // Drawn on the overlay (same translate trick as the live floating card)
+    // because liftPx > 0 for most of the settle window and we don't want the
+    // decay to be clipped at the main canvas top.
     const ab = snap.animBounds[srcIdx];
     if (ab && ab.drawEnd > ab.drawStart) {
       const maxLift = SEGMENT_DRAG_LIFT_CSS_PX * dpr;
       const liftFrac = maxLift > 0 ? Math.max(0, snap.liftPx / maxLift) : 0;
       const cardW = ab.drawEnd - ab.drawStart;
       const splitX = splitForCard(srcK, ab.drawStart, ab.drawEnd, cardW);
-      drawDragCard(waveCtx, snap.segPaths[srcIdx], snap.segPathWidths[srcIdx],
+      dragOverlayCtx.save();
+      dragOverlayCtx.translate(0, headroomDev);
+      drawDragCard(dragOverlayCtx, snap.segPaths[srcIdx], snap.segPathWidths[srcIdx],
         ab.drawStart, ab.drawEnd, splitX, H, dpr, {
           edgeWidth,
           lift: snap.liftPx,
@@ -1020,6 +1056,7 @@ function drawDragFrame() {
           shadowOffsetY: SEGMENT_SHADOW_OFFSET_Y_CSS_PX * dpr + (SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX - SEGMENT_SHADOW_OFFSET_Y_CSS_PX) * dpr * liftFrac,
           strokeColor: liftFrac > 0.05 ? WAVEFORM_STYLE.selectedEdgeColor : null,
         });
+      dragOverlayCtx.restore();
     }
   }
 
