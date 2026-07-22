@@ -409,18 +409,52 @@
       </div>
 
       <div class="help-panel" id="helpPanelChangelog" hidden>
-        <ul class="changelog-list">
-          <li>Right-click a segment for a context menu (Copy, Paste, Duplicate, Delete), with matching Ctrl+C / Ctrl+V shortcuts for Copy/Paste.</li>
-          <li>Added Ctrl+Shift+V to paste directly at the playhead, splitting the segment there if needed.</li>
-          <li>Removed floating on-canvas controls (upload, record, scissors, delete) in favor of a single top toolbar.</li>
-          <li>Accurate microphone capability detection with an input device picker.</li>
-          <li>Hardened audio import with a file size guard and clearer errors for unsupported formats.</li>
-          <li>Widened upload format support, with format-specific error messages on decode failure.</li>
-          <li>Drag-and-drop segment reordering with live drag animations.</li>
-          <li>Redesigned Record modal: mic status, capture settings, live waveform, and seekable review before adding to the editor.</li>
-          <li>Added append ("+") menu for adding more audio by upload or recording.</li>
-          <li>Added undo / redo history for segment edits.</li>
-        </ul>
+        <div class="help-group changelog-group">
+          <div class="help-group-title">July 22, 2026</div>
+          <ul class="changelog-list">
+            <li>Added a Help modal with keyboard shortcuts, changelog, and About panels.</li>
+            <li>Added keyboard shortcuts for playback, segment navigation, editing, and opening the Record modal.</li>
+            <li>Added a right-click segment context menu with Copy, Paste, Duplicate, and Delete actions.</li>
+            <li>Added direct paste-at-playhead support, splitting a segment when the playhead is in the middle of it.</li>
+            <li>Improved the visual feedback for segment drag-and-drop reordering.</li>
+          </ul>
+        </div>
+        <div class="help-group changelog-group">
+          <div class="help-group-title">July 21, 2026</div>
+          <ul class="changelog-list">
+            <li>Added drag-and-drop segment reordering with live drag animations.</li>
+            <li>Added microphone capability detection, an input-device picker, and clearer audio import errors.</li>
+            <li>Expanded supported audio import formats and added a 500 MB import size guard.</li>
+            <li>Reorganized editing controls into the top toolbar and removed redundant floating canvas controls.</li>
+            <li>Added a GitHub link to the application footer.</li>
+          </ul>
+        </div>
+        <div class="help-group changelog-group">
+          <div class="help-group-title">July 20, 2026</div>
+          <ul class="changelog-list">
+            <li>Added a standalone Record modal with microphone status, capture settings, live waveform, and seekable review.</li>
+            <li>Added an append-audio menu for adding more audio by upload or recording.</li>
+            <li>Improved Record modal playback, seeking, and playhead behavior.</li>
+            <li>Improved segment-boundary handling and waveform rendering performance.</li>
+            <li>Added upload support to the initial and ready views.</li>
+          </ul>
+        </div>
+        <div class="help-group changelog-group">
+          <div class="help-group-title">July 19, 2026</div>
+          <ul class="changelog-list">
+            <li>Added undo and redo history for segment edits.</li>
+            <li>Added arrow-key scrubbing and keyboard navigation between segments.</li>
+            <li>Added draggable playhead carets and improved split-line and segment-boundary visuals.</li>
+            <li>Added segment hover states, selection feedback, and a skip-forward segment-navigation control.</li>
+            <li>Simplified the editor layout and removed redundant file-information readouts.</li>
+          </ul>
+        </div>
+        <div class="help-group changelog-group">
+          <div class="help-group-title">July 18, 2026</div>
+          <ul class="changelog-list">
+            <li>Initial release of Nemo Recorder, a browser-based lossless PCM audio recorder.</li>
+          </ul>
+        </div>
       </div>
 
       <div class="help-panel" id="helpPanelAbout" hidden>

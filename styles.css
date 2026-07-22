@@ -597,6 +597,7 @@ kbd {
 }
 .about-text { font-size: var(--fs-body); color: var(--fg-muted); line-height: 1.6; letter-spacing: 0.02em; }
 .changelog-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.changelog-group .help-group-title { color: var(--accent); letter-spacing: 0.12em; }
 .changelog-list li {
   font-size: var(--fs-body); color: var(--fg-muted); line-height: 1.6; letter-spacing: 0.02em;
   padding-left: 16px; position: relative;
