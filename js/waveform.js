@@ -588,6 +588,11 @@ export function drawPlaybackWaveform(playheadRatio = 0) {
     state.cachedPeaks = computePeaks(W);
     state.cachedPeaksWidth = W;
     state.cachedPath = null;
+    // Fresh PCM with unchanged geometry (loudness normalize, denoise,
+    // undo/redo of PCM-replacing ops) leaves geomKey identical — force the
+    // pre-rendered waveform layers to re-render from the new peaks too,
+    // otherwise the stale amplitude shape keeps being blitted.
+    waveformLayerKey = '';
   }
   // Peaks are height-independent, but the path bakes in H/2 — rebuild it when
   // the canvas height changes even if the width (and peaks) are unchanged.
