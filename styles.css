@@ -729,6 +729,19 @@ kbd {
   .brand-logo { width: 28px; height: 28px; }
   .brand-name { font-size: 11px; letter-spacing: 0.2em; }
   .action-divider { display: none; }
+
+  /* Editor toolbar: the desktop single-row layout overflows the stage on
+     phones (the effect-scope labels + effect buttons run past the right edge
+     and get clipped by .stage's overflow:hidden). Let it wrap onto as many
+     rows as needed and center each row so nothing is unreachable. */
+  .editor-top-bar { justify-content: center; margin-top: 4px; }
+  .transport-actions { flex-wrap: wrap; justify-content: center; row-gap: 8px; column-gap: 8px; }
+
+  /* Reclaim horizontal space: the 64px side margins (reserved partly for the
+     append "+" button) leave the waveform far too narrow on a phone. 40px
+     still clears the 32px append button in the right gap (+ stage padding). */
+  .editor-section { margin: 0 40px; }
+  .waveform-container { margin: 28px 0 44px; }
   .record-modal .modal { padding: 20px; }
   .rm-stage { height: 210px; }
   .rm-big-record { width: 76px; height: 76px; }
@@ -747,7 +760,11 @@ kbd {
   .restart-button { width: 40px; height: 40px; }
   .skip-forward-button { width: 40px; height: 40px; }
   .play-button { width: 48px; height: 48px; }
-  .time-display { font-size: var(--fs-body); min-width: 110px; }
+  .time-display { font-size: var(--fs-body); min-width: 0; }
+  /* Transport row: center the play controls + time, and give the Export button
+     its own full-width row (overriding the desktop inline margin-left:auto). */
+  .transport { justify-content: center; row-gap: 12px; }
+  #downloadButton { margin-left: 0 !important; width: 100%; justify-content: center; }
   .btn { padding: 8px 12px; font-size: var(--fs-floor); }
   .btn-icon { padding: 0; }
   .append-menu { min-width: 170px; }
@@ -759,6 +776,44 @@ kbd {
   .app-footer-text { font-size: var(--fs-floor); letter-spacing: 0.1em; }
   .github-icon { width: 18px; height: 18px; }
 }
+
+/* ===== Help modal: phone/narrow layout =====
+   The desktop help modal is a two-pane split (196px vertical tab rail +
+   scrolling content). Below ~600px that rail eats half the width, the content
+   column collapses, and the shortcut key chips overflow and get clipped by the
+   modal's overflow:hidden. Switch to a stacked layout: tabs become a wrapping
+   strip across the top, and each shortcut row stacks its keys under its label
+   so nothing is ever cut off. */
+@media (max-width: 600px) {
+  .help-body { flex-direction: column; }
+  .help-tabs {
+    flex-direction: row; flex-wrap: wrap; width: auto; align-self: stretch;
+    padding: 14px 52px 12px 14px; /* right pad clears the absolute close button */
+    gap: 6px; border-bottom: 1px solid var(--border);
+  }
+  .help-tab { flex: 0 0 auto; }
+  .help-modal-close { top: 12px; right: 14px; }
+  .help-content { padding: 18px 16px 24px; }
+  .help-panel { padding-right: 8px; }
+  .shortcut-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .shortcut-keys { flex-wrap: wrap; }
+}
+
+/* ===== Small phones ===== */
+@media (max-width: 480px) {
+  /* Stack the empty-state buttons so "Upload Audio File" stops wrapping to
+     three lines next to Record. */
+  .empty-state-actions { flex-direction: column; align-items: stretch; width: min(260px, 78vw); }
+  .empty-state-actions .btn { justify-content: center; }
+
+  /* Record-modal capture settings: three side-by-side setting groups (sample
+     rate / bit depth / channels) don't fit the ~340px modal — the Channels
+     column overflows and gets clipped. Stack them into one column, and raise
+     the expanded panel's max-height so the taller stacked content isn't cut. */
+  .quality-grid { grid-template-columns: 1fr; gap: 12px; }
+  .rm-settings-wrap.expanded { max-height: 360px; }
+}
+
 @media (max-height: 500px) {
   .app { gap: 8px; padding: 8px 12px; }
   .app-header { padding-bottom: 4px; }
