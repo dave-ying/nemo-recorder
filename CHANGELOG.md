@@ -4,49 +4,46 @@ All notable user-facing changes to Nemo Recorder are documented here.
 
 ## 2026-07-22
 
-- Added a Help modal with keyboard shortcuts, changelog, and About panels.
-- Added keyboard shortcuts for playback, segment navigation, editing, and opening the Record modal.
-- Added a right-click segment context menu with Copy, Paste, Duplicate, and Delete actions.
-- Added direct paste-at-playhead support, splitting a segment when the playhead is in the middle of it.
-- Improved the visual feedback for segment drag-and-drop reordering.
-- Enabled automatic development-server port selection.
+- Added a Trim Silence tool that removes silent stretches from the recording, with adjustable threshold and minimum duration.
+- Added a Normalize Loudness tool that brings the recording to a target loudness (LUFS) with a true-peak ceiling.
+- Added a Remove Noise tool that cleans up steady background noise (fans, hum, hiss) while keeping each channel intact.
+- Added a Help panel with keyboard shortcuts, the changelog, and information about Nemo Recorder.
+- Added keyboard shortcuts for common playback, editing, and segment-navigation actions.
+- Added a right-click menu for copying, pasting, duplicating, and deleting segments.
+- You can now paste audio at the playhead; the editor splits the segment first when needed.
+- Improved the visual feedback when moving segments by dragging them.
+- The playhead now stays in place when you drag a segment to reorder it, instead of moving along with the segment.
 
 ## 2026-07-21
 
-- Added drag-and-drop segment reordering with live drag animations.
-- Improved split behavior so the playhead snaps to the next segment after splitting.
-- Added division handles at segment gaps and updated the split icon.
-- Reorganized editing controls into the top toolbar and moved Export to the transport bar.
-- Added a GitHub link to the application footer.
-- Moved capture settings into the Record modal and removed the separate settings modal.
-- Expanded supported audio import formats and added clearer format-specific decode errors.
-- Added a 500 MB import size guard and browser-aware error guidance.
-- Added microphone capability detection and an input-device picker.
-- Removed redundant floating upload, record, scissors, and delete controls from the editor canvas.
+- Added drag-and-drop reordering for segments.
+- Improved splitting so the playhead moves to the next segment when a split is made.
+- Added clearer controls for working with gaps between segments.
+- Added microphone support checks and an input selector so you can choose a recording device.
+- Recording settings (sample rate, bit depth, channels) now live in the recording panel.
+- Added support for more audio formats, with clearer guidance when a file cannot be imported.
+- Files larger than 500 MB are now rejected before processing begins.
+- Simplified the editor controls by moving editing actions into the main toolbar.
+- Added a GitHub link to the footer.
 
 ## 2026-07-20
 
-- Added a standalone Record modal with microphone status, capture settings, live waveform, and seekable review.
-- Added an append-audio menu for adding more audio by upload or recording.
-- Added confirmation before discarding recorded audio.
-- Improved Record modal playback, seeking, and playhead behavior.
-- Improved segment-boundary handling and the layout of the editor waveform and transport controls.
-- Improved waveform rendering performance by caching reusable drawing layers.
-- Added upload support to the initial and ready views.
-- Consolidated the app into a single editor page with header-based controls.
+- Added a dedicated recording panel with microphone status, recording settings, a live waveform, and a review step before adding audio to the editor.
+- Added a menu for appending more audio by uploading a file or recording again.
+- Added a confirmation step before discarding a recording.
+- Improved recording review playback, seeking, and playhead behavior.
+- Improved waveform rendering performance.
+- Added audio-file upload from the initial and ready screens.
 - Renamed the app from Nemo Record to Nemo Recorder.
 
 ## 2026-07-19
 
-- Added undo and redo history for segment edits.
-- Added arrow-key scrubbing with hold-to-accelerate behavior.
-- Added keyboard navigation between segments.
-- Added draggable playhead carets and improved split-line and segment-boundary visuals.
-- Added segment hover states, selection feedback, and click-outside deselection.
-- Added a skip-forward control that navigates between segments.
-- Simplified the editor layout and removed redundant file-information readouts.
-- Added the local development-server launch configuration.
+- Added undo and redo for segment edits.
+- Added keyboard controls for precise playback and moving between segments.
+- Added draggable playhead handles and clearer segment boundaries.
+- Improved segment selection feedback and added a skip-forward control for navigating between segments.
+- Simplified the editor layout and removed information that was not needed during editing.
 
 ## 2026-07-18
 
-- Initial release of Nemo Recorder, a browser-based lossless PCM audio recorder.
+- Initial release of Nemo Recorder, a browser-based lossless audio recorder.
