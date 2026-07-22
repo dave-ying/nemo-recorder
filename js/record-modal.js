@@ -21,14 +21,35 @@ let closeConfirmOpen = false;
 
 // ===== Modal open / close =====
 
-export function openRecordModal(context) {
+export async function openRecordModal(context) {
   if (el.recordModal.classList.contains('visible')) return;
   stopScrub();
   if (state.isPlaying) pausePlayback();
   state.recordModalContext = context || 'fresh';
   el.recordModal.classList.add('visible');
-  if (state.micCapabilities) showReadyState();
-  else showDisconnectedState();
+  if (state.micCapabilities) {
+    showReadyState();
+    return;
+  }
+  showDisconnectedState();
+  // Skip the extra click on "Connect" when the browser already granted mic
+  // access in a prior session — but only once the user has actually opened
+  // the record modal, not on bare page load (that would trip the browser's
+  // tab recording indicator before the user asked to record).
+  if (await wasMicPermissionPreviouslyGranted()) {
+    await connectMicrophone();
+    if (state.micCapabilities) showReadyState();
+  }
+}
+
+async function wasMicPermissionPreviouslyGranted() {
+  if (!navigator.permissions?.query) return false;
+  try {
+    const result = await navigator.permissions.query({ name: 'microphone' });
+    return result.state === 'granted';
+  } catch (e) {
+    return false;
+  }
 }
 
 export async function closeRecordModal() {
@@ -173,7 +194,7 @@ export async function handleModalAdd() {
   if (context === 'append' && state.originalBuffer) {
     await appendBufferToRecording(buffer, 'Appended new recording');
   } else {
-    loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
+    await loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
   }
   updateEmptyState();
 }

@@ -2,9 +2,7 @@ import { state, SEGMENT_DRAG_THRESHOLD_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState, attachToolbarPopover } from './ui.js';
 import { applyTrimSilence } from './trim-silence.js';
-import { normalizeLoudness } from './loudness-normalize.js';
-import { removeNoise } from './rnnoise.js';
-import { connectMicrophone } from './audio.js';
+import { toggleLoudness, toggleDenoise, refreshLoudness } from './effects.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint, invalidateRectCache } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead } from './editing.js';
@@ -71,11 +69,12 @@ el.redoButton.addEventListener('click', redo);
 // ===== Audio tools (trim silence / loudness normalize / noise removal) =====
 
 const closeTrimPopover = attachToolbarPopover(el.trimSilenceButton, el.trimSilencePopover);
-const closeNormalizePopover = attachToolbarPopover(el.normalizeLoudnessButton, el.normalizeLoudnessPopover);
+attachToolbarPopover(el.normalizeLoudnessButton, el.normalizeLoudnessPopover);
 
 // Seed the popover inputs from state (single source of truth for defaults).
 el.trimSilenceThreshold.value = String(state.trimSilence.thresholdDb);
 el.trimSilenceMinMs.value = String(state.trimSilence.minSilenceMs);
+el.normalizeLoudnessEnabled.checked = state.loudness.enabled;
 el.normalizeTargetLufs.value = String(state.loudness.targetLufs);
 el.normalizeTruePeak.value = String(state.loudness.truePeakDbtp);
 
@@ -94,22 +93,28 @@ el.trimSilenceApply.addEventListener('click', () => {
   applyTrimSilence();
 });
 
+// Loudness normalization is a persistent effect (effects.js): the toggle
+// turns it on/off for ALL audio — including anything recorded or uploaded
+// later — and the settings re-apply live while it's enabled.
+el.normalizeLoudnessEnabled.addEventListener('change', () => {
+  toggleLoudness(el.normalizeLoudnessEnabled.checked);
+});
 el.normalizeTargetLufs.addEventListener('change', () => {
   const v = Number(el.normalizeTargetLufs.value);
   if (Number.isFinite(v)) state.loudness.targetLufs = Math.max(-70, Math.min(0, v));
   el.normalizeTargetLufs.value = String(state.loudness.targetLufs);
+  refreshLoudness();
 });
 el.normalizeTruePeak.addEventListener('change', () => {
   const v = Number(el.normalizeTruePeak.value);
   if (Number.isFinite(v)) state.loudness.truePeakDbtp = Math.min(0, v);
   el.normalizeTruePeak.value = String(state.loudness.truePeakDbtp);
-});
-el.normalizeLoudnessApply.addEventListener('click', () => {
-  closeNormalizePopover();
-  normalizeLoudness();
+  refreshLoudness();
 });
 
-el.removeNoiseButton.addEventListener('click', removeNoise);
+el.removeNoiseButton.addEventListener('click', () => {
+  toggleDenoise(!state.denoise.enabled);
+});
 
 const closeAppendMenu = () => { el.appendMenu.hidden = true; };
 
@@ -412,12 +417,4 @@ setTransportDisabled(true);
 
 if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === 'undefined') {
   showToast('Browser lacks required audio capture support', true);
-}
-
-if (navigator.permissions?.query) {
-  navigator.permissions.query({ name: 'microphone' }).then(result => {
-    if (result.state === 'granted') {
-      connectMicrophone();
-    }
-  }).catch(() => {});
 }

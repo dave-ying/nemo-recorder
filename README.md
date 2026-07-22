@@ -10,8 +10,8 @@ Unlike most browser recorders that use `MediaRecorder` (which forces lossy Opus/
 - **Live waveform** — real-time ring-buffer waveform during recording
 - **Interactive playback** — seek, split, delete, and reorder segments on the waveform
 - **Trim Silence** — removes silent stretches automatically, with adjustable threshold and minimum duration
-- **Normalize Loudness** — brings recordings to a target loudness (BS.1770 LUFS) with a true-peak ceiling
-- **Remove Noise** — RNNoise-powered background-noise suppression (fans, hum, hiss), per-channel so stereo stays stereo
+- **Normalize Loudness** — persistent effect that brings all audio to a target loudness (BS.1770 LUFS) with a true-peak ceiling; automatically applies to newly added audio, non-destructive
+- **Remove Noise** — persistent RNNoise-powered background-noise suppression (fans, hum, hiss), per-channel so stereo stays stereo; automatically applies to newly added audio, non-destructive
 - **Export WAV** — lossless PCM at your chosen quality settings
 - **Export MP3** — compressed, powered by lamejs (client-side only)
 - **Import audio files** — MP3, WAV, M4A/AAC, FLAC (all browsers); OGG/Opus/WebM (Chrome, Firefox, Edge); AIFF/CAF (Safari); audio tracks extracted from MP4/MOV/WebM video; files up to 500 MB

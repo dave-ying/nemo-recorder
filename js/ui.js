@@ -77,7 +77,7 @@ export const setTransportDisabled = (disabled) => {
   el.splitButton.disabled = disabled;
   el.trimSilenceButton.disabled = disabled;
   el.normalizeLoudnessButton.disabled = disabled;
-  // A denoise in flight owns its button's disabled state (see rnnoise.js).
+  // A denoise in flight owns its button's disabled state (see effects.js).
   el.removeNoiseButton.disabled = disabled || state.denoise.processing;
 };
 

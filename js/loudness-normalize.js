@@ -1,24 +1,6 @@
-import { state } from './state.js';
-
-let _domDeps = null;
-async function loadDomDeps() {
-  if (_domDeps) return _domDeps;
-  const [history, editing, waveform, ui, playback] = await Promise.all([
-    import('./history.js'),
-    import('./editing.js'),
-    import('./waveform.js'),
-    import('./ui.js'),
-    import('./playback.js')
-  ]);
-  _domDeps = {
-    pushHistory: history.pushHistory,
-    rebuildPlaybackBuffer: editing.rebuildPlaybackBuffer,
-    drawPlaybackWaveform: waveform.drawPlaybackWaveform,
-    showToast: ui.showToast,
-    pausePlayback: playback.pausePlayback
-  };
-  return _domDeps;
-}
+// Pure BS.1770-4 loudness DSP — no DOM, no app state. The persistent
+// loudness-normalization EFFECT that uses these functions lives in
+// js/effects.js (toggle, caching, auto-apply to newly added audio).
 
 const ABSOLUTE_GATE_LUFS = -70;
 const RELATIVE_GATE_LU = -10;
@@ -234,36 +216,4 @@ export function createNormalizedBuffer(buffer, targetLufs, truePeakDbtp, createB
     for (let i = 0; i < source.length; i++) destination[i] = source[i] * gain;
   }
   return { buffer: output, measuredLufs: measured, gain, limited: limiterGain < 1 };
-}
-
-export async function normalizeLoudness() {
-  if (!state.originalBuffer || !state.audioContext) return;
-  const { pushHistory, rebuildPlaybackBuffer, drawPlaybackWaveform, showToast, pausePlayback } = await loadDomDeps();
-  if (state.isPlaying) pausePlayback();
-
-  const target = state.loudness.targetLufs;
-  const ceilingDb = state.loudness.truePeakDbtp;
-  const result = createNormalizedBuffer(state.originalBuffer, target, ceilingDb,
-    (channels, length, sampleRate) => state.audioContext.createBuffer(channels, length, sampleRate));
-
-  if (!Number.isFinite(result.measuredLufs) && !result.limited) {
-    showToast('Audio is too quiet to measure loudness — nothing to normalize');
-    return;
-  }
-
-  // Pin the pre-normalize buffer: gain is applied to a brand-new buffer, so
-  // undo restores the exact pre-op PCM.
-  pushHistory(true);
-  state.originalBuffer = result.buffer;
-  state.bufferEpoch++;
-  rebuildPlaybackBuffer();
-  drawPlaybackWaveform(state.recordedBuffer?.duration ? state.playbackOffset / state.recordedBuffer.duration : 0);
-
-  if (!Number.isFinite(result.measuredLufs)) {
-    showToast(`Loudness unmeasurable — limited to ${ceilingDb.toFixed(1)} dBTP`);
-  } else if (result.limited) {
-    showToast(`Normalized to ${target.toFixed(1)} LUFS · limited at ${ceilingDb.toFixed(1)} dBTP`);
-  } else {
-    showToast(`Normalized to ${target.toFixed(1)} LUFS (was ${result.measuredLufs.toFixed(1)})`);
-  }
 }

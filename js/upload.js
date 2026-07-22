@@ -40,7 +40,7 @@ export async function loadUploadedFile(file) {
 
   try {
     const buffer = await decodeUploadedAudio(file);
-    loadBufferAsRecording(buffer, `Loaded "${file.name}" — lossless PCM ready`);
+    await loadBufferAsRecording(buffer, `Loaded "${file.name}" — lossless PCM ready`);
   } catch (err) {
     showToast(unsupportedFormatError(file.name, isWebKit), true);
     console.warn('[nemo-recorder]', err.message);

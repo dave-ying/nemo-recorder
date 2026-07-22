@@ -221,7 +221,8 @@ function loadDeps() {
     import('./waveform.js'),
     import('./playback.js'),
     import('./history.js'),
-    import('./editing.js')
+    import('./editing.js'),
+    import('./effects.js')
   ]).then(([
     domMod,
     utilsMod,
@@ -229,7 +230,8 @@ function loadDeps() {
     waveMod,
     playMod,
     histMod,
-    editMod
+    editMod,
+    effectsMod
   ]) => ({
     el: domMod.el,
     formatTime: utilsMod.formatTime,
@@ -242,7 +244,8 @@ function loadDeps() {
     clearSegmentHover: waveMod.clearSegmentHover,
     pausePlayback: playMod.pausePlayback,
     pushHistory: histMod.pushHistory,
-    rebuildPlaybackBuffer: editMod.rebuildPlaybackBuffer
+    rebuildPlaybackBuffer: editMod.rebuildPlaybackBuffer,
+    applyEffectsRemap: effectsMod.applyEffectsRemap
   }));
   return _depsPromise;
 }
@@ -259,7 +262,7 @@ export async function applyTrimSilence() {
   const {
     el, formatTime, showToast, updateSegmentCountDisplay, setTransportDisabled,
     updateEmptyState, drawPlaybackWaveform, hideSegmentTrash, clearSegmentHover,
-    pausePlayback, pushHistory, rebuildPlaybackBuffer
+    pausePlayback, pushHistory, rebuildPlaybackBuffer, applyEffectsRemap
   } = deps;
 
   if (!state.originalBuffer || !state.audioContext) return;
@@ -302,6 +305,11 @@ export async function applyTrimSilence() {
   state.segments = newSegments;
   state.cachedPeaks = null;
   state.cachedPath = null;
+
+  // Keep the effects pipeline's processed parallel buffer in sync with the
+  // compaction (compacts the denoise cache with the same entries instead of
+  // re-denoising, then re-runs the loudness stage). No-op when effects off.
+  applyEffectsRemap(entries);
 
   rebuildPlaybackBuffer();
 

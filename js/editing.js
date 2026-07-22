@@ -6,6 +6,7 @@ import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentA
 import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath } from './waveform-math.js';
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
+import { isEffectsActive, getSourceBuffer, requestEffectsSync, resetEffectsCaches } from './effects.js';
 
 export function jumpToSegmentStart() {
   if (!state.recordedBuffer) return;
@@ -77,9 +78,11 @@ export function selectAdjacentSegment(direction) {
 // Shared tail for both mic capture (stopRecording) and file upload
 // (loadUploadedFile): both produce a full-length AudioBuffer that becomes the
 // new original/edited recording, and land in the same playback-ready state.
-export function loadBufferAsRecording(buffer, toastMessage) {
+// Enabled effects (effects.js) automatically apply to the new audio.
+export async function loadBufferAsRecording(buffer, toastMessage) {
   if (state.isPlaying) pausePlayback();
   state.clipboardSegment = null;
+  resetEffectsCaches();
   state.originalBuffer = buffer;
   state.recordedBuffer = buffer;
   state.segments = [{ start: 0, end: buffer.length, origin: 'capture' }];
@@ -99,13 +102,19 @@ export function loadBufferAsRecording(buffer, toastMessage) {
   requestAnimationFrame(() => drawPlaybackWaveform(0));
 
   updateEmptyState();
+  // The effects pipeline rebuilds recordedBuffer from the processed source
+  // and redraws when it commits; the rAF draw above covers the raw interim.
+  if (isEffectsActive()) await requestEffectsSync({ type: 'full' });
   showToast(toastMessage);
 }
 
 export function rebuildPlaybackBuffer() {
   if (!state.originalBuffer || !state.audioContext) return;
 
-  const numCh = state.originalBuffer.numberOfChannels;
+  // Read from the effects-processed parallel buffer while effects are on
+  // (same length as originalBuffer, so segment ranges index into both).
+  const source = getSourceBuffer();
+  const numCh = source.numberOfChannels;
   let totalLen = 0;
   for (const s of state.segments) totalLen += (s.end - s.start);
 
@@ -116,9 +125,9 @@ export function rebuildPlaybackBuffer() {
     return;
   }
 
-  const buf = state.audioContext.createBuffer(numCh, totalLen, state.originalBuffer.sampleRate);
+  const buf = state.audioContext.createBuffer(numCh, totalLen, source.sampleRate);
   for (let c = 0; c < numCh; c++) {
-    const src = state.originalBuffer.getChannelData(c);
+    const src = source.getChannelData(c);
     const dst = buf.getChannelData(c);
     let off = 0;
     for (const s of state.segments) {
@@ -291,10 +300,55 @@ function concatAndRebuild(newLen, fillChannel, newSegments, oldLen) {
   return { combined, recorded };
 }
 
+// Raw-only counterpart of concatAndRebuild: builds just the new
+// originalBuffer (old samples + appended samples). Used when effects are on —
+// the playback buffer comes from the effects pipeline instead, so building
+// `recorded` here would be wasted work.
+function concatRawOnly(newLen, fillChannel, oldLen) {
+  const orig = state.originalBuffer;
+  const nch = orig.numberOfChannels;
+  const combined = state.audioContext.createBuffer(nch, oldLen + newLen, orig.sampleRate);
+  for (let c = 0; c < nch; c++) {
+    const dst = combined.getChannelData(c);
+    dst.set(orig.getChannelData(c), 0);
+    dst.set(fillChannel(c), oldLen);
+  }
+  return combined;
+}
+
+// Shared mutation for every "append raw audio onto originalBuffer" op
+// (paste-after, duplicate, paste-at-playhead, append): installs the grown raw
+// buffer + final segment layout, then lands in playback-ready state. With
+// effects off this is the single-pass fast path; with effects on the pipeline
+// processes the appended region (denoise is incremental; loudness re-runs)
+// and rebuilds/redraws on commit — so this awaits the sync before callers
+// update their UI.
+async function commitAppendedAudio(newLen, fillChannel, newSegments, oldLen) {
+  if (isEffectsActive()) {
+    const combined = concatRawOnly(newLen, fillChannel, oldLen);
+    pushHistory();
+    state.bufferEpoch++;
+    state.originalBuffer = combined;
+    state.segments = newSegments;
+    state.cachedPeaks = null;
+    state.cachedPath = null;
+    await requestEffectsSync({ type: 'append', oldLen });
+    return;
+  }
+  const { combined, recorded } = concatAndRebuild(newLen, fillChannel, newSegments, oldLen);
+  pushHistory();
+  state.bufferEpoch++;
+  state.originalBuffer = combined;
+  state.recordedBuffer = recorded;
+  state.segments = newSegments;
+  state.cachedPeaks = null;
+  state.cachedPath = null;
+}
+
 // Shared tail for paste-after/duplicate: appends `newLen` samples (produced
 // per channel by `fillChannel`) onto originalBuffer and splices a new segment
 // in right after `afterIndex`.
-function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLabel, toastMessage) {
+async function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLabel, toastMessage) {
   if (!state.originalBuffer || !state.audioContext) return;
   if (state.isPlaying) pausePlayback();
 
@@ -303,21 +357,16 @@ function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLabel, to
   const newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
   newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel });
 
-  const { combined, recorded } = concatAndRebuild(newLen, fillChannel, newSegments, oldLen);
-
-  pushHistory();
-  state.bufferEpoch++;
-  state.originalBuffer = combined;
-  state.recordedBuffer = recorded;
-  state.segments = newSegments;
-  state.cachedPeaks = null;
-  state.cachedPath = null;
+  await commitAppendedAudio(newLen, fillChannel, newSegments, oldLen);
+  if (!state.recordedBuffer) return;
 
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   updateSegmentCountDisplay();
   updateEmptyState();
   clearSegmentHover();
-  showSegmentTrash(insertAt);
+  // The effects await above lets the user edit meanwhile — only select the
+  // new segment if our segment layout is still the current one.
+  if (state.segments === newSegments) showSegmentTrash(insertAt);
   const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
   drawPlaybackWaveform(ratio);
   showToast(toastMessage);
@@ -331,17 +380,17 @@ export async function pasteSegmentAfterIndex(index) {
   if (!adapted) return;
   // The recording may have been replaced while the clip was being resampled
   if (state.originalBuffer !== target) { showToast('Cannot paste — recording was replaced', true); return; }
-  insertClonedAudioAfter(
+  await insertClonedAudioAfter(
     index, adapted.length,
     (c) => adapted.channels[Math.min(c, adapted.channels.length - 1)],
     'paste', `Pasted after segment ${index + 1}`
   );
 }
 
-export function duplicateSegmentByIndex(index) {
+export async function duplicateSegmentByIndex(index) {
   if (!state.originalBuffer || index < 0 || index >= state.segments.length) return;
   const seg = state.segments[index];
-  insertClonedAudioAfter(
+  await insertClonedAudioAfter(
     index, seg.end - seg.start,
     (c) => state.originalBuffer.getChannelData(c).subarray(seg.start, seg.end),
     'duplicate', `Duplicated segment ${index + 1}`
@@ -427,15 +476,8 @@ export async function pasteInsertAtPlayhead() {
     }
   }
 
-  const { combined, recorded } = concatAndRebuild(newLen, fillChannel, newSegments, oldLen);
-
-  pushHistory();
-  state.bufferEpoch++;
-  state.originalBuffer = combined;
-  state.recordedBuffer = recorded;
-  state.segments = newSegments;
-  state.cachedPeaks = null;
-  state.cachedPath = null;
+  await commitAppendedAudio(newLen, fillChannel, newSegments, oldLen);
+  if (!state.recordedBuffer) return;
 
   el.timeCurrent.textContent = formatTime(state.playbackOffset);
   el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
@@ -443,17 +485,23 @@ export async function pasteInsertAtPlayhead() {
   updateSegmentCountDisplay();
   updateEmptyState();
   clearSegmentHover();
-  showSegmentTrash(pastedIndex);
+  // Guard like insertClonedAudioAfter: the effects await may have let the
+  // user edit meanwhile, changing the segment layout out from under us.
+  if (state.segments === newSegments) showSegmentTrash(pastedIndex);
   const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
   drawPlaybackWaveform(ratio);
   showToast(didSplit ? 'Pasted at playhead (split)' : 'Pasted at playhead');
 }
 
 function applyHistorySnapshot(snapshot, render) {
-  // A pinned snapshot restores the exact pre-op originalBuffer (trim-silence,
-  // normalize, denoise replace PCM wholesale). Swap it back BEFORE the epoch
-  // check — the buffer reference changes, so a rebuild is mandatory.
+  // A pinned snapshot restores the exact pre-op originalBuffer (trim-silence
+  // replaces PCM wholesale). Swap it back BEFORE the epoch check — the buffer
+  // reference changes, so a rebuild is mandatory.
   if (snapshot.pinnedBuffer) state.originalBuffer = snapshot.pinnedBuffer;
+  // The effects pipeline's caches describe the swapped-out buffer; resync
+  // against the restored one. The interim rebuild below falls back to raw
+  // (length parity fails until the sync commits).
+  if (snapshot.pinnedBuffer && isEffectsActive()) requestEffectsSync({ type: 'full' });
 
   // Decide BEFORE assigning the snapshot's epoch: if the snapshot was taken at
   // the same buffer epoch as the current state, its concatenated PCM is
@@ -587,21 +635,13 @@ export async function appendBufferToRecording(buffer, toastMessage) {
   const newLen = adapted.length;
   const newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
   newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append' });
-  const { combined, recorded } = concatAndRebuild(newLen, (c) => adapted.getChannelData(c), newSegments, oldLen);
+  await commitAppendedAudio(newLen, (c) => adapted.getChannelData(c), newSegments, oldLen);
+  if (!state.recordedBuffer) return;
 
-  pushHistory();
-  state.bufferEpoch++;
-  state.originalBuffer = combined;
-  state.recordedBuffer = recorded;
-  state.segments = newSegments;
-  state.cachedPeaks = null;
-  state.cachedPath = null;
-  if (state.recordedBuffer) {
-    el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
-  }
+  el.timeTotal.textContent = formatTime(state.recordedBuffer.duration);
   updateSegmentCountDisplay();
   updateEmptyState();
-  const ratio = state.recordedBuffer && state.recordedBuffer.duration > 0
+  const ratio = state.recordedBuffer.duration > 0
     ? state.playbackOffset / state.recordedBuffer.duration
     : 0;
   drawPlaybackWaveform(ratio);
@@ -646,7 +686,9 @@ export function beginSegmentReorderDrag(clientX, clientY) {
 
   // Per-original-segment local waveform paths, built once at the segment's
   // initial card width. Reused every frame via scaleX = animWidth / pathWidth.
-  const channelData = state.originalBuffer.getChannelData(0);
+  // Source from the effects-processed buffer when effects are on so the
+  // dragged card shows the audio that's actually heard.
+  const channelData = getSourceBuffer().getChannelData(0);
   const segPaths = new Array(state.segments.length);
   const segPathWidths = new Array(state.segments.length);
   for (let i = 0; i < state.segments.length; i++) {

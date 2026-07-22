@@ -3,6 +3,7 @@ import { el, waveCtx, rulerCtx, dragOverlayCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
 import { updateEmptyState } from './ui.js';
+import { getSourceBuffer } from './effects.js';
 import { drawDeleteAnimFrame, prepareCanvasForAnim, buildShatterTiles, buildSlide, drawSlideCard, renderCardSnapshot, captureCanvasRegionForIndex } from './segment-anim.js';
 
 function _buildOneCardPath(x, w, H, dpr) {
@@ -1121,7 +1122,7 @@ export function animateSegmentDelete(oldSegments, oldTotalSamples, deletedIndex,
     newPlayheadX = 0;
     onComplete = () => { drawPlaybackWaveform(0); updateEmptyState(); };
   } else {
-    const channelData = state.originalBuffer.getChannelData(0);
+    const channelData = getSourceBuffer().getChannelData(0);
     const newSegBounds = _computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
     slides = [];
     for (let i = 0; i < oldSegments.length; i++) {
@@ -1153,7 +1154,7 @@ export function animateSegmentRestore(beforeSegments, beforeTotalSamples, restor
   const gapPx = Math.round(SEGMENT_GAP_CSS_PX * dpr);
   const oldSegBounds = computeSegmentBoundsPure(W, beforeSegments, beforeTotalSamples, gapPx);
   const newSegBounds = _computeSegmentBounds(W, state.recordedBuffer.length, gapPx);
-  const channelData = state.originalBuffer.getChannelData(0);
+  const channelData = getSourceBuffer().getChannelData(0);
 
   const slides = [];
   for (let k = 0; k < state.segments.length; k++) {

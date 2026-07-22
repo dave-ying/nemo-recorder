@@ -19,9 +19,9 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} trimSilenceApply
  * @property {HTMLButtonElement} normalizeLoudnessButton
  * @property {HTMLDivElement} normalizeLoudnessPopover
+ * @property {HTMLInputElement} normalizeLoudnessEnabled
  * @property {HTMLInputElement} normalizeTargetLufs
  * @property {HTMLInputElement} normalizeTruePeak
- * @property {HTMLButtonElement} normalizeLoudnessApply
  * @property {HTMLButtonElement} removeNoiseButton
  * @property {HTMLButtonElement} undoButton
  * @property {HTMLButtonElement} redoButton
@@ -115,7 +115,8 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   trimSilenceButton: $('trimSilenceButton'), trimSilencePopover: $('trimSilencePopover'),
   trimSilenceThreshold: $('trimSilenceThreshold'), trimSilenceMinMs: $('trimSilenceMinMs'), trimSilenceApply: $('trimSilenceApply'),
   normalizeLoudnessButton: $('normalizeLoudnessButton'), normalizeLoudnessPopover: $('normalizeLoudnessPopover'),
-  normalizeTargetLufs: $('normalizeTargetLufs'), normalizeTruePeak: $('normalizeTruePeak'), normalizeLoudnessApply: $('normalizeLoudnessApply'),
+  normalizeLoudnessEnabled: $('normalizeLoudnessEnabled'),
+  normalizeTargetLufs: $('normalizeTargetLufs'), normalizeTruePeak: $('normalizeTruePeak'),
   removeNoiseButton: $('removeNoiseButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'),

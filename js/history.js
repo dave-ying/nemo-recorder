@@ -1,5 +1,6 @@
 import { state } from './state.js';
 import { el } from './dom.js';
+import { isEffectsActive } from './effects.js';
 
 const MAX_HISTORY = 50;
 
@@ -8,7 +9,7 @@ const MAX_HISTORY = 50;
  * @property {Array<{start: number, end: number, origin: string}>} segments
  * @property {number} playbackOffset
  * @property {number} bufferEpoch
- * @property {AudioBuffer|null} pinnedBuffer - set only for PCM-replacing ops (trim-silence, normalize, denoise): the pre-op originalBuffer, kept alive by reference so undo can restore the exact pre-op PCM. Null for segment-only/append ops, whose ranges stay valid in the shared (append-only) buffer lineage.
+ * @property {AudioBuffer|null} pinnedBuffer - set only for PCM-replacing ops (trim-silence): the pre-op originalBuffer, kept alive by reference so undo can restore the exact pre-op PCM. Null for segment-only/append ops, whose ranges stay valid in the shared (append-only) buffer lineage. Effects (loudness/denoise) never pin: they don't mutate originalBuffer at all (see effects.js).
  */
 
 /** @type {HistorySnapshot[]} */
@@ -31,12 +32,13 @@ function updateHistoryButtons() {
 // Call before mutating state.segments (split, delete, drag-resize start) to
 // snapshot the pre-mutation state for undo.
 //
-// Pass pinBuffer=true for PCM-REPLACING operations (trim-silence, loudness
-// normalize, denoise) that swap state.originalBuffer for unrelated new PCM.
-// The snapshot then keeps the pre-op buffer alive by reference so undo can
-// restore it exactly. Segment-only and append ops must NOT pin: appends keep
-// old ranges valid in the grown buffer, and pinning every append would pin
-// one full buffer per paste.
+// Pass pinBuffer=true for PCM-REPLACING operations (trim-silence) that swap
+// state.originalBuffer for unrelated new PCM. The snapshot then keeps the
+// pre-op buffer alive by reference so undo can restore it exactly.
+// Segment-only and append ops must NOT pin: appends keep old ranges valid in
+// the grown buffer, and pinning every append would pin one full buffer per
+// paste. (Loudness/denoise used to pin; as non-destructive effects they no
+// longer touch originalBuffer or history at all.)
 export function pushHistory(pinBuffer = false) {
   const snapshot = snapshotCurrent();
   if (pinBuffer) snapshot.pinnedBuffer = state.originalBuffer;
@@ -53,13 +55,17 @@ export function pushHistory(pinBuffer = false) {
 // referenced only by discarded redo snapshots become unreachable forever, so
 // reclaim them with one slice copy (only when there's actually a tail to cut).
 //
-// Pinned snapshots (PCM-replacing ops) reference their OWN buffers, not the
+// Pinned snapshots (trim-silence) reference their OWN buffers, not the
 // current one — counting their segment ranges here is conservative (may skip
 // a reclaim, never over-truncates). The reclaim builds a NEW buffer rather
 // than mutating in place, so pinned references are never corrupted.
 function reclaimOriginalBufferTail() {
   const orig = state.originalBuffer;
   if (!orig || !state.audioContext) return;
+  // The effects pipeline keeps processed caches parallel to the FULL raw
+  // buffer; truncation would desync them. While effects are on, skip the
+  // reclaim — correctness over the memory saving.
+  if (isEffectsActive()) return;
   let maxEnd = 0;
   for (const s of state.segments) if (s.end > maxEnd) maxEnd = s.end;
   for (const snap of undoStack) {

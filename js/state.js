@@ -133,7 +133,8 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {Path2D|null} cachedPath
  * @property {(() => void)|null} liveResizeHandler
  * @property {boolean} isDownloading
- * @property {{targetLufs: number, truePeakDbtp: number}} loudness
+ * @property {AudioBuffer|null} effectsBuffer - processed full-length parallel of originalBuffer (same length) with the enabled effects applied (see js/effects.js); null when no effects are on. Segment {start, end} ranges index into it interchangeably because every effect is length-preserving.
+ * @property {{enabled: boolean, targetLufs: number, truePeakDbtp: number}} loudness - loudness-normalization effect: persistent toggle + settings (see js/effects.js)
  * @property {{thresholdDb: number, minSilenceMs: number}} trimSilence - settings for the Trim Silence button (see js/trim-silence.js)
  * @property {{sampleRate: number, bitDepth: number, channels: number}} settings
  * @property {{format: string, quality: number}} exportSettings
@@ -147,7 +148,7 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} previewStartTime
  * @property {number} previewOffset
  * @property {boolean} isPreviewing
- * @property {{processing: boolean}} denoise - busy flag for the Remove Noise action (see js/rnnoise.js)
+ * @property {{enabled: boolean, processing: boolean}} denoise - noise-removal effect: persistent toggle + busy flag (see js/effects.js)
  * @property {ClipboardSegment|null} clipboardSegment - last segment copied via Copy (context menu or Ctrl+C)
  */
 
@@ -188,8 +189,9 @@ export const state = {
   cachedPath: null,
   liveResizeHandler: null,
   isDownloading: false,
-  /** @type {{targetLufs: number, truePeakDbtp: number}} */
-  loudness: { targetLufs: -16, truePeakDbtp: -1 },
+  effectsBuffer: null,
+  /** @type {{enabled: boolean, targetLufs: number, truePeakDbtp: number}} */
+  loudness: { enabled: false, targetLufs: -16, truePeakDbtp: -1 },
   /** @type {{thresholdDb: number, minSilenceMs: number}} */
   trimSilence: { thresholdDb: -40, minSilenceMs: 500 },
   settings: { sampleRate: 48000, bitDepth: 24, channels: 1 },
@@ -204,7 +206,8 @@ export const state = {
   previewStartTime: 0,
   previewOffset: 0,
   isPreviewing: false,
-  denoise: { processing: false },
+  /** @type {{enabled: boolean, processing: boolean}} */
+  denoise: { enabled: false, processing: false },
   clipboardSegment: null
 };
 
