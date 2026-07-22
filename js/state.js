@@ -167,7 +167,7 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {string} name - user-facing lane label
  * @property {AudioBuffer|null} originalBuffer - untouched captured/loaded PCM for this track
  * @property {AudioBuffer|null} effectsBuffer - processed full-length parallel of originalBuffer (see effects.js); null when no effects on
- * @property {Array<{start: number, end: number, origin: string, fxOff?: string[]}>} segments - {start,end} ranges into originalBuffer for this track
+ * @property {Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>} segments - {start,end} ranges into originalBuffer for this track
  * @property {'all'|'segment'} effectScope
  * @property {{enabled: boolean, targetLufs: number, truePeakDbtp: number}} loudness
  * @property {{enabled: boolean, processing: boolean}} denoise
@@ -224,7 +224,7 @@ export function getActiveTrack() {
  * @property {number} recordedTotalSamples - total samples captured so far (for duration cap warning)
  * @property {AudioBuffer|null} originalBuffer
  * @property {AudioBuffer|null} recordedBuffer
- * @property {Array<{start: number, end: number, origin: string, fxOff?: string[]}>} segments - fxOff lists per-segmentable effect keys turned off for that segment (per-segment scope only; see PER_SEGMENT_EFFECTS)
+ * @property {Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>} segments - fxOff lists per-segmentable effect keys turned off for that segment (per-segment scope only; see PER_SEGMENT_EFFECTS)
  * @property {'all'|'segment'} effectScope - scope for per-segmentable effects: 'all' applies them to the whole recording (default), 'segment' honors each segment's fxOff. Loudness ignores this. Session setting, outside undo history.
  * @property {number} bufferEpoch - incremented on every PCM-mutating operation (paste/delete/append/duplicate/reorder); used by undo to skip rebuild for PCM-neutral edits (split)
  * @property {AudioBufferSourceNode|null} playbackSource

@@ -3,10 +3,10 @@ import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
 import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, visualRatioToAudioRatioWithState, showSegmentTrash, ensureDragAnimRunning } from './waveform.js';
-import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath } from './waveform-math.js';
+import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath, layoutContiguous, projectDurationSamples, dbToGain, audibleTracks, addClipToMix } from './waveform-math.js';
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
-import { isEffectsActive, getSourceBuffer, requestEffectsSync, resetEffectsCaches } from './effects.js';
+import { isEffectsActive, getSourceBuffer, trackSourceBuffer, requestEffectsSync, resetEffectsCaches } from './effects.js';
 
 export function jumpToSegmentStart() {
   if (!state.recordedBuffer) return;
@@ -108,31 +108,53 @@ export async function loadBufferAsRecording(buffer, toastMessage) {
   showToast(toastMessage);
 }
 
+/**
+ * Rebuild state.recordedBuffer — the mixed-down master that playback and
+ * export consume — by summing every audible track's clips at their timeline
+ * positions. For a single track laid out contiguously at unity gain this is
+ * byte-identical to the old segment-concatenation.
+ *
+ * Each track's clips are laid end-to-end (contiguous layout) here; free
+ * horizontal positioning (Phase 3) will assign tStart independently and skip
+ * this relayout. Per-track audio is read through the effects pipeline via
+ * trackSourceBuffer() so enabled effects are baked into the mix.
+ */
 export function rebuildPlaybackBuffer() {
-  if (!state.originalBuffer || !state.audioContext) return;
+  if (!state.audioContext) return;
 
-  // Read from the effects-processed parallel buffer while effects are on
-  // (same length as originalBuffer, so segment ranges index into both).
-  const source = getSourceBuffer();
-  const numCh = source.numberOfChannels;
+  // Resolve each audible track to its processed source + contiguous clip layout.
+  const parts = [];
+  let numCh = 1;
+  let sampleRate = 0;
   let totalLen = 0;
-  for (const s of state.segments) totalLen += (s.end - s.start);
+  for (const track of audibleTracks(state.tracks)) {
+    const source = trackSourceBuffer(track);
+    if (!source || track.segments.length === 0) continue;
+    layoutContiguous(track.segments);
+    parts.push({ track, source });
+    numCh = Math.max(numCh, source.numberOfChannels);
+    if (!sampleRate) sampleRate = source.sampleRate;
+    const end = projectDurationSamples([track]);
+    if (end > totalLen) totalLen = end;
+  }
 
-  if (totalLen === 0) {
+  if (totalLen === 0 || !sampleRate) {
     state.recordedBuffer = null;
     state.cachedPeaks = null;
     state.cachedPath = null;
     return;
   }
 
-  const buf = state.audioContext.createBuffer(numCh, totalLen, source.sampleRate);
-  for (let c = 0; c < numCh; c++) {
-    const src = source.getChannelData(c);
-    const dst = buf.getChannelData(c);
-    let off = 0;
-    for (const s of state.segments) {
-      dst.set(src.subarray(s.start, s.end), off);
-      off += (s.end - s.start);
+  const buf = state.audioContext.createBuffer(numCh, totalLen, sampleRate);
+  const mixChannels = [];
+  for (let c = 0; c < numCh; c++) mixChannels.push(buf.getChannelData(c));
+
+  for (const { track, source } of parts) {
+    const srcChannels = [];
+    for (let c = 0; c < source.numberOfChannels; c++) srcChannels.push(source.getChannelData(c));
+    const gain = dbToGain(track.gainDb);
+    for (const s of track.segments) {
+      addClipToMix(mixChannels, srcChannels, s.start, s.end, s.tStart || 0, gain);
     }
   }
 

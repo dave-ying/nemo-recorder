@@ -130,7 +130,7 @@ export function detectSilenceRegions(buffer, opts) {
  * @param {Array<{start: number, end: number}>} silenceRegions - sorted ascending, non-overlapping
  * @returns {{
  *   entries: Array<{origIdx: number, srcStart: number, srcEnd: number}>,
- *   newSegments: Array<{start: number, end: number, origin: string, fxOff?: string[]}>,
+ *   newSegments: Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>,
  *   segmentLengths: number[]
  * }}
  */

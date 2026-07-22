@@ -120,7 +120,9 @@ export function dbToGain(db) {
  * The tracks that should be audible in the mixdown given mute/solo state:
  * if any track is soloed, only soloed (and non-muted) tracks sound; otherwise
  * every non-muted track sounds.
- * @param {Array<{muted?:boolean,solo?:boolean}>} tracks
+ * @template {{muted?: boolean, solo?: boolean}} T
+ * @param {T[]} tracks
+ * @returns {T[]}
  */
 export function audibleTracks(tracks) {
   const anySolo = tracks.some(t => t.solo);

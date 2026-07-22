@@ -85,6 +85,25 @@ test('addClipToMix clamps out-of-range destination samples', () => {
   assert.deepEqual(Array.from(mix[0]), [2, 2, 2, 2]);
 });
 
+test('single contiguous track mixdown equals segment concatenation (Phase 1 invariant)', () => {
+  // Source buffer of 12 samples; keep two non-adjacent ranges as segments.
+  const src = [Float32Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])];
+  const segments = [
+    { start: 2, end: 6 },  // [2,3,4,5]
+    { start: 8, end: 11 }  // [8,9,10]
+  ];
+  // Old model: concatenate kept ranges.
+  const expected = [2, 3, 4, 5, 8, 9, 10];
+
+  // New model: contiguous layout + addClipToMix into a project-length mix.
+  layoutContiguous(segments);
+  const total = projectDurationSamples([{ segments }]);
+  assert.equal(total, expected.length);
+  const mix = [new Float32Array(total)];
+  for (const s of segments) addClipToMix(mix, src, s.start, s.end, s.tStart, dbToGain(0));
+  assert.deepEqual(Array.from(mix[0]), expected);
+});
+
 test('addClipToMix spreads mono source across stereo mix', () => {
   const mix = [new Float32Array(3), new Float32Array(3)];
   const src = [Float32Array.from([1, 1, 1])]; // mono
