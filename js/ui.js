@@ -75,6 +75,44 @@ export const setTransportDisabled = (disabled) => {
   el.skipForwardButton.disabled = disabled;
   el.playButton.disabled = disabled;
   el.splitButton.disabled = disabled;
+  el.trimSilenceButton.disabled = disabled;
+  el.normalizeLoudnessButton.disabled = disabled;
+  // A denoise in flight owns its button's disabled state (see rnnoise.js).
+  el.removeNoiseButton.disabled = disabled || state.denoise.processing;
+};
+
+/**
+ * Wire a toolbar button to toggle a popover anchored beneath it, dismissing
+ * on outside pointerdown, Escape, window blur, or resize — matching the
+ * segment context menu's dismissal behavior.
+ *
+ * @param {HTMLButtonElement} button
+ * @param {HTMLElement} popover
+ * @returns {() => void} close - programmatically hide the popover
+ */
+export const attachToolbarPopover = (button, popover) => {
+  const anchor = button.parentElement;
+  const close = () => { popover.hidden = true; };
+
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
+    popover.hidden = !popover.hidden;
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (popover.hidden) return;
+    if (anchor && !anchor.contains(/** @type {Node} */ (e.target))) close();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!popover.hidden && e.code === 'Escape') {
+      // stopImmediatePropagation: main.js's keydown handler lives on the same
+      // node (document), so plain stopPropagation wouldn't reach it.
+      e.stopImmediatePropagation();
+      close();
+    }
+  });
+  window.addEventListener('blur', close);
+  window.addEventListener('resize', close);
+  return close;
 };
 
 export const updateEmptyState = () => {

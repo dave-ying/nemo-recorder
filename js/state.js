@@ -147,9 +147,9 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} previewStartTime
  * @property {number} previewOffset
  * @property {boolean} isPreviewing
-  @property {{enabled: boolean}} denoise
-  @property {ClipboardSegment|null} clipboardSegment - last segment copied via Copy (context menu or Ctrl+C)
-  */
+ * @property {{processing: boolean}} denoise - busy flag for the Remove Noise action (see js/rnnoise.js)
+ * @property {ClipboardSegment|null} clipboardSegment - last segment copied via Copy (context menu or Ctrl+C)
+ */
 
 /** @type {AppState} */
 export const state = {
@@ -204,7 +204,7 @@ export const state = {
   previewStartTime: 0,
   previewOffset: 0,
   isPreviewing: false,
-  denoise: { enabled: false },
+  denoise: { processing: false },
   clipboardSegment: null
 };
 

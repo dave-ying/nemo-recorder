@@ -404,6 +404,28 @@ body::after {
 .btn-icon svg { width: var(--icon); height: var(--icon); }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 
+/* Audio-tool popovers (trim silence, normalize loudness) — anchored below
+   their toolbar button, dismiss on outside click / Escape (see ui.js). */
+.tool-anchor { position: relative; display: inline-flex; }
+.tool-popover {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 30;
+  display: grid; grid-template-columns: auto 90px; gap: 8px 10px; align-items: center;
+  min-width: 230px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--border-bright); border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg);
+  letter-spacing: 0.12em; text-transform: uppercase;
+}
+.tool-popover[hidden] { display: none; }
+.tool-field { display: contents; cursor: pointer; }
+.tool-popover input {
+  width: 100%; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--fg); font-family: inherit; font-size: 11px;
+  letter-spacing: 0.04em; text-transform: none;
+}
+.tool-popover input:focus { outline: none; border-color: var(--accent); }
+.tool-apply { grid-column: 1 / span 2; justify-content: center; padding: 8px; margin-top: 2px; }
+
 
 /* Export Modal Styles */
 .modal-overlay {

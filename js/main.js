@@ -1,6 +1,9 @@
 import { state, SEGMENT_DRAG_THRESHOLD_CSS_PX } from './state.js';
 import { el } from './dom.js';
-import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState } from './ui.js';
+import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState, attachToolbarPopover } from './ui.js';
+import { applyTrimSilence } from './trim-silence.js';
+import { normalizeLoudness } from './loudness-normalize.js';
+import { removeNoise } from './rnnoise.js';
 import { connectMicrophone } from './audio.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint, invalidateRectCache } from './waveform.js';
@@ -64,6 +67,50 @@ el.deleteSegmentButton.addEventListener('click', () => {
 });
 el.undoButton.addEventListener('click', undo);
 el.redoButton.addEventListener('click', redo);
+
+// ===== Audio tools (trim silence / loudness normalize / noise removal) =====
+
+const closeTrimPopover = attachToolbarPopover(el.trimSilenceButton, el.trimSilencePopover);
+const closeNormalizePopover = attachToolbarPopover(el.normalizeLoudnessButton, el.normalizeLoudnessPopover);
+
+// Seed the popover inputs from state (single source of truth for defaults).
+el.trimSilenceThreshold.value = String(state.trimSilence.thresholdDb);
+el.trimSilenceMinMs.value = String(state.trimSilence.minSilenceMs);
+el.normalizeTargetLufs.value = String(state.loudness.targetLufs);
+el.normalizeTruePeak.value = String(state.loudness.truePeakDbtp);
+
+el.trimSilenceThreshold.addEventListener('change', () => {
+  const v = Math.round(Number(el.trimSilenceThreshold.value));
+  if (Number.isFinite(v)) state.trimSilence.thresholdDb = Math.max(-80, Math.min(0, v));
+  el.trimSilenceThreshold.value = String(state.trimSilence.thresholdDb);
+});
+el.trimSilenceMinMs.addEventListener('change', () => {
+  const v = Math.round(Number(el.trimSilenceMinMs.value));
+  if (Number.isFinite(v)) state.trimSilence.minSilenceMs = Math.max(50, v);
+  el.trimSilenceMinMs.value = String(state.trimSilence.minSilenceMs);
+});
+el.trimSilenceApply.addEventListener('click', () => {
+  closeTrimPopover();
+  applyTrimSilence();
+});
+
+el.normalizeTargetLufs.addEventListener('change', () => {
+  const v = Number(el.normalizeTargetLufs.value);
+  if (Number.isFinite(v)) state.loudness.targetLufs = Math.max(-70, Math.min(0, v));
+  el.normalizeTargetLufs.value = String(state.loudness.targetLufs);
+});
+el.normalizeTruePeak.addEventListener('change', () => {
+  const v = Number(el.normalizeTruePeak.value);
+  if (Number.isFinite(v)) state.loudness.truePeakDbtp = Math.min(0, v);
+  el.normalizeTruePeak.value = String(state.loudness.truePeakDbtp);
+});
+el.normalizeLoudnessApply.addEventListener('click', () => {
+  closeNormalizePopover();
+  normalizeLoudness();
+});
+
+el.removeNoiseButton.addEventListener('click', removeNoise);
+
 const closeAppendMenu = () => { el.appendMenu.hidden = true; };
 
 el.appendButton.addEventListener('click', (e) => {

@@ -12,6 +12,17 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLButtonElement} downloadButton
  * @property {HTMLButtonElement} splitButton
  * @property {HTMLButtonElement} deleteSegmentButton
+ * @property {HTMLButtonElement} trimSilenceButton
+ * @property {HTMLDivElement} trimSilencePopover
+ * @property {HTMLInputElement} trimSilenceThreshold
+ * @property {HTMLInputElement} trimSilenceMinMs
+ * @property {HTMLButtonElement} trimSilenceApply
+ * @property {HTMLButtonElement} normalizeLoudnessButton
+ * @property {HTMLDivElement} normalizeLoudnessPopover
+ * @property {HTMLInputElement} normalizeTargetLufs
+ * @property {HTMLInputElement} normalizeTruePeak
+ * @property {HTMLButtonElement} normalizeLoudnessApply
+ * @property {HTMLButtonElement} removeNoiseButton
  * @property {HTMLButtonElement} undoButton
  * @property {HTMLButtonElement} redoButton
  * @property {HTMLButtonElement} playheadCaretTop
@@ -101,6 +112,11 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   emptyState: $('emptyState'), emptyStateRecordButton: $('emptyStateRecordButton'), emptyStateUploadButton: $('emptyStateUploadButton'), fileInput: $('fileInput'),
   restartButton: $('restartButton'), skipForwardButton: $('skipForwardButton'), playButton: $('playButton'), downloadButton: $('downloadButton'),
   splitButton: $('splitButton'), deleteSegmentButton: $('deleteSegmentButton'),
+  trimSilenceButton: $('trimSilenceButton'), trimSilencePopover: $('trimSilencePopover'),
+  trimSilenceThreshold: $('trimSilenceThreshold'), trimSilenceMinMs: $('trimSilenceMinMs'), trimSilenceApply: $('trimSilenceApply'),
+  normalizeLoudnessButton: $('normalizeLoudnessButton'), normalizeLoudnessPopover: $('normalizeLoudnessPopover'),
+  normalizeTargetLufs: $('normalizeTargetLufs'), normalizeTruePeak: $('normalizeTruePeak'), normalizeLoudnessApply: $('normalizeLoudnessApply'),
+  removeNoiseButton: $('removeNoiseButton'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'),
   stage: $('stage'),
