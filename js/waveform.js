@@ -935,19 +935,22 @@ function drawDragFrame() {
   if (el.waveformCanvas.width !== W) el.waveformCanvas.width = W;
   if (el.waveformCanvas.height !== H) el.waveformCanvas.height = H;
 
-  // The drag overlay canvas extends SEGMENT_DRAG_HEADROOM_CSS_PX above the
-  // main canvas (see .drag-overlay-canvas CSS). The floating lifted card
-  // draws here so the 14px lift + scale-up + edge glow isn't clipped at the
-  // waveform canvas's top edge — that's what was making the card top appear
-  // to slide under the ruler above. Coordinate space: overlay y = main y +
-  // headroomDev, achieved per draw via translate() so drawDragCard stays
-  // canvas-agnostic.
+  // The drag overlay canvas extends SEGMENT_DRAG_HEADROOM_CSS_PX on all four
+  // sides of the main canvas (see .drag-overlay-canvas CSS). The floating
+  // lifted card draws here so its lift / scale-up / drop shadow / accent
+  // glow aren't clipped at the waveform canvas's edges — that's what was
+  // making the card top appear to slide under the ruler, and the shadow +
+  // glow sides appear truncated when the card was dragged all the way to
+  // the left or right edge. Coordinate space: overlay (x, y) = main
+  // (x + headroomDev, y + headroomDev), achieved per draw via translate()
+  // so drawDragCard stays canvas-agnostic.
   const headroomDev = SEGMENT_DRAG_HEADROOM_CSS_PX * dpr;
-  const overlayH = H + headroomDev;
-  if (el.dragOverlayCanvas.width !== W) el.dragOverlayCanvas.width = W;
+  const overlayW = W + 2 * headroomDev;
+  const overlayH = H + 2 * headroomDev;
+  if (el.dragOverlayCanvas.width !== overlayW) el.dragOverlayCanvas.width = overlayW;
   if (el.dragOverlayCanvas.height !== overlayH) el.dragOverlayCanvas.height = overlayH;
   if (el.dragOverlayCanvas.hidden) el.dragOverlayCanvas.hidden = false;
-  dragOverlayCtx.clearRect(0, 0, W, overlayH);
+  dragOverlayCtx.clearRect(0, 0, overlayW, overlayH);
 
   waveCtx.clearRect(0, 0, W, H);
 
@@ -1019,7 +1022,7 @@ function drawDragFrame() {
       const floatEnd = floatStart + pathWidth;
       const splitX = splitForCard(srcK, floatStart, floatEnd, pathWidth);
       dragOverlayCtx.save();
-      dragOverlayCtx.translate(0, headroomDev);
+      dragOverlayCtx.translate(headroomDev, headroomDev);
       drawDragCard(dragOverlayCtx, snap.segPaths[srcIdx], pathWidth,
         floatStart, floatEnd, splitX, H, dpr, {
           edgeWidth,
@@ -1045,7 +1048,7 @@ function drawDragFrame() {
       const cardW = ab.drawEnd - ab.drawStart;
       const splitX = splitForCard(srcK, ab.drawStart, ab.drawEnd, cardW);
       dragOverlayCtx.save();
-      dragOverlayCtx.translate(0, headroomDev);
+      dragOverlayCtx.translate(headroomDev, headroomDev);
       drawDragCard(dragOverlayCtx, snap.segPaths[srcIdx], snap.segPathWidths[srcIdx],
         ab.drawStart, ab.drawEnd, splitX, H, dpr, {
           edgeWidth,
