@@ -1,4 +1,4 @@
-import { state, segmentEffectOn, PER_SEGMENT_EFFECTS } from './state.js';
+import { state, segmentEffectOn, PER_SEGMENT_EFFECTS, currentPlaybackRatio } from './state.js';
 import { createNormalizedBuffer } from './loudness-normalize.js';
 import { denoiseChannel } from './rnnoise.js';
 import { buildCompactedChannels } from './trim-silence.js';
@@ -358,7 +358,7 @@ async function runOneSync(hint, deps) {
     resetEffectsCaches();
     if (hadEffects) {
       deps.rebuildPlaybackBuffer();
-      deps.drawPlaybackWaveform(currentRatio());
+      deps.drawPlaybackWaveform(currentPlaybackRatio());
     }
     return;
   }
@@ -406,7 +406,7 @@ async function runOneSync(hint, deps) {
 
   rebuildEffectsBufferFromCaches(fingerprint);
   deps.rebuildPlaybackBuffer();
-  deps.drawPlaybackWaveform(currentRatio());
+  deps.drawPlaybackWaveform(currentPlaybackRatio());
 }
 
 // Loudness stage (sync DSP over the full program source) + commit. Split
@@ -439,11 +439,6 @@ function toAudioBuffer(bufferLike) {
   return buf;
 }
 
-function currentRatio() {
-  return state.recordedBuffer && state.recordedBuffer.duration > 0
-    ? state.playbackOffset / state.recordedBuffer.duration
-    : 0;
-}
 
 // ===== UI =====
 
@@ -514,7 +509,7 @@ export async function setEffectScope(scope) {
   const deps = await loadDeps();
   state.effectScope = scope;
   updateScopeUI(deps);
-  deps.drawPlaybackWaveform(currentRatio());
+  deps.drawPlaybackWaveform(currentPlaybackRatio());
   if (state.originalBuffer && isEffectsActive()) await requestEffectsSync({ type: 'light' });
 }
 

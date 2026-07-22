@@ -109,7 +109,6 @@ export const SEGMENT_DRAG_APPROACH_RATE = 22; // per-second convergence rate for
 export const SEGMENT_DRAG_SCALE_MAX = 0.03; // extra uniform scale-up applied to the fully-lifted card
 
 export const APPEND_BUTTON_SIZE_CSS_PX = 32;
-export const APPEND_BUTTON_PAD_CSS_PX = 16;
 
 /**
  * @typedef {Object} SegmentDragSnapshot
@@ -336,5 +335,16 @@ export const state = {
   isPreviewing: false,
   clipboardSegment: null
 };
+
+/**
+ * The current playhead position as a 0..1 ratio of the active track's editor
+ * buffer (state.recordedBuffer). Returns 0 when there is no buffer or it has
+ * zero duration. Consolidates an expression that was duplicated across modules.
+ */
+export function currentPlaybackRatio() {
+  return state.recordedBuffer && state.recordedBuffer.duration > 0
+    ? state.playbackOffset / state.recordedBuffer.duration
+    : 0;
+}
 
 

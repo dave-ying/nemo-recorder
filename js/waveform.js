@@ -1,4 +1,4 @@
-import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_HEADROOM_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE, SEGMENT_DRAG_SCALE_MAX, SEGMENT_CHIP_SIZE_CSS_PX, SEGMENT_CHIP_GAP_CSS_PX, SEGMENT_CHIP_MARGIN_CSS_PX, perSegmentUiActive, enabledPerSegmentEffects, segmentEffectOn } from './state.js';
+import { state, WAVEFORM_STYLE, WAVEFORM_SCALE, SEGMENT_GAP_CSS_PX, SEGMENT_CORNER_RADIUS_CSS_PX, SEGMENT_VERTICAL_INSET_CSS_PX, SEGMENT_SHADOW_BLUR_CSS_PX, SEGMENT_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_EDGE_WIDTH_CSS_PX, SELECTION_PULSE_PERIOD_SEC, DELETE_PULSE_PERIOD_SEC, SEGMENT_DELETE_ANIM_MS, APPEND_BUTTON_SIZE_CSS_PX, SEGMENT_DRAG_LIFT_CSS_PX, SEGMENT_DRAG_HEADROOM_CSS_PX, SEGMENT_DRAG_SETTLE_MS, SEGMENT_DRAG_SHADOW_BLUR_CSS_PX, SEGMENT_DRAG_SHADOW_OFFSET_Y_CSS_PX, SEGMENT_DRAG_APPROACH_RATE, SEGMENT_DRAG_SCALE_MAX, SEGMENT_CHIP_SIZE_CSS_PX, SEGMENT_CHIP_GAP_CSS_PX, SEGMENT_CHIP_MARGIN_CSS_PX, perSegmentUiActive, enabledPerSegmentEffects, segmentEffectOn, currentPlaybackRatio } from './state.js';
 import { el, waveCtx, rulerCtx, dragOverlayCtx } from './dom.js';
 import { pausePlayback } from './playback.js';
 import { computeSegmentBoundsPure, audioRatioToVisualRatio, visualRatioToAudioRatio, pickRulerIntervalSec, formatRulerLabel, computePeaksForRange, buildWaveformPath, buildOneCardPath, findSegmentAtSamplePure, computeReorderArrangement, computeArrangementBounds } from './waveform-math.js';
@@ -106,7 +106,7 @@ export function hideSegmentTrash() {
   state.isHoveringTrash = false;
   stopSelectionAnim();
   if (!state.isPlaying && state.recordedBuffer) {
-    drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+    drawPlaybackWaveform(currentPlaybackRatio());
   }
 }
 
@@ -140,7 +140,7 @@ function startSelectionAnim() {
     }
     _lastPulseTime = now;
     if (!state.isPlaying && state.recordedBuffer) {
-      drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+      drawPlaybackWaveform(currentPlaybackRatio());
     }
     selectionAnimRaf = requestAnimationFrame(tick);
   };
@@ -1210,7 +1210,7 @@ export function captureSegmentBitmap(index) {
   const prevTrash = state.isHoveringTrash;
   state.selectedSegmentIndex = index;
   state.isHoveringTrash = true;
-  const ratio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
+  const ratio = currentPlaybackRatio();
   drawPlaybackWaveform(ratio);
   state.selectedSegmentIndex = prevHovered;
   state.isHoveringTrash = prevTrash;
@@ -1362,7 +1362,7 @@ function scheduleHoverRedraw() {
   hoverRedrawRaf = requestAnimationFrame(() => {
     hoverRedrawRaf = null;
     if (!state.isPlaying && state.recordedBuffer) {
-      drawPlaybackWaveform(state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+      drawPlaybackWaveform(currentPlaybackRatio());
     }
   });
 }
