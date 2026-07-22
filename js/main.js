@@ -12,6 +12,7 @@ import { openExportModal, closeExportModal, renderExportQualityOptions, updateEx
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 import { closeHelpModal, initHelpModal } from './help-modal.js';
 import { openSegmentContextMenu, initSegmentContextMenu, closeSegmentContextMenu } from './context-menu.js';
+import { addTrack, toggleMasterPlayback, stopMasterPlayback, updateTracksPanel } from './tracks.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
 let _pendingSeekClientX = null;
@@ -55,7 +56,10 @@ el.skipForwardButton.addEventListener('click', () => {
   if (state.isPlaying) pausePlayback();
   jumpToSegmentEnd();
 });
-el.playButton.addEventListener('click', () => { isPlaybackActive() ? pausePlayback() : startPlayback(); });
+el.playButton.addEventListener('click', () => { if (isPlaybackActive()) { pausePlayback(); } else { stopMasterPlayback(); startPlayback(); } });
+
+el.addTrackButton.addEventListener('click', addTrack);
+el.masterPlayButton.addEventListener('click', toggleMasterPlayback);
 
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
@@ -426,6 +430,7 @@ initRecordModal();
 initHelpModal();
 initSegmentContextMenu();
 updateEmptyState();
+updateTracksPanel();
 updateSegmentCountDisplay();
 setTransportDisabled(true);
 

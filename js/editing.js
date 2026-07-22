@@ -3,7 +3,7 @@ import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
 import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, visualRatioToAudioRatioWithState, showSegmentTrash, ensureDragAnimRunning } from './waveform.js';
-import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath, layoutContiguous, projectDurationSamples, dbToGain, audibleTracks, addClipToMix } from './waveform-math.js';
+import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath, dbToGain, audibleTracks, addClipToMix } from './waveform-math.js';
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
 import { isEffectsActive, getSourceBuffer, trackSourceBuffer, requestEffectsSync, resetEffectsCaches } from './effects.js';
@@ -86,6 +86,7 @@ export async function loadBufferAsRecording(buffer, toastMessage) {
   state.originalBuffer = buffer;
   state.recordedBuffer = buffer;
   state.segments = [{ start: 0, end: buffer.length, origin: 'capture' }];
+  rebuildMix(); // refresh the master mix (this track + any other tracks)
   resetHistory();
 
   el.timeCurrent.textContent = '00:00.000';
@@ -102,6 +103,7 @@ export async function loadBufferAsRecording(buffer, toastMessage) {
   requestAnimationFrame(() => drawPlaybackWaveform(0));
 
   updateEmptyState();
+  refreshTracksPanel();
   // The effects pipeline rebuilds recordedBuffer from the processed source
   // and redraws when it commits; the rAF draw above covers the raw interim.
   if (isEffectsActive()) await requestEffectsSync({ type: 'full' });
@@ -109,20 +111,73 @@ export async function loadBufferAsRecording(buffer, toastMessage) {
 }
 
 /**
- * Rebuild state.recordedBuffer — the mixed-down master that playback and
- * export consume — by summing every audible track's clips at their timeline
- * positions. For a single track laid out contiguously at unity gain this is
- * byte-identical to the old segment-concatenation.
- *
- * Each track's clips are laid end-to-end (contiguous layout) here; free
- * horizontal positioning (Phase 3) will assign tStart independently and skip
- * this relayout. Per-track audio is read through the effects pipeline via
- * trackSourceBuffer() so enabled effects are baked into the mix.
+ * Refresh the multi-track rail after audio structurally changes (load/append).
+ * Lazy-imported to avoid a static import cycle (tracks.js imports editing.js).
+ */
+function refreshTracksPanel() {
+  import('./tracks.js').then(m => m.updateTracksPanel()).catch(() => {});
+}
+
+/**
+ * Rebuild state.recordedBuffer — the ACTIVE track's editor buffer — by
+ * concatenating its kept segments. This is what the waveform editor draws and
+ * what split/seek/playhead math operate on, so it must stay the active track's
+ * own audio (NOT the multi-track mix). Also refreshes the master mix so
+ * playback/export reflect the edit.
  */
 export function rebuildPlaybackBuffer() {
+  if (!state.originalBuffer || !state.audioContext) {
+    state.recordedBuffer = null;
+    state.cachedPeaks = null;
+    state.cachedPath = null;
+    rebuildMix();
+    return;
+  }
+
+  // Read from the effects-processed parallel buffer while effects are on
+  // (same length as originalBuffer, so segment ranges index into both).
+  const source = getSourceBuffer();
+  const numCh = source.numberOfChannels;
+  let totalLen = 0;
+  for (const s of state.segments) totalLen += (s.end - s.start);
+
+  if (totalLen === 0) {
+    state.recordedBuffer = null;
+    state.cachedPeaks = null;
+    state.cachedPath = null;
+    rebuildMix();
+    return;
+  }
+
+  const buf = state.audioContext.createBuffer(numCh, totalLen, source.sampleRate);
+  for (let c = 0; c < numCh; c++) {
+    const src = source.getChannelData(c);
+    const dst = buf.getChannelData(c);
+    let off = 0;
+    for (const s of state.segments) {
+      dst.set(src.subarray(s.start, s.end), off);
+      off += (s.end - s.start);
+    }
+  }
+
+  state.recordedBuffer = buf;
+  state.cachedPeaks = null;
+  state.cachedPath = null;
+  rebuildMix();
+}
+
+/**
+ * Rebuild state.mixBuffer — the master mixdown that master playback and export
+ * consume — by summing every audible track's clips at their timeline offset and
+ * per-track gain. Each track's clips are laid contiguously starting at the
+ * track's `offsetSamples` (free time positioning, Model B). Per-track audio is
+ * read through the effects pipeline via trackSourceBuffer() so enabled effects
+ * are baked in. Segments are left pristine (tStart is computed locally) so the
+ * active-track editor is unaffected.
+ */
+export function rebuildMix() {
   if (!state.audioContext) return;
 
-  // Resolve each audible track to its processed source + contiguous clip layout.
   const parts = [];
   let numCh = 1;
   let sampleRate = 0;
@@ -130,18 +185,20 @@ export function rebuildPlaybackBuffer() {
   for (const track of audibleTracks(state.tracks)) {
     const source = trackSourceBuffer(track);
     if (!source || track.segments.length === 0) continue;
-    layoutContiguous(track.segments);
-    parts.push({ track, source });
+    let acc = track.offsetSamples || 0;
+    const laid = [];
+    for (const s of track.segments) {
+      laid.push({ start: s.start, end: s.end, tStart: acc });
+      acc += (s.end - s.start);
+    }
+    parts.push({ track, source, laid });
     numCh = Math.max(numCh, source.numberOfChannels);
     if (!sampleRate) sampleRate = source.sampleRate;
-    const end = projectDurationSamples([track]);
-    if (end > totalLen) totalLen = end;
+    if (acc > totalLen) totalLen = acc;
   }
 
   if (totalLen === 0 || !sampleRate) {
-    state.recordedBuffer = null;
-    state.cachedPeaks = null;
-    state.cachedPath = null;
+    state.mixBuffer = null;
     return;
   }
 
@@ -149,18 +206,16 @@ export function rebuildPlaybackBuffer() {
   const mixChannels = [];
   for (let c = 0; c < numCh; c++) mixChannels.push(buf.getChannelData(c));
 
-  for (const { track, source } of parts) {
+  for (const { track, source, laid } of parts) {
     const srcChannels = [];
     for (let c = 0; c < source.numberOfChannels; c++) srcChannels.push(source.getChannelData(c));
     const gain = dbToGain(track.gainDb);
-    for (const s of track.segments) {
-      addClipToMix(mixChannels, srcChannels, s.start, s.end, s.tStart || 0, gain);
+    for (const s of laid) {
+      addClipToMix(mixChannels, srcChannels, s.start, s.end, s.tStart, gain);
     }
   }
 
-  state.recordedBuffer = buf;
-  state.cachedPeaks = null;
-  state.cachedPath = null;
+  state.mixBuffer = buf;
 }
 
 export function splitAtPlayhead() {
@@ -719,6 +774,7 @@ export async function appendBufferToRecording(buffer, toastMessage) {
     ? state.playbackOffset / state.recordedBuffer.duration
     : 0;
   drawPlaybackWaveform(ratio);
+  refreshTracksPanel();
   showToast(toastMessage);
 }
 

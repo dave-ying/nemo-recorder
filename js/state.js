@@ -174,6 +174,7 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {boolean} muted - excluded from the mixdown when true
  * @property {boolean} solo - when any track is soloed, only soloed tracks are mixed
  * @property {number} gainDb - per-track mix gain in dB (0 = unity)
+ * @property {number} offsetSamples - timeline start offset (samples): the track's clips begin this far into the master timeline (free positioning, Model B)
  */
 
 let _trackIdCounter = 0;
@@ -196,6 +197,7 @@ export function createTrack(overrides = {}) {
     muted: false,
     solo: false,
     gainDb: 0,
+    offsetSamples: 0,
     ...overrides
   };
 }
@@ -223,7 +225,8 @@ export function getActiveTrack() {
  * @property {Float32Array[][]} recordedChunks
  * @property {number} recordedTotalSamples - total samples captured so far (for duration cap warning)
  * @property {AudioBuffer|null} originalBuffer
- * @property {AudioBuffer|null} recordedBuffer
+ * @property {AudioBuffer|null} recordedBuffer - the ACTIVE track's editor buffer (its kept segments concatenated); what the waveform editor draws and edits
+ * @property {AudioBuffer|null} mixBuffer - the master mixdown of ALL audible tracks at their offsets/gains; what master playback and export consume
  * @property {Array<{start: number, end: number, origin: string, fxOff?: string[], tStart?: number}>} segments - fxOff lists per-segmentable effect keys turned off for that segment (per-segment scope only; see PER_SEGMENT_EFFECTS)
  * @property {'all'|'segment'} effectScope - scope for per-segmentable effects: 'all' applies them to the whole recording (default), 'segment' honors each segment's fxOff. Loudness ignores this. Session setting, outside undo history.
  * @property {number} bufferEpoch - incremented on every PCM-mutating operation (paste/delete/append/duplicate/reorder); used by undo to skip rebuild for PCM-neutral edits (split)
@@ -297,6 +300,7 @@ export const state = {
   recordedChunks: [],
   recordedTotalSamples: 0,
   recordedBuffer: null,
+  mixBuffer: null,
   bufferEpoch: 0,
   playbackSource: null,
   playbackStartTime: 0,
