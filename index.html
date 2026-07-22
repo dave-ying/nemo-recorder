@@ -373,15 +373,15 @@
   <!-- Help Modal -->
   <div class="quality-modal-overlay help-modal-overlay" id="helpModal">
     <div class="modal help-modal">
-      <div class="modal-header">
-        <span class="modal-title">Help</span>
-        <button class="modal-close" id="helpModalClose">&times;</button>
-      </div>
+      <button class="modal-close help-modal-close" id="helpModalClose">&times;</button>
+      <div class="help-body">
       <div class="help-tabs" id="helpTabs">
         <button class="help-tab active" data-tab="shortcuts">Keyboard Shortcuts</button>
         <button class="help-tab" data-tab="changelog">Changelog</button>
+        <button class="help-tab" data-tab="about">About</button>
       </div>
 
+      <div class="help-content">
       <div class="help-panel" id="helpPanelShortcuts">
         <div class="help-group">
           <div class="help-group-title">Editor</div>
@@ -421,6 +421,15 @@
           <li>Added append ("+") menu for adding more audio by upload or recording.</li>
           <li>Added undo / redo history for segment edits.</li>
         </ul>
+      </div>
+
+      <div class="help-panel" id="helpPanelAbout" hidden>
+        <div class="help-group">
+          <div class="help-group-title">Nemo Recorder</div>
+          <p class="about-text">A browser-based, truly lossless PCM audio recorder. Built by Dave Ying.</p>
+        </div>
+      </div>
+      </div>
       </div>
     </div>
   </div>

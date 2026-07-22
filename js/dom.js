@@ -86,6 +86,7 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLDivElement} helpTabs
  * @property {HTMLDivElement} helpPanelShortcuts
  * @property {HTMLDivElement} helpPanelChangelog
+ * @property {HTMLDivElement} helpPanelAbout
  * @property {HTMLDivElement} segmentContextMenu
  * @property {HTMLButtonElement} segmentContextCopy
  * @property {HTMLButtonElement} segmentContextPaste
@@ -136,6 +137,7 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   confirmCancel: $('confirmCancel'), confirmOk: $('confirmOk'),
   helpButton: $('helpButton'), helpModal: $('helpModal'), helpModalClose: $('helpModalClose'),
   helpTabs: $('helpTabs'), helpPanelShortcuts: $('helpPanelShortcuts'), helpPanelChangelog: $('helpPanelChangelog'),
+  helpPanelAbout: $('helpPanelAbout'),
   segmentContextMenu: $('segmentContextMenu'),
   segmentContextCopy: $('segmentContextCopy'), segmentContextPaste: $('segmentContextPaste'),
   segmentContextPasteAtPlayhead: $('segmentContextPasteAtPlayhead'),

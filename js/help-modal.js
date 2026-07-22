@@ -3,7 +3,8 @@ import { el } from './dom.js';
 /** @type {Record<string, HTMLDivElement>} */
 const panels = {
   shortcuts: el.helpPanelShortcuts,
-  changelog: el.helpPanelChangelog
+  changelog: el.helpPanelChangelog,
+  about: el.helpPanelAbout
 };
 
 function setActiveTab(tab) {
