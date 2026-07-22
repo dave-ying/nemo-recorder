@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, segmentEffectOn, PER_SEGMENT_EFFECTS } from './state.js';
 import { createNormalizedBuffer } from './loudness-normalize.js';
 import { denoiseChannel } from './rnnoise.js';
 import { buildCompactedChannels } from './trim-silence.js';
@@ -113,6 +113,21 @@ export function fitToLength(src, length) {
   return fitted;
 }
 
+/**
+ * A signature of the per-segment noise-removal opt-outs, so a chip toggle (or
+ * a range shift while a segment has noise off) invalidates the fingerprint and
+ * forces a recomposite. Empty in whole-recording scope (composite == denoise
+ * cache) — reordering segments then never triggers a needless recomposite.
+ */
+export function perSegmentNoiseSignature() {
+  if (state.effectScope !== 'segment') return '';
+  let sig = '';
+  for (const s of state.segments) {
+    if (s.fxOff && s.fxOff.includes('noise')) sig += s.start + '-' + s.end + ';';
+  }
+  return sig;
+}
+
 /** Snapshot of every input the effects output depends on. */
 function computeEffectsFingerprint() {
   const buf = state.originalBuffer;
@@ -123,7 +138,9 @@ function computeEffectsFingerprint() {
     denoiseEnabled: state.denoise.enabled,
     loudnessEnabled: state.loudness.enabled,
     targetLufs: state.loudness.targetLufs,
-    truePeakDbtp: state.loudness.truePeakDbtp
+    truePeakDbtp: state.loudness.truePeakDbtp,
+    effectScope: state.effectScope,
+    segNoiseSig: perSegmentNoiseSignature()
   };
 }
 
@@ -135,7 +152,44 @@ export function effectsFingerprintsEqual(a, b) {
     && a.denoiseEnabled === b.denoiseEnabled
     && a.loudnessEnabled === b.loudnessEnabled
     && a.targetLufs === b.targetLufs
-    && a.truePeakDbtp === b.truePeakDbtp;
+    && a.truePeakDbtp === b.truePeakDbtp
+    && a.effectScope === b.effectScope
+    && a.segNoiseSig === b.segNoiseSig;
+}
+
+/**
+ * Build the noise stage's output as a full-length parallel buffer. In
+ * whole-recording scope this is just the denoise cache (every sample denoised).
+ * In per-segment scope, segments that opted out of noise removal (fxOff
+ * includes 'noise') read their raw samples instead — so the processed buffer
+ * is a composite: denoised where the effect is on, raw where it's off. Kept
+ * full-length so getSourceBuffer()'s length-parity invariant holds and segment
+ * ranges still index into it. Pure over (raw, cache, state.segments) — exported
+ * for Node tests.
+ *
+ * @param {AudioBuffer} raw
+ * @param {ReturnType<typeof createChannelCache>} cache - full-length denoised channels
+ */
+export function buildDenoiseComposite(raw, cache) {
+  const anyOff = state.effectScope === 'segment'
+    && state.segments.some(s => s.fxOff && s.fxOff.includes('noise'));
+  if (!anyOff) return cache;
+
+  const nch = cache.numberOfChannels;
+  const len = cache.length;
+  const channels = [];
+  for (let c = 0; c < nch; c++) channels.push(cache.getChannelData(c).slice());
+  for (const s of state.segments) {
+    if (segmentEffectOn(s, 'noise')) continue; // stays denoised
+    const start = Math.max(0, Math.min(len, s.start));
+    const end = Math.max(0, Math.min(len, s.end));
+    if (end <= start) continue;
+    for (let c = 0; c < nch; c++) {
+      const rawCh = raw.getChannelData(Math.min(c, raw.numberOfChannels - 1));
+      channels[c].set(rawCh.subarray(start, end), start);
+    }
+  }
+  return createChannelCache(channels, len, cache.sampleRate);
 }
 
 /**
@@ -348,7 +402,11 @@ async function runOneSync(hint, deps) {
 // out so applyEffectsRemap can run it synchronously.
 function rebuildEffectsBufferFromCaches(fingerprint = null) {
   const buf = state.originalBuffer;
-  const base = state.denoise.enabled ? denoiseCache : buf;
+  // Noise stage: whole-recording → the denoise cache; per-segment → a
+  // composite (denoised where on, raw where a segment opted out).
+  const base = state.denoise.enabled
+    ? (denoiseCache && buf ? buildDenoiseComposite(buf, denoiseCache) : denoiseCache)
+    : buf;
   if (!base) { state.effectsBuffer = null; lastCommitted = null; lastSyncResult = null; return; }
   if (state.loudness.enabled) {
     const result = createNormalizedBuffer(base, state.loudness.targetLufs, state.loudness.truePeakDbtp,
@@ -405,6 +463,37 @@ function updateEffectsUI(deps) {
   el.normalizeLoudnessButton.classList.toggle('effect-active', state.loudness.enabled);
   el.normalizeLoudnessButton.setAttribute('aria-pressed', String(state.loudness.enabled));
   el.normalizeLoudnessEnabled.checked = state.loudness.enabled;
+  updateScopeUI(deps);
+}
+
+// The scope segmented control is only meaningful when a per-segmentable effect
+// is on (loudness alone can't be scoped). When none is on it's shown disabled;
+// the "All on / All off" shortcuts appear only in per-segment scope.
+function updateScopeUI(deps) {
+  const { el } = deps;
+  const active = PER_SEGMENT_EFFECTS.some(e => e.isEnabled());
+  el.effectScopeControl.setAttribute('data-disabled', String(!active));
+  el.effectScopeAll.classList.toggle('is-selected', state.effectScope === 'all');
+  el.effectScopeSegment.classList.toggle('is-selected', state.effectScope === 'segment');
+  el.effectScopeAll.setAttribute('aria-pressed', String(state.effectScope === 'all'));
+  el.effectScopeSegment.setAttribute('aria-pressed', String(state.effectScope === 'segment'));
+  el.segFxQuick.hidden = !(active && state.effectScope === 'segment');
+}
+
+/**
+ * Switch the per-segmentable effects between whole-recording and per-segment
+ * scope. Redraws immediately so the per-segment chips appear/disappear at once,
+ * then recomposites the processed buffer for the new scope.
+ * @param {'all'|'segment'} scope
+ */
+export async function setEffectScope(scope) {
+  if (scope !== 'all' && scope !== 'segment') return;
+  if (state.effectScope === scope) return;
+  const deps = await loadDeps();
+  state.effectScope = scope;
+  updateScopeUI(deps);
+  deps.drawPlaybackWaveform(currentRatio());
+  if (state.originalBuffer && isEffectsActive()) await requestEffectsSync({ type: 'light' });
 }
 
 // ===== Toggle handlers (wired in main.js) =====

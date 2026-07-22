@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, cloneSeg } from './state.js';
 import { el } from './dom.js';
 import { isEffectsActive } from './effects.js';
 
@@ -6,7 +6,7 @@ const MAX_HISTORY = 50;
 
 /**
  * @typedef {Object} HistorySnapshot
- * @property {Array<{start: number, end: number, origin: string}>} segments
+ * @property {Array<{start: number, end: number, origin: string, fxOff?: string[]}>} segments
  * @property {number} playbackOffset
  * @property {number} bufferEpoch
  * @property {AudioBuffer|null} pinnedBuffer - set only for PCM-replacing ops (trim-silence): the pre-op originalBuffer, kept alive by reference so undo can restore the exact pre-op PCM. Null for segment-only/append ops, whose ranges stay valid in the shared (append-only) buffer lineage. Effects (loudness/denoise) never pin: they don't mutate originalBuffer at all (see effects.js).
@@ -17,7 +17,7 @@ let undoStack = [];
 /** @type {HistorySnapshot[]} */
 let redoStack = [];
 
-const cloneSegments = (segments) => segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
+const cloneSegments = (segments) => segments.map(cloneSeg);
 
 const snapshotCurrent = () => ({ segments: cloneSegments(state.segments), playbackOffset: state.playbackOffset, bufferEpoch: state.bufferEpoch, pinnedBuffer: null });
 

@@ -2,10 +2,10 @@ import { state, SEGMENT_DRAG_THRESHOLD_CSS_PX } from './state.js';
 import { el } from './dom.js';
 import { showToast, updateSegmentCountDisplay, setTransportDisabled, updateEmptyState, attachToolbarPopover } from './ui.js';
 import { applyTrimSilence } from './trim-silence.js';
-import { toggleLoudness, toggleDenoise, refreshLoudness } from './effects.js';
+import { toggleLoudness, toggleDenoise, refreshLoudness, setEffectScope } from './effects.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint, invalidateRectCache } from './waveform.js';
-import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead } from './editing.js';
+import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead, setAllSegmentsEffects } from './editing.js';
 import { startPlayback, pausePlayback, isPlaybackActive } from './playback.js';
 import { arrowKeyDown, arrowKeyUp, stepBySeconds } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
@@ -115,6 +115,20 @@ el.normalizeTruePeak.addEventListener('change', () => {
 el.removeNoiseButton.addEventListener('click', () => {
   toggleDenoise(!state.denoise.enabled);
 });
+
+// Effect scope: whole recording vs per segment. The control is only live once
+// a per-segmentable effect is on (it carries data-disabled otherwise, and CSS
+// blocks pointer events), so the guard here is belt-and-suspenders.
+el.effectScopeAll.addEventListener('click', () => {
+  if (el.effectScopeControl.getAttribute('data-disabled') === 'true') return;
+  setEffectScope('all');
+});
+el.effectScopeSegment.addEventListener('click', () => {
+  if (el.effectScopeControl.getAttribute('data-disabled') === 'true') return;
+  setEffectScope('segment');
+});
+el.segFxAllOn.addEventListener('click', () => setAllSegmentsEffects(true));
+el.segFxAllOff.addEventListener('click', () => setAllSegmentsEffects(false));
 
 const closeAppendMenu = () => { el.appendMenu.hidden = true; };
 

@@ -1,4 +1,4 @@
-import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE } from './state.js';
+import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE, cloneSeg, enabledPerSegmentEffects } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
@@ -157,10 +157,11 @@ export function splitAtPlayhead() {
   }
 
   const splitPoint = seg.start + offsetInSeg;
+  const inherited = state.segments[index].fxOff ? state.segments[index].fxOff.slice() : [];
   pushHistory();
   state.segments.splice(index, 1,
-    { start: seg.start, end: splitPoint, origin: 'split' },
-    { start: splitPoint, end: seg.end, origin: 'split' }
+    { start: seg.start, end: splitPoint, origin: 'split', fxOff: inherited.slice() },
+    { start: splitPoint, end: seg.end, origin: 'split', fxOff: inherited.slice() }
   );
 
   // Snap the playhead to the exact split point — the start of the right
@@ -200,7 +201,7 @@ export function deleteSegmentByIndex(index) {
     newPlayheadSample = deletedSegStart;
   }
 
-  const oldSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
+  const oldSegments = state.segments.map(cloneSeg);
   const oldTotalSamples = state.recordedBuffer.length;
   const oldPlayheadRatio = state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0;
   // Lift the doomed card's rendered pixels (in delete-red) off the canvas
@@ -245,6 +246,49 @@ export function deleteSegmentAtPlayhead() {
   const editedSample = Math.round(state.playbackOffset * sr);
   const target = findSegmentAtSample(editedSample);
   if (target) deleteSegmentByIndex(target.index);
+}
+
+// ===== Per-segment effect scoping =====
+//
+// In per-segment scope, each segment can opt out of a per-segmentable effect
+// (currently noise removal). Toggling is a normal undoable edit that flips the
+// effect key in the segment's `fxOff` list, then asks the effects pipeline to
+// recomposite (a light sync: no re-denoise, just rebuild the processed buffer
+// with this segment's new on/off state and re-run loudness). The immediate
+// redraw gives instant chip feedback while the async recomposite lands.
+export function toggleSegmentEffect(index, effectKey) {
+  if (!state.recordedBuffer || index < 0 || index >= state.segments.length) return;
+  const seg = state.segments[index];
+  if (!seg.fxOff) seg.fxOff = [];
+  pushHistory();
+  const at = seg.fxOff.indexOf(effectKey);
+  if (at >= 0) seg.fxOff.splice(at, 1);
+  else seg.fxOff.push(effectKey);
+  // Recomposite the processed buffer for the new per-segment state, then the
+  // pipeline rebuilds the playback buffer and redraws on commit.
+  requestEffectsSync({ type: 'light' });
+  // Instant chip feedback (the async sync redraws again when it commits).
+  drawPlaybackWaveform(state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
+}
+
+// Turn every enabled per-segment effect on (or off) for ALL segments at once —
+// the escape hatch for "I only want the effect on one of ten segments" (All
+// off, then click the one). A single undoable edit.
+export function setAllSegmentsEffects(on) {
+  if (!state.recordedBuffer || state.segments.length === 0) return;
+  const keys = enabledPerSegmentEffects().map(e => e.key);
+  if (keys.length === 0) return;
+  pushHistory();
+  for (const seg of state.segments) {
+    if (!seg.fxOff) seg.fxOff = [];
+    for (const key of keys) {
+      const at = seg.fxOff.indexOf(key);
+      if (on && at >= 0) seg.fxOff.splice(at, 1);
+      else if (!on && at < 0) seg.fxOff.push(key);
+    }
+  }
+  requestEffectsSync({ type: 'light' });
+  drawPlaybackWaveform(state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0);
 }
 
 // ===== Segment copy/paste (context menu) =====
@@ -354,8 +398,8 @@ async function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLab
 
   const oldLen = state.originalBuffer.length;
   const insertAt = Math.max(0, Math.min(afterIndex + 1, state.segments.length));
-  const newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
-  newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel });
+  const newSegments = state.segments.map(cloneSeg);
+  newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel, fxOff: [] });
 
   await commitAppendedAudio(newLen, fillChannel, newSegments, oldLen);
   if (!state.recordedBuffer) return;
@@ -454,24 +498,25 @@ export async function pasteInsertAtPlayhead() {
 
   if (atSegStart) {
     pastedIndex = index;
-    newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
-    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
+    newSegments = state.segments.map(cloneSeg);
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste', fxOff: [] });
   } else if (atRecordingEnd) {
     pastedIndex = index + 1;
-    newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
-    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
+    newSegments = state.segments.map(cloneSeg);
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste', fxOff: [] });
   } else {
     const splitPoint = seg.start + offsetInSeg;
     pastedIndex = index + 1;
     didSplit = true;
+    const inherited = state.segments[index].fxOff ? state.segments[index].fxOff.slice() : [];
     newSegments = [];
     for (let i = 0; i < state.segments.length; i++) {
       if (i === index) {
-        newSegments.push({ start: seg.start, end: splitPoint, origin: 'split' });
-        newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'paste' });
-        newSegments.push({ start: splitPoint, end: seg.end, origin: 'split' });
+        newSegments.push({ start: seg.start, end: splitPoint, origin: 'split', fxOff: inherited.slice() });
+        newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'paste', fxOff: [] });
+        newSegments.push({ start: splitPoint, end: seg.end, origin: 'split', fxOff: inherited.slice() });
       } else {
-        newSegments.push({ start: state.segments[i].start, end: state.segments[i].end, origin: state.segments[i].origin });
+        newSegments.push(cloneSeg(state.segments[i]));
       }
     }
   }
@@ -509,12 +554,19 @@ function applyHistorySnapshot(snapshot, render) {
   // ranges without changing the underlying buffer) — skip the rebuild AND the
   // peak invalidation entirely.
   const pcmMatches = !snapshot.pinnedBuffer && !!state.recordedBuffer && snapshot.bufferEpoch === state.bufferEpoch;
-  state.segments = snapshot.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
+  state.segments = snapshot.segments.map(cloneSeg);
   state.bufferEpoch = snapshot.bufferEpoch;
 
   if (!pcmMatches) {
     rebuildPlaybackBuffer();
   }
+
+  // Undo/redo may have changed which segments opt out of a per-segment effect
+  // (a chip toggle is PCM-neutral, so pcmMatches short-circuits the rebuild
+  // above). Resync the effects pipeline so the processed buffer recomposites
+  // for the restored per-segment state; it no-ops when the fingerprint is
+  // unchanged (e.g. undoing a plain split).
+  if (!snapshot.pinnedBuffer && isEffectsActive()) requestEffectsSync({ type: 'light' });
 
   hideSegmentTrash();
   clearSegmentHover();
@@ -562,7 +614,7 @@ function pickHistoryRenderer(beforeSegments, beforeTotalSamples, beforeRatio, ta
 
 function captureBeforeState() {
   return {
-    segments: state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin })),
+    segments: state.segments.map(cloneSeg),
     totalSamples: state.recordedBuffer ? state.recordedBuffer.length : 0,
     ratio: state.recordedBuffer && state.recordedBuffer.duration > 0 ? state.playbackOffset / state.recordedBuffer.duration : 0
   };
@@ -633,8 +685,8 @@ export async function appendBufferToRecording(buffer, toastMessage) {
   }
   const oldLen = state.originalBuffer.length;
   const newLen = adapted.length;
-  const newSegments = state.segments.map(s => ({ start: s.start, end: s.end, origin: s.origin }));
-  newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append' });
+  const newSegments = state.segments.map(cloneSeg);
+  newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append', fxOff: [] });
   await commitAppendedAudio(newLen, (c) => adapted.getChannelData(c), newSegments, oldLen);
   if (!state.recordedBuffer) return;
 
