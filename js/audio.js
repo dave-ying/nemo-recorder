@@ -6,6 +6,7 @@ import { fillWaveformPathLive, hideSegmentTrash } from './waveform.js';
 import { pausePlayback } from './playback.js';
 import { resetHistory } from './history.js';
 import { loadBufferAsRecording } from './editing.js';
+import { resetEffectsCaches } from './effects.js';
 
 let liveRafId;
 
@@ -121,8 +122,9 @@ export async function connectMicrophone(deviceId) {
     const stillProcessing = ['echoCancellation', 'noiseSuppression', 'autoGainControl']
       .filter(key => trackSettings[key] === true)
       .map(key => key.replace(/([A-Z])/g, ' $1').toLowerCase());
-    const processingNote = stillProcessing.length ? ` — driver kept ${stillProcessing.join(', ')} on` : '';
-    showToast(`Connected: ${state.micLabel}${processingNote}`, stillProcessing.length > 0);
+    if (stillProcessing.length) {
+      showToast(`Connected: ${state.micLabel} — driver kept ${stillProcessing.join(', ')} on`, true);
+    }
   } catch (err) {
     console.error(err);
     const msg = err.name === 'NotAllowedError' ? 'Microphone permission denied'
@@ -158,6 +160,7 @@ export function disconnectMicrophone() {
   state.segments = [];
   state.cachedPeaks = null;
   state.cachedPath = null;
+  resetEffectsCaches();
   resetHistory();
   hideSegmentTrash();
   resetReadouts();
@@ -485,7 +488,7 @@ export async function stopRecording() {
   }
 
   // Defensive fallback for any non-modal caller.
-  loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
+  await loadBufferAsRecording(buffer, 'Capture complete — lossless PCM ready');
 }
 
 
