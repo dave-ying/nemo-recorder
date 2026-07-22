@@ -219,7 +219,7 @@ body::after {
   flex-shrink: 0;
 }
 .append-menu-item:first-child svg { stroke: currentColor; fill: none; }
-.append-menu-item:last-child svg { fill: currentColor; }
+.append-menu-item:last-child svg { stroke: currentColor; fill: none; }
 .append-menu-item:hover {
   background: var(--surface-hover);
   color: var(--accent);
