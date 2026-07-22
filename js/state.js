@@ -34,6 +34,59 @@ export const WAVEFORM_STYLE = {
   tickColor: 'rgba(110, 110, 122, 0.5)'
 };
 
+// ===== Per-segment effect scoping =====
+//
+// Effects default to the whole recording (state.effectScope === 'all'). The
+// user can switch to per-segment scope ('segment'), where each per-segmentable
+// effect can be toggled on/off per segment. Loudness normalization is
+// deliberately NOT per-segmentable — it exists to make the whole program
+// consistent, so it always applies to everything and ignores effectScope.
+//
+// Each per-segment-capable effect carries its own IDENTITY COLOR so multiple
+// effects stay legible at a glance: in per-segment mode every card shows one
+// small chip per enabled per-segment effect, filled in that effect's color
+// when on, hollow when off. Colors are chosen distinct from the teal waveform
+// and the orange accent/selection so a chip never reads as "selected".
+//
+// `color` is the on/identity color; `colorSoft` is the faint fill used behind
+// an "off" chip. `isEnabled` reads whether the effect is globally on (its
+// toolbar toggle) — chips only appear for enabled effects.
+/** @type {Array<{key: string, label: string, color: string, colorSoft: string, isEnabled: () => boolean}>} */
+export const PER_SEGMENT_EFFECTS = [
+  { key: 'noise', label: 'Noise removal', color: 'rgba(167, 139, 250, 1)', colorSoft: 'rgba(167, 139, 250, 0.16)', isEnabled: () => state.denoise.enabled }
+];
+
+export const SEGMENT_CHIP_SIZE_CSS_PX = 15;
+export const SEGMENT_CHIP_GAP_CSS_PX = 4;
+export const SEGMENT_CHIP_MARGIN_CSS_PX = 6;
+
+/** The per-segment effects whose global toggle is currently on. */
+export function enabledPerSegmentEffects() {
+  return PER_SEGMENT_EFFECTS.filter(e => e.isEnabled());
+}
+
+/** True when per-segment chips should render/hit-test (segment scope + at least one enabled per-segment effect). */
+export function perSegmentUiActive() {
+  return state.effectScope === 'segment' && PER_SEGMENT_EFFECTS.some(e => e.isEnabled());
+}
+
+/**
+ * Does the given effect apply to this segment right now? In whole-recording
+ * scope every effect applies to every segment; in per-segment scope a segment
+ * opts out by listing the effect key in its `fxOff` array.
+ * @param {{fxOff?: string[]}} seg
+ * @param {string} key
+ */
+export function segmentEffectOn(seg, key) {
+  if (state.effectScope !== 'segment') return true;
+  return !(seg.fxOff && seg.fxOff.includes(key));
+}
+
+/** Clone a segment (including its per-segment effect opt-outs). */
+export function cloneSeg(s) {
+  return { start: s.start, end: s.end, origin: s.origin, fxOff: s.fxOff ? s.fxOff.slice() : [] };
+}
+
 export const SELECTION_PULSE_PERIOD_SEC = 2;
 export const DELETE_PULSE_PERIOD_SEC = 0.55;
 export const SEGMENT_DELETE_ANIM_MS = 480;
@@ -113,7 +166,8 @@ export const APPEND_BUTTON_PAD_CSS_PX = 16;
  * @property {number} recordedTotalSamples - total samples captured so far (for duration cap warning)
  * @property {AudioBuffer|null} originalBuffer
  * @property {AudioBuffer|null} recordedBuffer
- * @property {Array<{start: number, end: number, origin: string}>} segments
+ * @property {Array<{start: number, end: number, origin: string, fxOff?: string[]}>} segments - fxOff lists per-segmentable effect keys turned off for that segment (per-segment scope only; see PER_SEGMENT_EFFECTS)
+ * @property {'all'|'segment'} effectScope - scope for per-segmentable effects: 'all' applies them to the whole recording (default), 'segment' honors each segment's fxOff. Loudness ignores this. Session setting, outside undo history.
  * @property {number} bufferEpoch - incremented on every PCM-mutating operation (paste/delete/append/duplicate/reorder); used by undo to skip rebuild for PCM-neutral edits (split)
  * @property {AudioBufferSourceNode|null} playbackSource
  * @property {number} playbackStartTime
@@ -170,6 +224,7 @@ export const state = {
   originalBuffer: null,
   recordedBuffer: null,
   segments: [],
+  effectScope: 'all',
   bufferEpoch: 0,
   playbackSource: null,
   playbackStartTime: 0,

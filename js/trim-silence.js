@@ -126,11 +126,11 @@ export function detectSilenceRegions(buffer, opts) {
  *
  * Segments that become entirely silent are dropped from `newSegments`.
  *
- * @param {Array<{start: number, end: number, origin?: string}>} segments
+ * @param {Array<{start: number, end: number, origin?: string, fxOff?: string[]}>} segments
  * @param {Array<{start: number, end: number}>} silenceRegions - sorted ascending, non-overlapping
  * @returns {{
  *   entries: Array<{origIdx: number, srcStart: number, srcEnd: number}>,
- *   newSegments: Array<{start: number, end: number, origin: string}>,
+ *   newSegments: Array<{start: number, end: number, origin: string, fxOff?: string[]}>,
  *   segmentLengths: number[]
  * }}
  */
@@ -169,11 +169,15 @@ export function remapSegments(segments, silenceRegions) {
 
     segmentLengths.push(segLen);
     if (segLen > 0) {
-      newSegments.push({
+      const remapped = {
         start: runningOffset,
         end: runningOffset + segLen,
         origin: seg.origin || 'capture'
-      });
+      };
+      // Carry each segment's per-segment effect opt-outs across compaction
+      // (only when it has any, so ordinary segments keep their minimal shape).
+      if (seg.fxOff && seg.fxOff.length) remapped.fxOff = seg.fxOff.slice();
+      newSegments.push(remapped);
       runningOffset += segLen;
     }
   }

@@ -23,6 +23,12 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLInputElement} normalizeTargetLufs
  * @property {HTMLInputElement} normalizeTruePeak
  * @property {HTMLButtonElement} removeNoiseButton
+ * @property {HTMLDivElement} effectScopeControl
+ * @property {HTMLButtonElement} effectScopeAll
+ * @property {HTMLButtonElement} effectScopeSegment
+ * @property {HTMLDivElement} segFxQuick
+ * @property {HTMLButtonElement} segFxAllOn
+ * @property {HTMLButtonElement} segFxAllOff
  * @property {HTMLButtonElement} undoButton
  * @property {HTMLButtonElement} redoButton
  * @property {HTMLButtonElement} playheadCaretTop
@@ -118,6 +124,8 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   normalizeLoudnessEnabled: $('normalizeLoudnessEnabled'),
   normalizeTargetLufs: $('normalizeTargetLufs'), normalizeTruePeak: $('normalizeTruePeak'),
   removeNoiseButton: $('removeNoiseButton'),
+  effectScopeControl: $('effectScopeControl'), effectScopeAll: $('effectScopeAll'), effectScopeSegment: $('effectScopeSegment'),
+  segFxQuick: $('segFxQuick'), segFxAllOn: $('segFxAllOn'), segFxAllOff: $('segFxAllOff'),
   undoButton: $('undoButton'), redoButton: $('redoButton'),
   playheadCaretTop: $('playheadCaretTop'), playheadLine: $('playheadLine'),
   stage: $('stage'),
