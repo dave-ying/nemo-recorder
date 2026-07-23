@@ -113,6 +113,11 @@ const $ = (id) => document.getElementById(id);
  * @property {HTMLDivElement} timelineGrid
  * @property {HTMLCanvasElement} timelineRuler
  * @property {HTMLDivElement} timelinePlayhead
+ * @property {HTMLDivElement} timelineScrollbar
+ * @property {HTMLDivElement} timelineScrollThumb
+ * @property {HTMLButtonElement} tlZoomOut
+ * @property {HTMLButtonElement} tlZoomFit
+ * @property {HTMLButtonElement} tlZoomIn
  * @property {HTMLDivElement} waveformHome
  * @property {HTMLButtonElement} addTrackButton
  * @property {HTMLDivElement} segmentContextMenu
@@ -177,7 +182,10 @@ export const el = /** @type {AppElements} */ (/** @type {any} */ ({
   helpTabs: $('helpTabs'), helpPanelShortcuts: $('helpPanelShortcuts'), helpPanelChangelog: $('helpPanelChangelog'),
   helpPanelAbout: $('helpPanelAbout'),
   timeline: $('timeline'), timelineGrid: $('timelineGrid'), timelineRuler: $('timelineRuler'),
-  timelinePlayhead: $('timelinePlayhead'), waveformHome: $('waveformHome'),
+  timelinePlayhead: $('timelinePlayhead'),
+  timelineScrollbar: $('timelineScrollbar'), timelineScrollThumb: $('timelineScrollThumb'),
+  tlZoomOut: $('tlZoomOut'), tlZoomFit: $('tlZoomFit'), tlZoomIn: $('tlZoomIn'),
+  waveformHome: $('waveformHome'),
   addTrackButton: $('addTrackButton'),
   segmentContextMenu: $('segmentContextMenu'),
   segmentContextCopy: $('segmentContextCopy'), segmentContextPaste: $('segmentContextPaste'),

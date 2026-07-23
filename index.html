@@ -81,6 +81,7 @@
               <canvas class="tl-ruler" id="timelineRuler" aria-hidden="true"></canvas>
             </div>
             <div class="tl-grid" id="timelineGrid"></div>
+            <div class="tl-scrollbar" id="timelineScrollbar" hidden><div class="tl-scroll-thumb" id="timelineScrollThumb"></div></div>
             <div class="tl-playhead" id="timelinePlayhead"></div>
           </div>
 
@@ -168,7 +169,16 @@
             <span class="time-sep">/</span>
             <span class="time-total" id="timeTotal">00:00.000</span>
           </div>
-          <button class="add-track-button transport-add-track" id="addTrackButton" title="Add a new track" style="margin-left: auto;">
+          <div class="tl-zoom" id="tlZoom" style="margin-left: auto;">
+            <button class="tl-zoom-btn" id="tlZoomOut" title="Zoom out" aria-label="Zoom out">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button class="tl-zoom-btn tl-zoom-fit" id="tlZoomFit" title="Zoom to fit">Fit</button>
+            <button class="tl-zoom-btn" id="tlZoomIn" title="Zoom in" aria-label="Zoom in">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+          <button class="add-track-button transport-add-track" id="addTrackButton" title="Add a new track">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
             Add track
           </button>
@@ -494,8 +504,10 @@
           <ul class="changelog-list">
             <li>Reworked the multi-track view into a <strong>timeline</strong>: every track is now its own row with its controls on the left and its waveform on a shared time axis — no more separate track panel below the editor.</li>
             <li>Added a single <strong>playhead</strong> that spans every track. Play now plays the whole mix and moves that one playhead; click a lane or the ruler to move it.</li>
-            <li>You can <strong>drag a track’s audio left or right</strong> to position it in time relative to the other tracks.</li>
-            <li>Click a clip to select it and focus its track; split, delete, and trim act on the focused track at the shared playhead.</li>
+            <li><strong>Drag any clip</strong> left or right to position it in time — clips can now sit at their own spots with gaps between them, not just as one block per track.</li>
+            <li><strong>Drag a clip onto another track</strong> to move it there.</li>
+            <li>Added <strong>zoom and scroll</strong>: use the −/Fit/+ buttons or Ctrl/⌘-scroll to zoom, and the scrollbar or Shift-scroll to pan a longer project.</li>
+            <li>Click a clip to select it and focus its track; split, delete, and trim act on the focused track at the shared playhead. Splitting and moving clips can be undone.</li>
           </ul>
         </div>
         <div class="help-group changelog-group">

@@ -876,6 +876,33 @@ kbd {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .tl-lane.is-active { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal-glow); }
+.tl-lane.is-drop-target { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent-glow); }
+
+/* Horizontal scrollbar (shown only when zoomed in past fit). */
+.tl-scrollbar {
+  position: sticky; left: 0; height: 10px; margin-left: var(--tl-header-w);
+  margin-top: 4px; flex-shrink: 0; cursor: pointer;
+}
+.tl-scrollbar[hidden] { display: none; }
+.tl-scroll-thumb {
+  position: absolute; top: 2px; height: 6px; border-radius: 3px;
+  background: var(--border-bright); min-width: 28px;
+}
+.tl-scroll-thumb:hover { background: var(--fg-muted); }
+
+/* Zoom controls in the transport bar. */
+.tl-zoom { display: inline-flex; align-items: center; gap: 2px; }
+.tl-zoom-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; min-width: 28px; padding: 0 8px;
+  background: var(--surface); color: var(--fg-muted);
+  border: 1px solid var(--border); border-radius: 7px;
+  font-size: var(--fs-floor); font-weight: 600; cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.tl-zoom-btn:hover { color: var(--fg); border-color: var(--border-bright); }
+.tl-zoom-btn svg { width: 14px; height: 14px; }
+.tl-zoom-fit { letter-spacing: 0.04em; }
 
 .tl-lane-head {
   width: var(--tl-header-w); flex-shrink: 0;

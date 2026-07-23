@@ -11,7 +11,7 @@ import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, 
 import { closeHelpModal, initHelpModal } from './help-modal.js';
 import { openSegmentContextMenu, initSegmentContextMenu, closeSegmentContextMenu } from './context-menu.js';
 import { addTrack, updateTracksPanel, initEffectsUI } from './tracks.js';
-import { initTimeline, togglePlay, seekToStart, seekToEnd, renderTimeline } from './timeline.js';
+import { initTimeline, togglePlay, seekToStart, seekToEnd, renderTimeline, zoomIn, zoomOut, zoomFit } from './timeline.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
 let _pendingSeekClientX = null;
@@ -54,6 +54,9 @@ el.skipForwardButton.addEventListener('click', () => seekToEnd());
 el.playButton.addEventListener('click', () => togglePlay());
 
 el.addTrackButton.addEventListener('click', addTrack);
+el.tlZoomIn.addEventListener('click', () => zoomIn());
+el.tlZoomOut.addEventListener('click', () => zoomOut());
+el.tlZoomFit.addEventListener('click', () => zoomFit());
 
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);

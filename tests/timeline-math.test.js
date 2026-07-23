@@ -9,8 +9,48 @@ import {
   projectDurationSamples,
   dbToGain,
   audibleTracks,
-  addClipToMix
+  addClipToMix,
+  ensureClipTStarts,
+  trackTimelineEndSamples,
+  clipAtTimelineSample
 } from '../js/waveform-math.js';
+
+test('ensureClipTStarts: fills missing positions, keeps explicit ones, packs at end', () => {
+  const segs = [
+    { start: 0, end: 100 },              // no tStart -> 0
+    { start: 100, end: 260, tStart: 500 }, // explicit -> kept
+    { start: 260, end: 300 }             // no tStart -> packed after max end (500+160=660)
+  ];
+  ensureClipTStarts(segs);
+  assert.equal(segs[0].tStart, 0);
+  assert.equal(segs[1].tStart, 500);
+  assert.equal(segs[2].tStart, 660);
+});
+
+test('ensureClipTStarts: honors a non-zero base for the first missing clip', () => {
+  const segs = [{ start: 0, end: 100 }];
+  ensureClipTStarts(segs, 1000);
+  assert.equal(segs[0].tStart, 1000);
+});
+
+test('trackTimelineEndSamples: furthest-right clip end (with gaps)', () => {
+  assert.equal(trackTimelineEndSamples([
+    { start: 0, end: 100, tStart: 0 },
+    { start: 0, end: 100, tStart: 500 } // ends at 600
+  ]), 600);
+  assert.equal(trackTimelineEndSamples([]), 0);
+});
+
+test('clipAtTimelineSample: locates the covering clip + local offset', () => {
+  const segs = [
+    { start: 0, end: 100, tStart: 0 },     // covers [0,100)
+    { start: 0, end: 100, tStart: 500 }    // covers [500,600)
+  ];
+  assert.deepEqual(clipAtTimelineSample(segs, 50), { index: 0, offsetInClip: 50 });
+  assert.deepEqual(clipAtTimelineSample(segs, 550), { index: 1, offsetInClip: 50 });
+  assert.equal(clipAtTimelineSample(segs, 300), null); // in the gap
+  assert.equal(clipAtTimelineSample(segs, 600), null); // just past the end (exclusive)
+});
 
 test('clipLengthSamples / clipTimelineEnd', () => {
   assert.equal(clipLengthSamples({ start: 100, end: 250 }), 150);

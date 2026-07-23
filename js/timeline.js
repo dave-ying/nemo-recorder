@@ -17,9 +17,9 @@
 import { state, WAVEFORM_STYLE } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
-import { computePeaksForRange, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
+import { computePeaksForRange, pickRulerIntervalSec, formatRulerLabel, trackTimelineEndSamples, clipAtTimelineSample } from './waveform-math.js';
 import { trackSourceBuffer } from './effects.js';
-import { rebuildMix } from './editing.js';
+import { rebuildMix, commitClipMove, moveClipToTrack } from './editing.js';
 import {
   setActiveTrack, toggleMute, toggleSolo, setGainDb,
   removeTrack, toggleTrackFxPopover, enabledFxCount, registerTimeline,
@@ -36,11 +36,17 @@ const LANE_GAP = 8;
 const MIN_PX_PER_SEC = 6;
 const DPR_CAP = 2;
 
+const ZOOM_MIN = 1;      // 1 = fit whole project to width
+const ZOOM_MAX = 40;
+const ZOOM_STEP = 1.3;
+
 // ----- module playback / view state -----
 let playheadSec = 0;
 let pxPerSec = MIN_PX_PER_SEC;
 let projectDurationSec = 0;
 let laneAreaWidthCss = 0;
+let zoom = 1;
+let scrollLeftSec = 0;
 
 let mixSource = null;
 let mixStartCtxTime = 0;
@@ -59,20 +65,17 @@ const _peaksCache = new WeakMap();
 
 // ===== Scale / geometry =====
 
-/** Seconds a track occupies on the timeline: its offset + total kept audio. */
+/** Sample rate of a track's source (fallback 48k when it has no audio yet). */
+function trackSr(track) {
+  const src = trackSourceBuffer(track);
+  return src ? src.sampleRate : 48000;
+}
+
+/** Seconds a track occupies on the timeline (furthest-right clip end). */
 function trackEndSec(track) {
   const src = trackSourceBuffer(track);
   if (!src || track.segments.length === 0) return 0;
-  const sr = src.sampleRate;
-  let len = 0;
-  for (const s of track.segments) len += (s.end - s.start);
-  return (track.offsetSamples || 0) / sr + len / sr;
-}
-
-function trackOffsetSec(track) {
-  const src = trackSourceBuffer(track);
-  const sr = src ? src.sampleRate : 48000;
-  return (track.offsetSamples || 0) / sr;
+  return trackTimelineEndSamples(track.segments) / src.sampleRate;
 }
 
 /** Longest timeline extent across all tracks, in seconds (>=0). */
@@ -82,15 +85,104 @@ function computeProjectDurationSec() {
   return max;
 }
 
-/** Fit the whole project into the available lane width (no zoom/scroll yet). */
+/**
+ * Recompute the horizontal scale. `zoom` (1 = fit whole project to width) scales
+ * pxPerSec up from the fit baseline; when zoomed in the lanes overflow and the
+ * timeline scrolls horizontally.
+ */
 function computeScale() {
   projectDurationSec = computeProjectDurationSec();
   const usable = Math.max(1, laneAreaWidthCss);
-  pxPerSec = projectDurationSec > 0 ? Math.max(MIN_PX_PER_SEC, usable / projectDurationSec) : MIN_PX_PER_SEC;
+  const fit = projectDurationSec > 0 ? usable / projectDurationSec : MIN_PX_PER_SEC;
+  pxPerSec = Math.max(MIN_PX_PER_SEC, fit * zoom);
 }
 
-function secToX(sec) { return sec * pxPerSec; }
-function xToSec(x) { return pxPerSec > 0 ? x / pxPerSec : 0; }
+/** Absolute project seconds → x within the lane column (accounts for scroll). */
+function secToX(sec) { return (sec - scrollLeftSec) * pxPerSec; }
+/** x within the lane column → absolute project seconds. */
+function xToSec(x) { return (pxPerSec > 0 ? x / pxPerSec : 0) + scrollLeftSec; }
+
+function visibleDurSec() { return pxPerSec > 0 ? laneAreaWidthCss / pxPerSec : 0; }
+function maxScrollSec() { return Math.max(0, projectDurationSec - visibleDurSec()); }
+function clampScroll() { scrollLeftSec = Math.max(0, Math.min(scrollLeftSec, maxScrollSec())); }
+
+/** Redraw everything that depends on scale/scroll (no lane-DOM rebuild). */
+function repaint() {
+  drawRuler();
+  drawAllLanes();
+  positionPlayhead();
+  updateScrollbar();
+}
+
+/** Zoom by a factor, keeping the project time under `pivotX` (lane px) fixed. */
+function zoomBy(factor, pivotX) {
+  const px = Math.max(0, pivotX);
+  const secAt = xToSec(px);
+  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom * factor));
+  computeScale();
+  scrollLeftSec = zoom <= ZOOM_MIN ? 0 : secAt - px / pxPerSec;
+  clampScroll();
+  repaint();
+}
+
+export function zoomIn() { zoomBy(ZOOM_STEP, laneAreaWidthCss / 2); }
+export function zoomOut() { zoomBy(1 / ZOOM_STEP, laneAreaWidthCss / 2); }
+export function zoomFit() { zoom = ZOOM_MIN; scrollLeftSec = 0; computeScale(); repaint(); }
+
+function onWheel(e) {
+  if (!anyTrackHasAudio() || !el.timelineGrid) return;
+  const rect = el.timelineGrid.getBoundingClientRect();
+  const px = e.clientX - rect.left - HEADER_W;
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, px);
+    return;
+  }
+  // Horizontal pan: trackpad X, or Shift+wheel, when zoomed in.
+  const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+  if (dx !== 0 && maxScrollSec() > 0) {
+    e.preventDefault();
+    scrollLeftSec += dx / pxPerSec;
+    clampScroll();
+    repaint();
+  }
+}
+
+/** Position + size the horizontal scrollbar thumb (hidden when fully fit). */
+function updateScrollbar() {
+  const bar = el.timelineScrollbar, thumb = el.timelineScrollThumb;
+  if (!bar || !thumb) return;
+  const maxS = maxScrollSec();
+  if (maxS <= 0 || projectDurationSec <= 0) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const trackW = bar.clientWidth || laneAreaWidthCss;
+  const frac = Math.min(1, visibleDurSec() / projectDurationSec);
+  const w = Math.max(28, trackW * frac);
+  const left = (scrollLeftSec / projectDurationSec) * trackW;
+  thumb.style.width = w + 'px';
+  thumb.style.left = Math.min(trackW - w, left) + 'px';
+}
+
+function onScrollbarPointerDown(e) {
+  const bar = el.timelineScrollbar, thumb = el.timelineScrollThumb;
+  if (!bar || !thumb) return;
+  e.preventDefault();
+  const barRect = bar.getBoundingClientRect();
+  const thumbW = thumb.offsetWidth;
+  const onThumb = e.target === thumb;
+  const grab = onThumb ? (e.clientX - thumb.getBoundingClientRect().left) : thumbW / 2;
+  const toScroll = (cx) => {
+    const left = Math.max(0, Math.min(barRect.width - thumbW, cx - barRect.left - grab));
+    scrollLeftSec = (left / Math.max(1, barRect.width)) * projectDurationSec;
+    clampScroll();
+    repaint();
+  };
+  toScroll(e.clientX);
+  const move = (ev) => toScroll(ev.clientX);
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
 
 // ===== Public API =====
 
@@ -116,26 +208,32 @@ export function renderTimeline() {
 
   measureLaneWidth();
   computeScale();
+  clampScroll();
   clampPlayhead();
   buildLanes();
   drawRuler();
   drawAllLanes();
   positionPlayhead();
+  updateScrollbar();
   syncActivePlaybackOffset();
   updateTransportUI();
 }
 
 /**
- * Bridge the shared timeline playhead (project seconds) into the active track's
- * local editor playhead (state.playbackOffset), so the existing editing tools
- * (split / delete at playhead) cut at the right spot relative to the shared
- * playhead.
+ * Publish the shared playhead as `state.timelineSec` (the authority for
+ * clip-level split/delete-at-playhead) and keep a rough `state.playbackOffset`
+ * bridge for the legacy keyboard nav (measured from the active track's earliest
+ * clip).
  */
 function syncActivePlaybackOffset() {
+  state.timelineSec = playheadSec;
   if (!state.recordedBuffer) { state.playbackOffset = 0; return; }
   const t = state.tracks[state.activeTrackIndex];
-  const offSec = trackOffsetSec(t);
-  state.playbackOffset = Math.max(0, Math.min(state.recordedBuffer.duration, playheadSec - offSec));
+  const sr = trackSr(t);
+  let firstT = Infinity;
+  for (const s of t.segments) firstT = Math.min(firstT, s.tStart != null ? s.tStart : 0);
+  if (!isFinite(firstT)) firstT = 0;
+  state.playbackOffset = Math.max(0, Math.min(state.recordedBuffer.duration, playheadSec - firstT / sr));
 }
 
 /** Measure the lane canvas column width from the mounted grid (falls back to stage). */
@@ -280,12 +378,13 @@ function drawLane(canvas, track, isActive) {
   const playX = secToX(playheadSec) * dpr;
   const scale = (H / 2) * 0.86;
 
-  let accSamples = track.offsetSamples || 0;
+  let accSamples = 0;
   track.segments.forEach((seg, segIndex) => {
     const len = seg.end - seg.start;
-    const startSec = accSamples / sr;
-    const endSec = (accSamples + len) / sr;
-    accSamples += len;
+    const tStart = seg.tStart != null ? seg.tStart : accSamples;
+    accSamples = Math.max(accSamples, tStart + len);
+    const startSec = tStart / sr;
+    const endSec = (tStart + len) / sr;
 
     const x0 = Math.round(secToX(startSec) * dpr);
     const x1 = Math.round(secToX(endSec) * dpr);
@@ -341,12 +440,16 @@ function drawRuler() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (projectDurationSec <= 0) return;
 
-  const intervalSec = pickRulerIntervalSec(projectDurationSec, cssW);
+  // Tick density follows the VISIBLE window, so zooming in reveals finer ticks.
+  const visibleDurSec = cssW / pxPerSec;
+  const intervalSec = pickRulerIntervalSec(visibleDurSec, cssW);
   ctx.fillStyle = WAVEFORM_STYLE.tickColor;
   ctx.strokeStyle = WAVEFORM_STYLE.tickColor;
   ctx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
   ctx.textBaseline = 'bottom';
-  for (let t = 0; t <= projectDurationSec + 1e-6; t += intervalSec) {
+  const first = Math.max(0, Math.floor(scrollLeftSec / intervalSec) * intervalSec);
+  const last = Math.min(projectDurationSec, scrollLeftSec + visibleDurSec);
+  for (let t = first; t <= last + 1e-6; t += intervalSec) {
     const x = Math.round(secToX(t) * dpr);
     ctx.fillRect(x, canvas.height - 8 * dpr, 1, 8 * dpr);
     ctx.fillText(formatRulerLabel(t, intervalSec), x + 3 * dpr, canvas.height - 9 * dpr);
@@ -367,24 +470,25 @@ function clampPlayhead() {
 function positionPlayhead() {
   const ph = el.timelinePlayhead;
   if (!ph) return;
-  if (!anyTrackHasAudio()) { ph.style.display = 'none'; return; }
+  const x = secToX(playheadSec);
+  // Hide when scrolled out of the visible lane window.
+  if (!anyTrackHasAudio() || x < 0 || x > laneAreaWidthCss + 0.5) { ph.style.display = 'none'; return; }
   ph.style.display = '';
-  const leftPx = HEADER_W + secToX(playheadSec);
-  ph.style.left = leftPx + 'px';
+  ph.style.left = (HEADER_W + x) + 'px';
   ph.style.top = '0px';
   ph.style.height = (RULER_H + totalLanesHeightCss()) + 'px';
 }
 
-// ===== Pointer interaction: seek / select clip / drag clip in time =====
+// ===== Pointer interaction: seek / select clip / drag clip =====
 //
 // - Press on empty lane area or the ruler → scrub the playhead (drag to move it).
-// - Press on a track's clip and release without dragging → seek there, select
-//   that clip, and focus its track (so split/delete/trim act on it).
-// - Press on a clip and drag horizontally → reposition that whole track on the
-//   timeline (updates the track's offset; all its clips move together, since a
-//   track is one contiguous block of audio).
+// - Press on a clip and release without dragging → seek there, select that clip,
+//   and focus its track (so split/delete/trim act on it).
+// - Press on a clip and drag → move that INDIVIDUAL clip in time (its tStart);
+//   drag it onto another lane to move it to that track (cross-track move).
 
 const CLIP_DRAG_THRESHOLD_PX = 4;
+const SNAP_PX = 7; // snap distance to 0 / playhead / other clip edges
 
 /** Map a client X (relative to the lane column) to a project time (seconds). */
 function clientXToSec(clientX) {
@@ -402,18 +506,48 @@ function clipHitTest(laneIndex, sec) {
   if (!track) return null;
   const src = trackSourceBuffer(track);
   if (!src || track.segments.length === 0) return null;
-  const sr = src.sampleRate;
-  let acc = (track.offsetSamples || 0) / sr;
-  for (let i = 0; i < track.segments.length; i++) {
-    const s = track.segments[i];
-    const dur = (s.end - s.start) / sr;
-    if (sec >= acc && sec <= acc + dur) return { trackIndex: laneIndex, segIndex: i };
-    acc += dur;
-  }
-  return null;
+  const tSample = Math.round(sec * src.sampleRate);
+  const hit = clipAtTimelineSample(track.segments, tSample);
+  return hit ? { trackIndex: laneIndex, segIndex: hit.index } : null;
 }
 
-/** @type {null | {mode:'seek'|'clip', trackIndex:number, segIndex:number, startClientX:number, startOffsetSamples:number, sr:number, moved:boolean}} */
+/** Lane index under a client Y (for cross-track drops); -1 if none. */
+function laneIndexAtClientY(clientY) {
+  if (!el.timelineGrid) return -1;
+  const lanes = el.timelineGrid.querySelectorAll('.tl-lane');
+  for (let i = 0; i < lanes.length; i++) {
+    const r = lanes[i].getBoundingClientRect();
+    if (clientY >= r.top && clientY <= r.bottom) return i;
+  }
+  return -1;
+}
+
+/** Candidate snap positions (in seconds) for a dragged clip's left edge. */
+function snapTargets(exceptTrack, exceptSeg) {
+  const targets = [0, playheadSec];
+  state.tracks.forEach((t, ti) => {
+    const sr = trackSr(t);
+    t.segments.forEach((s, si) => {
+      if (ti === exceptTrack && si === exceptSeg) return;
+      const a = (s.tStart != null ? s.tStart : 0) / sr;
+      targets.push(a, a + (s.end - s.start) / sr);
+    });
+  });
+  return targets;
+}
+
+/** Snap a proposed left-edge second to a nearby target if within SNAP_PX. */
+function applySnap(sec, exceptTrack, exceptSeg) {
+  const tol = SNAP_PX / pxPerSec;
+  let best = sec, bestD = tol;
+  for (const t of snapTargets(exceptTrack, exceptSeg)) {
+    const d = Math.abs(sec - t);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return Math.max(0, best);
+}
+
+/** @type {null | {mode:'seek'|'clip', trackIndex:number, segIndex:number, startClientX:number, startClientY:number, grabOffsetSec:number, startTStart:number, sr:number, moved:boolean, destLane:number}} */
 let drag = null;
 
 function onLanePointerDown(e) {
@@ -429,15 +563,20 @@ function onLanePointerDown(e) {
   const hit = laneIndex >= 0 ? clipHitTest(laneIndex, sec) : null;
 
   if (hit) {
+    // Editing a clip always happens on its (now active) track so per-track undo
+    // captures it correctly.
+    if (hit.trackIndex !== state.activeTrackIndex) setActiveTrack(hit.trackIndex);
     const track = state.tracks[hit.trackIndex];
-    const src = trackSourceBuffer(track);
+    const seg = track.segments[hit.segIndex];
+    const sr = trackSr(track);
     drag = {
       mode: 'clip', trackIndex: hit.trackIndex, segIndex: hit.segIndex,
-      startClientX: e.clientX, startOffsetSamples: track.offsetSamples || 0,
-      sr: src ? src.sampleRate : 48000, moved: false
+      startClientX: e.clientX, startClientY: e.clientY,
+      grabOffsetSec: sec - (seg.tStart != null ? seg.tStart : 0) / sr,
+      startTStart: seg.tStart != null ? seg.tStart : 0, sr, moved: false, destLane: hit.trackIndex
     };
   } else {
-    drag = { mode: 'seek', trackIndex: -1, segIndex: -1, startClientX: e.clientX, startOffsetSamples: 0, sr: 0, moved: false };
+    drag = { mode: 'seek', trackIndex: -1, segIndex: -1, startClientX: e.clientX, startClientY: e.clientY, grabOffsetSec: 0, startTStart: 0, sr: 0, moved: false, destLane: -1 };
     seekTo(sec);
   }
   window.addEventListener('pointermove', onLanePointerMove);
@@ -447,37 +586,67 @@ function onLanePointerDown(e) {
 function onLanePointerMove(e) {
   if (!drag) return;
   if (drag.mode === 'seek') { seekTo(clientXToSec(e.clientX)); return; }
-  // clip drag: reposition the track in time (keep pxPerSec fixed for linear feel)
   const dx = e.clientX - drag.startClientX;
-  if (!drag.moved && Math.abs(dx) < CLIP_DRAG_THRESHOLD_PX) return;
+  const dy = e.clientY - drag.startClientY;
+  if (!drag.moved && Math.abs(dx) < CLIP_DRAG_THRESHOLD_PX && Math.abs(dy) < CLIP_DRAG_THRESHOLD_PX) return;
   drag.moved = true;
   if (el.timeline) el.timeline.classList.add('is-dragging-clip');
-  const dSamples = Math.round((dx / pxPerSec) * drag.sr);
-  const track = state.tracks[drag.trackIndex];
-  track.offsetSamples = Math.max(0, drag.startOffsetSamples + dSamples);
+
+  // Horizontal: move the clip's left edge to the pointer (minus grab offset),
+  // snapping to 0 / playhead / other clip edges.
+  const leftSec = applySnap(clientXToSec(e.clientX) - drag.grabOffsetSec, drag.trackIndex, drag.segIndex);
+  const seg = state.tracks[drag.trackIndex].segments[drag.segIndex];
+  seg.tStart = Math.max(0, Math.round(leftSec * drag.sr));
+
+  // Vertical: highlight a different lane as a cross-track drop target.
+  const destLane = laneIndexAtClientY(e.clientY);
+  drag.destLane = destLane;
+  highlightDropLane(destLane === drag.trackIndex ? -1 : destLane);
+
   drawAllLanes();
   positionPlayhead();
 }
 
-function onLanePointerUp() {
+function onLanePointerUp(e) {
   window.removeEventListener('pointermove', onLanePointerMove);
   window.removeEventListener('pointerup', onLanePointerUp);
   if (el.timeline) el.timeline.classList.remove('is-dragging-clip');
+  highlightDropLane(-1);
   if (!drag) return;
   const d = drag;
   drag = null;
-  if (d.mode === 'clip') {
-    if (d.moved) {
-      // Committed a time move: refit the scale, rebuild the mix, redraw.
-      rebuildMix();
-      renderTimeline();
-    } else {
-      // A click on a clip: focus its track + select the clip + seek there.
-      if (d.trackIndex !== state.activeTrackIndex) setActiveTrack(d.trackIndex);
-      state.selectedSegmentIndex = d.segIndex;
-      seekTo(clientXToSec(d.startClientX));
-      renderTimeline();
-    }
+  if (d.mode !== 'clip') return;
+
+  if (!d.moved) {
+    // A click on a clip: select it + seek there (its track is already active).
+    state.selectedSegmentIndex = d.segIndex;
+    seekTo(clientXToSec(d.startClientX));
+    renderTimeline();
+    return;
+  }
+
+  const seg = state.tracks[d.trackIndex].segments[d.segIndex];
+  const droppedTStart = seg.tStart;                 // the live-dragged position
+  const droppedSec = droppedTStart / d.sr;
+  if (d.destLane >= 0 && d.destLane !== d.trackIndex) {
+    // Cross-track move: reset the source clip to its original spot, then hand
+    // off to editing.moveClipToTrack (clone → dest, remove from source).
+    seg.tStart = d.startTStart;
+    moveClipToTrack(d.trackIndex, d.segIndex, d.destLane, droppedSec);
+  } else {
+    // Within-track move: commit with history (commitClipMove restores the
+    // pre-drag tStart, snapshots, re-applies, and rebuilds).
+    commitClipMove(d.trackIndex, d.segIndex, d.startTStart, droppedTStart);
+  }
+}
+
+/** Toggle the drop-target highlight on a lane (or clear with -1). */
+function highlightDropLane(laneIndex) {
+  if (!el.timelineGrid) return;
+  el.timelineGrid.querySelectorAll('.tl-lane.is-drop-target').forEach(l => l.classList.remove('is-drop-target'));
+  if (laneIndex >= 0) {
+    const lane = el.timelineGrid.querySelector(`.tl-lane[data-index="${laneIndex}"]`);
+    if (lane) lane.classList.add('is-drop-target');
   }
 }
 
@@ -587,6 +756,8 @@ export function seekToEnd() { seekTo(projectDurationSec); }
 export function initTimeline() {
   if (el.timelineGrid) el.timelineGrid.addEventListener('pointerdown', onLanePointerDown);
   if (el.timelineRuler) el.timelineRuler.addEventListener('pointerdown', onRulerPointerDown);
+  if (el.timeline) el.timeline.addEventListener('wheel', onWheel, { passive: false });
+  if (el.timelineScrollbar) el.timelineScrollbar.addEventListener('pointerdown', onScrollbarPointerDown);
   // Let tracks.js drive timeline re-renders / playback stops without a static
   // import cycle (timeline statically imports tracks for the control mutations).
   registerTimeline({ renderTimeline, stopTimelinePlayback });
