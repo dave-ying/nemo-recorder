@@ -75,6 +75,50 @@ export function clipTimelineEnd(clip) {
 }
 
 /**
+ * Ensure every clip has an explicit `tStart` (its timeline position, in the
+ * track's source samples). Clips that already have one keep it; any missing one
+ * is laid immediately after the furthest-right clip so far (contiguous packing
+ * from `base`). Mutates and returns the array.
+ * @param {Array<{start:number,end:number,tStart?:number}>} segments
+ * @param {number} [base]
+ */
+export function ensureClipTStarts(segments, base = 0) {
+  let acc = base;
+  for (const s of segments) {
+    if (s.tStart == null) s.tStart = acc;
+    acc = Math.max(acc, s.tStart + (s.end - s.start));
+  }
+  return segments;
+}
+
+/** Timeline end (samples) of a whole track = max over clips of tStart + length. */
+export function trackTimelineEndSamples(segments) {
+  let end = 0;
+  for (const s of segments) {
+    const t = (s.tStart != null ? s.tStart : 0) + (s.end - s.start);
+    if (t > end) end = t;
+  }
+  return end;
+}
+
+/**
+ * Which clip (if any) covers a timeline sample position on a track, plus the
+ * local offset into that clip's source range. Used for split/hit-testing.
+ * @param {Array<{start:number,end:number,tStart?:number}>} segments
+ * @param {number} tSample - timeline position in samples
+ * @returns {{index:number, offsetInClip:number}|null}
+ */
+export function clipAtTimelineSample(segments, tSample) {
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    const t = s.tStart != null ? s.tStart : 0;
+    const len = s.end - s.start;
+    if (tSample >= t && tSample < t + len) return { index: i, offsetInClip: tSample - t };
+  }
+  return null;
+}
+
+/**
  * Lay a track's clips end-to-end from 0, assigning each `tStart` in samples.
  * This is the contiguous layout (single track, and the default before a clip
  * is freely repositioned). Mutates and returns the clips array.

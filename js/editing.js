@@ -1,9 +1,9 @@
-import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE, cloneSeg, currentPlaybackRatio } from './state.js';
+import { state, SEGMENT_GAP_CSS_PX, SEGMENT_DRAG_SETTLE_MS, WAVEFORM_SCALE, cloneSeg, currentPlaybackRatio, getActiveTrack } from './state.js';
 import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { updateSegmentCountDisplay, setTransportDisabled, showToast, updateEmptyState } from './ui.js';
 import { hideSegmentTrash, clearSegmentHover, drawPlaybackWaveform, findSegmentAtSample, animateSegmentDelete, animateSegmentRestore, captureSegmentBitmap, visualRatioToAudioRatioWithState, showSegmentTrash, ensureDragAnimRunning } from './waveform.js';
-import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath, dbToGain, audibleTracks, addClipToMix } from './waveform-math.js';
+import { findSingleSegmentRemoval, computeDropInsertIndexPure, computeReorderTarget, computeSegmentBoundsPure, computeReorderArrangement, computeArrangementBounds, computePeaksForRange, buildWaveformPath, dbToGain, audibleTracks, addClipToMix, clipAtTimelineSample, ensureClipTStarts, trackTimelineEndSamples } from './waveform-math.js';
 import { pausePlayback, seekToRatio } from './playback.js';
 import { pushHistory, popUndo, popRedo, resetHistory } from './history.js';
 import { isEffectsActive, getSourceBuffer, trackSourceBuffer, requestEffectsSync, resetEffectsCaches } from './effects.js';
@@ -86,7 +86,7 @@ export async function loadBufferAsRecording(buffer, toastMessage) {
   resetEffectsCaches();
   state.originalBuffer = buffer;
   state.recordedBuffer = buffer;
-  state.segments = [{ start: 0, end: buffer.length, origin: 'capture' }];
+  state.segments = [{ start: 0, end: buffer.length, origin: 'capture', tStart: 0 }];
   rebuildMix(); // refresh the master mix (this track + any other tracks)
   resetHistory();
 
@@ -186,11 +186,14 @@ export function rebuildMix() {
   for (const track of audibleTracks(state.tracks)) {
     const source = trackSourceBuffer(track);
     if (!source || track.segments.length === 0) continue;
-    let acc = track.offsetSamples || 0;
+    // Each clip sits at its own timeline position (tStart); clips without one
+    // fall back to contiguous packing so pre-tStart data still mixes correctly.
+    let acc = 0;
     const laid = [];
     for (const s of track.segments) {
-      laid.push({ start: s.start, end: s.end, tStart: acc });
-      acc += (s.end - s.start);
+      const t = s.tStart != null ? s.tStart : acc;
+      laid.push({ start: s.start, end: s.end, tStart: t });
+      acc = Math.max(acc, t + (s.end - s.start));
     }
     parts.push({ track, source, laid });
     numCh = Math.max(numCh, source.numberOfChannels);
@@ -238,39 +241,121 @@ export function refreshMasterLoudness() {
   rebuildMix();
 }
 
+/**
+ * Commit a per-clip time move (dragged on the timeline). `prevTStart` is the
+ * clip's position before the drag; restore it, snapshot for undo, then apply the
+ * new position and rebuild the mix. The clip's track must be the active track
+ * (the timeline focuses it before dragging) so per-track history captures it.
+ * @param {number} trackIndex @param {number} clipIndex @param {number} prevTStart @param {number} newTStart
+ */
+export function commitClipMove(trackIndex, clipIndex, prevTStart, newTStart) {
+  const track = state.tracks[trackIndex];
+  if (!track) return;
+  const seg = track.segments[clipIndex];
+  if (!seg) return;
+  newTStart = Math.max(0, Math.round(newTStart));
+  if (prevTStart === newTStart) { seg.tStart = newTStart; rebuildMix(); refreshTracksPanel(); return; }
+  seg.tStart = prevTStart;
+  pushHistory();
+  seg.tStart = newTStart;
+  state.bufferEpoch++; // arrangement changed → undo must rebuild the mix
+  rebuildMix();
+  refreshTracksPanel();
+}
+
+/**
+ * Move a clip from one track to another (drag it onto a different lane). The
+ * clip's RAW PCM is cloned from the source track and appended onto the
+ * destination (so the destination's effects apply), positioned at `tStartSec`;
+ * the clip is removed from the source. Reuses the effects-aware append path.
+ *
+ * Cross-track moves span two tracks, which the per-active-track undo history
+ * can't represent cleanly, so history is reset afterward (the move is not
+ * undoable) — kept safe rather than leaving undo in an inconsistent state.
+ * @param {number} srcTrackIndex @param {number} clipIndex @param {number} destTrackIndex @param {number} tStartSec
+ */
+export async function moveClipToTrack(srcTrackIndex, clipIndex, destTrackIndex, tStartSec) {
+  const srcTrack = state.tracks[srcTrackIndex];
+  const destTrack = state.tracks[destTrackIndex];
+  if (!srcTrack || !destTrack || srcTrackIndex === destTrackIndex || !state.audioContext) return;
+  const srcSeg = srcTrack.segments[clipIndex];
+  const srcBuf = srcTrack.originalBuffer;
+  if (!srcSeg || !srcBuf) return;
+  if (state.isPlaying) pausePlayback();
+
+  // 1. Extract the clip's raw PCM from the source track.
+  const clipLen = srcSeg.end - srcSeg.start;
+  const nch = srcBuf.numberOfChannels;
+  const clipBuf = state.audioContext.createBuffer(nch, clipLen, srcBuf.sampleRate);
+  for (let c = 0; c < nch; c++) {
+    clipBuf.copyToChannel(srcBuf.getChannelData(c).slice(srcSeg.start, srcSeg.end), c);
+  }
+
+  // 2. Remove it from the source track.
+  srcTrack.segments.splice(clipIndex, 1);
+
+  // 3. Make the destination active and drop the clip in via the effects-aware
+  //    load/append path.
+  const tracks = await import('./tracks.js');
+  tracks.setActiveTrack(destTrackIndex);
+  const destRate = destTrack.originalBuffer ? destTrack.originalBuffer.sampleRate : state.audioContext.sampleRate;
+  const destCh = destTrack.originalBuffer ? destTrack.originalBuffer.numberOfChannels : nch;
+  const adapted = await adaptBuffer(clipBuf, destRate, destCh);
+  const tStartSamples = Math.max(0, Math.round(tStartSec * destRate));
+
+  if (!destTrack.originalBuffer) {
+    await loadBufferAsRecording(adapted);
+    if (state.segments[0]) state.segments[0].tStart = tStartSamples;
+  } else {
+    const destOldLen = destTrack.originalBuffer.length;
+    const newLen = adapted.length;
+    const newSegments = destTrack.segments.map(cloneSeg);
+    newSegments.push({ start: destOldLen, end: destOldLen + newLen, origin: 'move', tStart: tStartSamples });
+    await commitAppendedAudio(newLen, (c) => adapted.getChannelData(c), newSegments, destOldLen);
+  }
+
+  resetHistory(); // cross-track move isn't undoable (see note above)
+  state.bufferEpoch++;
+  rebuildPlaybackBuffer(); // active (dest) editor buffer + mix
+  refreshTracksPanel();
+  showToast(`Moved clip to ${destTrack.name}`);
+}
+
+// Split the clip under the shared timeline playhead (state.timelineSec) on the
+// active track into two independently-positioned clips. PCM-neutral: the two
+// halves reference the same source ranges, so no rebuild is needed — only the
+// arrangement changes (undo shares the buffer epoch and skips the rebuild).
 export function splitAtPlayhead() {
   if (!state.recordedBuffer || !state.originalBuffer) return;
   if (state.isPlaying) pausePlayback();
 
-  const sr = state.originalBuffer.sampleRate;
-  const editedSample = Math.round(state.playbackOffset * sr);
-  const target = findSegmentAtSample(editedSample);
-  if (!target) return;
+  const src = trackSourceBuffer(getActiveTrack()) || state.originalBuffer;
+  const sr = src.sampleRate;
+  const tSample = Math.round((state.timelineSec || 0) * sr);
+  const hit = clipAtTimelineSample(state.segments, tSample);
+  if (!hit) { showToast('Move the playhead over a clip to split'); return; }
 
-  const { index, offsetInSeg, seg } = target;
-  if (offsetInSeg <= 0 || offsetInSeg >= (seg.end - seg.start)) {
-    showToast('Move the line within a segment to split');
+  const seg = state.segments[hit.index];
+  const local = hit.offsetInClip; // samples into the clip's source range
+  if (local <= 0 || local >= (seg.end - seg.start)) {
+    showToast('Move the playhead within a clip to split');
     return;
   }
 
-  const splitPoint = seg.start + offsetInSeg;
+  const splitPoint = seg.start + local;
+  const clipTStart = seg.tStart != null ? seg.tStart : 0;
   pushHistory();
-  state.segments.splice(index, 1,
-    { start: seg.start, end: splitPoint, origin: 'split' },
-    { start: splitPoint, end: seg.end, origin: 'split' }
+  state.segments.splice(hit.index, 1,
+    { start: seg.start, end: splitPoint, origin: 'split', tStart: clipTStart },
+    { start: splitPoint, end: seg.end, origin: 'split', tStart: clipTStart + local }
   );
-
-  // Snap the playhead to the exact split point — the start of the right
-  // segment. audioRatioToVisualRatio maps boundary positions to the right
-  // card's left edge, so the playhead lands exactly on the next segment.
-  state.playbackOffset = editedSample / sr;
-  el.timeCurrent.textContent = formatTime(state.playbackOffset);
 
   hideSegmentTrash();
   clearSegmentHover();
   drawPlaybackWaveform(currentPlaybackRatio());
   updateSegmentCountDisplay();
-  showToast(`Split: segment ${index + 1} → ${index + 1} and ${index + 2}`);
+  refreshTracksPanel();
+  showToast(`Split clip ${hit.index + 1} → ${hit.index + 1} and ${hit.index + 2}`);
 }
 
 export function deleteSegmentByIndex(index) {
@@ -319,6 +404,7 @@ export function deleteSegmentByIndex(index) {
     setTransportDisabled(true);
     updateSegmentCountDisplay();
     animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, 0, deletedSnap);
+    refreshTracksPanel();
     showToast('All audio deleted', true);
     return;
   }
@@ -332,16 +418,18 @@ export function deleteSegmentByIndex(index) {
   const newPlayheadRatio = currentPlaybackRatio();
   animateSegmentDelete(oldSegments, oldTotalSamples, index, oldPlayheadRatio, newPlayheadRatio, deletedSnap);
   updateSegmentCountDisplay();
+  refreshTracksPanel();
   showToast(`Deleted segment ${index + 1} · ${state.segments.length} remaining`);
 }
 
 export function deleteSegmentAtPlayhead() {
   if (!state.recordedBuffer || !state.originalBuffer) return;
   if (state.isPlaying) pausePlayback();
-  const sr = state.originalBuffer.sampleRate;
-  const editedSample = Math.round(state.playbackOffset * sr);
-  const target = findSegmentAtSample(editedSample);
-  if (target) deleteSegmentByIndex(target.index);
+  const src = trackSourceBuffer(getActiveTrack()) || state.originalBuffer;
+  const sr = src.sampleRate;
+  const tSample = Math.round((state.timelineSec || 0) * sr);
+  const hit = clipAtTimelineSample(state.segments, tSample);
+  if (hit) deleteSegmentByIndex(hit.index);
 }
 
 
@@ -422,6 +510,9 @@ function concatRawOnly(newLen, fillChannel, oldLen) {
 // and rebuilds/redraws on commit — so this awaits the sync before callers
 // update their UI.
 async function commitAppendedAudio(newLen, fillChannel, newSegments, oldLen) {
+  // Any freshly-inserted clip without an explicit timeline position is packed
+  // at the track's current end (existing clips keep their free positions).
+  ensureClipTStarts(newSegments);
   if (isEffectsActive()) {
     const combined = concatRawOnly(newLen, fillChannel, oldLen);
     pushHistory();
@@ -453,7 +544,7 @@ async function insertClonedAudioAfter(afterIndex, newLen, fillChannel, originLab
   const oldLen = state.originalBuffer.length;
   const insertAt = Math.max(0, Math.min(afterIndex + 1, state.segments.length));
   const newSegments = state.segments.map(cloneSeg);
-  newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel });
+  newSegments.splice(insertAt, 0, { start: oldLen, end: oldLen + newLen, origin: originLabel, tStart: undefined });
 
   await commitAppendedAudio(newLen, fillChannel, newSegments, oldLen);
   if (!state.recordedBuffer) return;
@@ -553,11 +644,11 @@ export async function pasteInsertAtPlayhead() {
   if (atSegStart) {
     pastedIndex = index;
     newSegments = state.segments.map(cloneSeg);
-    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste', tStart: undefined });
   } else if (atRecordingEnd) {
     pastedIndex = index + 1;
     newSegments = state.segments.map(cloneSeg);
-    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste' });
+    newSegments.splice(pastedIndex, 0, { start: oldLen, end: oldLen + newLen, origin: 'paste', tStart: undefined });
   } else {
     const splitPoint = seg.start + offsetInSeg;
     pastedIndex = index + 1;
@@ -565,9 +656,9 @@ export async function pasteInsertAtPlayhead() {
     newSegments = [];
     for (let i = 0; i < state.segments.length; i++) {
       if (i === index) {
-        newSegments.push({ start: seg.start, end: splitPoint, origin: 'split' });
-        newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'paste' });
-        newSegments.push({ start: splitPoint, end: seg.end, origin: 'split' });
+        newSegments.push({ start: seg.start, end: splitPoint, origin: 'split', tStart: undefined });
+        newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'paste', tStart: undefined });
+        newSegments.push({ start: splitPoint, end: seg.end, origin: 'split', tStart: undefined });
       } else {
         newSegments.push(cloneSeg(state.segments[i]));
       }
@@ -633,6 +724,7 @@ function applyHistorySnapshot(snapshot, render) {
     updateSegmentCountDisplay();
     render(0);
     if (render === drawPlaybackWaveform) updateEmptyState();
+    refreshTracksPanel();
     return;
   }
 
@@ -643,6 +735,7 @@ function applyHistorySnapshot(snapshot, render) {
   updateSegmentCountDisplay();
   updateEmptyState();
   render(currentPlaybackRatio());
+  refreshTracksPanel();
 }
 
 // If the transition being undone/redone is a clean single-segment delete,
@@ -739,7 +832,7 @@ export async function appendBufferToRecording(buffer, toastMessage) {
   const oldLen = state.originalBuffer.length;
   const newLen = adapted.length;
   const newSegments = state.segments.map(cloneSeg);
-  newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append' });
+  newSegments.push({ start: oldLen, end: oldLen + newLen, origin: 'append', tStart: undefined });
   await commitAppendedAudio(newLen, (c) => adapted.getChannelData(c), newSegments, oldLen);
   if (!state.recordedBuffer) return;
 

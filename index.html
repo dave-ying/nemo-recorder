@@ -72,6 +72,20 @@
               </div>
             </div>
           </div>
+          <!-- Multi-lane timeline: every track is a row (left control header +
+               waveform lane) sharing one horizontal time axis and ONE playhead.
+               Shown once any track has audio; the empty-state below shows first. -->
+          <div class="timeline" id="timeline" hidden>
+            <div class="tl-ruler-row">
+              <div class="tl-corner"></div>
+              <canvas class="tl-ruler" id="timelineRuler" aria-hidden="true"></canvas>
+            </div>
+            <div class="tl-grid" id="timelineGrid"></div>
+            <div class="tl-scrollbar" id="timelineScrollbar" hidden><div class="tl-scroll-thumb" id="timelineScrollThumb"></div></div>
+            <div class="tl-playhead" id="timelinePlayhead"></div>
+          </div>
+
+          <div class="waveform-home" id="waveformHome">
           <div class="waveform-container" id="waveformContainer">
             <canvas class="timeline-ruler-canvas" id="timelineRulerCanvas" aria-hidden="true"></canvas>
             <canvas class="waveform-canvas" id="waveformCanvas"></canvas>
@@ -93,6 +107,7 @@
               </div>
             </div>
             <div class="waveform-segment-count hidden" id="segmentCount">1 segment</div>
+          </div>
           </div>
           <input type="file" id="appendFileInput" accept="audio/*,.mp3,.wav,.wave,.m4a,.m4b,.m4r,.aac,.flac,.ogg,.oga,.opus,.aif,.aiff,.aifc,.caf,.webm,.weba,.mp4,.m4v,.mov" hidden>
           <button class="append-button" id="appendButton" title="Add audio" aria-label="Add audio">
@@ -154,51 +169,47 @@
             <span class="time-sep">/</span>
             <span class="time-total" id="timeTotal">00:00.000</span>
           </div>
-          <button class="btn btn-primary" id="downloadButton" hidden style="margin-left: auto;">
+          <div class="tl-zoom" id="tlZoom" style="margin-left: auto;">
+            <button class="tl-zoom-btn" id="tlZoomOut" title="Zoom out" aria-label="Zoom out">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button class="tl-zoom-btn tl-zoom-fit" id="tlZoomFit" title="Zoom to fit">Fit</button>
+            <button class="tl-zoom-btn" id="tlZoomIn" title="Zoom in" aria-label="Zoom in">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+          <button class="add-track-button transport-add-track" id="addTrackButton" title="Add a new track">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            Add track
+          </button>
+          <div class="tool-anchor master-fx-anchor">
+            <button class="master-fx-button" id="masterFxButton" title="Finishing effects for the whole mix" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
+              <span>Finishing</span>
+            </button>
+            <div class="tool-popover master-fx-popover" id="masterFxPopover" hidden>
+              <div class="fx-popover-title">Master · applies to the whole mix</div>
+              <label class="tool-toggle" for="masterLoudnessEnabled">
+                <input id="masterLoudnessEnabled" type="checkbox">
+                <span>Loudness normalization</span>
+              </label>
+              <div class="fx-presets" id="loudnessPresets">
+                <button class="fx-preset" type="button" data-lufs="-14">YouTube · −14</button>
+                <button class="fx-preset" type="button" data-lufs="-16">Podcast · −16</button>
+                <button class="fx-preset" type="button" data-lufs="-9">Music · −9</button>
+              </div>
+              <label class="tool-field" for="masterTargetLufs"><span>Target LUFS</span></label>
+              <input id="masterTargetLufs" type="number" step="0.1" min="-70" max="0" value="-16">
+              <label class="tool-field" for="masterTruePeak"><span>True peak dBTP</span></label>
+              <input id="masterTruePeak" type="number" step="0.1" max="0" value="-1">
+            </div>
+          </div>
+          <button class="btn btn-primary" id="downloadButton" hidden>
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
             Export Audio
           </button>
           </div>
-          <div class="tracks-panel" id="tracksPanel" hidden>
-            <div class="tracks-panel-header">
-              <span class="tracks-panel-title">Tracks</span>
-              <div class="master-transport">
-                <button class="master-play-button" id="masterPlayButton" aria-label="Play mixed tracks" disabled>
-                  <svg class="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
-                  <svg class="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg>
-                  <span>Play mix</span>
-                </button>
-                <span class="master-time" id="masterTime">00:00.000 / 00:00.000</span>
-                <div class="tool-anchor master-fx-anchor">
-                  <button class="master-fx-button" id="masterFxButton" title="Finishing effects for the whole mix" aria-haspopup="true" aria-expanded="false">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
-                    <span>Finishing</span>
-                  </button>
-                  <div class="tool-popover master-fx-popover" id="masterFxPopover" hidden>
-                    <div class="fx-popover-title">Master · applies to the whole mix</div>
-                    <label class="tool-toggle" for="masterLoudnessEnabled">
-                      <input id="masterLoudnessEnabled" type="checkbox">
-                      <span>Loudness normalization</span>
-                    </label>
-                    <div class="fx-presets" id="loudnessPresets">
-                      <button class="fx-preset" type="button" data-lufs="-14">YouTube · −14</button>
-                      <button class="fx-preset" type="button" data-lufs="-16">Podcast · −16</button>
-                      <button class="fx-preset" type="button" data-lufs="-9">Music · −9</button>
-                    </div>
-                    <label class="tool-field" for="masterTargetLufs"><span>Target LUFS</span></label>
-                    <input id="masterTargetLufs" type="number" step="0.1" min="-70" max="0" value="-16">
-                    <label class="tool-field" for="masterTruePeak"><span>True peak dBTP</span></label>
-                    <input id="masterTruePeak" type="number" step="0.1" max="0" value="-1">
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="track-list" id="trackList"></div>
-            <button class="add-track-button" id="addTrackButton">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-              Add track
-            </button>
-            <div class="track-fx-popover" id="trackFxPopover" hidden>
+          <div class="track-fx-popover" id="trackFxPopover" hidden>
               <div class="fx-popover-title" id="trackFxTitle">Track effects</div>
               <label class="tool-toggle" for="fxDenoiseEnabled">
                 <input id="fxDenoiseEnabled" type="checkbox"><span>Noise removal</span>
@@ -225,7 +236,6 @@
                 <label class="fx-slider"><span>Amount</span><input id="fxDeesserAmount" type="range" min="0" max="1" step="0.05" value="0.6"></label>
               </div>
             </div>
-          </div>
         </div>
       </div>
     </section>
@@ -489,6 +499,17 @@
       </div>
 
       <div class="help-panel" id="helpPanelChangelog" hidden>
+        <div class="help-group changelog-group">
+          <div class="help-group-title">July 23, 2026</div>
+          <ul class="changelog-list">
+            <li>Reworked the multi-track view into a <strong>timeline</strong>: every track is now its own row with its controls on the left and its waveform on a shared time axis — no more separate track panel below the editor.</li>
+            <li>Added a single <strong>playhead</strong> that spans every track. Play now plays the whole mix and moves that one playhead; click a lane or the ruler to move it.</li>
+            <li><strong>Drag any clip</strong> left or right to position it in time — clips can now sit at their own spots with gaps between them, not just as one block per track.</li>
+            <li><strong>Drag a clip onto another track</strong> to move it there.</li>
+            <li>Added <strong>zoom and scroll</strong>: use the −/Fit/+ buttons or Ctrl/⌘-scroll to zoom, and the scrollbar or Shift-scroll to pan a longer project.</li>
+            <li>Click a clip to select it and focus its track; split, delete, and trim act on the focused track at the shared playhead. Splitting and moving clips can be undone.</li>
+          </ul>
+        </div>
         <div class="help-group changelog-group">
           <div class="help-group-title">July 22, 2026</div>
           <ul class="changelog-list">

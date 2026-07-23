@@ -44,9 +44,9 @@ export const WAVEFORM_STYLE = {
 // There is no per-segment scoping: to exclude part of a recording from an
 // effect, move that segment to its own track.
 
-/** Clone a segment. */
+/** Clone a segment/clip (including its timeline position `tStart` when set). */
 export function cloneSeg(s) {
-  return { start: s.start, end: s.end, origin: s.origin };
+  return { start: s.start, end: s.end, origin: s.origin, tStart: s.tStart };
 }
 
 export const SELECTION_PULSE_PERIOD_SEC = 2;
@@ -196,6 +196,7 @@ export function getActiveTrack() {
  * @property {AudioBufferSourceNode|null} playbackSource
  * @property {number} playbackStartTime
  * @property {number} playbackOffset
+ * @property {number} timelineSec - the shared timeline playhead position in project seconds (maintained by timeline.js); the authority for clip-level split/delete-at-playhead
  * @property {number} recordStartTime - performance.now() at recording start (drives live timer)
  * @property {number} selectedSegmentIndex
  * @property {number} hoverSegmentIndex - segment currently under the mouse cursor (hover, distinct from selected)
@@ -275,6 +276,7 @@ export const state = {
   playbackSource: null,
   playbackStartTime: 0,
   playbackOffset: 0,
+  timelineSec: 0,
   recordStartTime: 0,
   selectedSegmentIndex: -1,
   hoverSegmentIndex: -1,
