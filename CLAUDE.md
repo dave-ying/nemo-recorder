@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Nemo Recorder is a browser-based, truly lossless PCM audio recorder. It captures raw audio from the Web Audio API via `AudioWorklet` (bypassing `MediaRecorder`'s lossy Opus/Vorbis encoding), and lets the user trim/split/delete/reorder segments on a waveform before exporting to WAV or MP3. It's a vanilla JS, zero-runtime-dependency, no-build-step app — plain ES modules served as static files.
+Nemo Audio is a browser-based, truly lossless PCM audio recorder. It captures raw audio from the Web Audio API via `AudioWorklet` (bypassing `MediaRecorder`'s lossy Opus/Vorbis encoding), and lets the user trim/split/delete/reorder segments on a waveform before exporting to WAV or MP3. It's a vanilla JS, zero-runtime-dependency, no-build-step app — plain ES modules served as static files.
 
 ## Commands
 

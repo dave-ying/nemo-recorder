@@ -42,7 +42,7 @@ export async function refreshMicDeviceList() {
       .filter(d => d.kind === 'audioinput')
       .map(d => ({ deviceId: d.deviceId, label: d.label }));
   } catch (e) {
-    console.warn('[nemo-recorder]', e.message);
+    console.warn('[nemo-audio]', e.message);
   }
 }
 
@@ -84,7 +84,7 @@ async function probeStereoSupport(deviceId, nativeChannels) {
     // channelCount constraint, not a missing device.
     if (err.name === 'OverconstrainedError') return false;
     // Anything else (device busy, permission race) is inconclusive.
-    console.warn('[nemo-recorder]', err.message);
+    console.warn('[nemo-audio]', err.message);
     return null;
   }
 }
@@ -100,8 +100,8 @@ export async function connectMicrophone(deviceId) {
     state.micLabel = track.label || 'Unknown Microphone';
 
     let caps = {}, trackSettings = {};
-    try { caps = track.getCapabilities() || {}; } catch (e) { console.warn('[nemo-recorder]', e.message); }
-    try { trackSettings = track.getSettings() || {}; } catch (e) { console.warn('[nemo-recorder]', e.message); }
+    try { caps = track.getCapabilities() || {}; } catch (e) { console.warn('[nemo-audio]', e.message); }
+    try { trackSettings = track.getSettings() || {}; } catch (e) { console.warn('[nemo-audio]', e.message); }
 
     state.micDeviceId = trackSettings.deviceId || deviceId || null;
 
@@ -171,7 +171,7 @@ export function disconnectMicrophone() {
   stopRecordingNodes();
   releaseMicStream();
   if (state.audioContext) {
-    try { state.audioContext.close(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
+    try { state.audioContext.close(); } catch (e) { console.warn('[nemo-audio]', e.message); }
     state.audioContext = null;
     state.workletLoaded = false;
   }
@@ -198,7 +198,7 @@ async function ensureAudioContext() {
         if (state.audioContext.state === 'suspended') await state.audioContext.resume();
         return state.audioContext;
       }
-      try { await state.audioContext.close(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
+      try { await state.audioContext.close(); } catch (e) { console.warn('[nemo-audio]', e.message); }
       state.audioContext = null;
       state.workletLoaded = false;
   }
@@ -343,7 +343,7 @@ function teardownCaptureSession() {
   if (state.liveResizeHandler) window.removeEventListener('resize', state.liveResizeHandler);
   stopRecordingNodes();
   releaseMicStream();
-  if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
+  if (state.audioContext) state.audioContext.suspend().catch(e => console.warn('[nemo-audio]', e.message));
 }
 
 // Abort an in-progress capture without building a take: used when the record
@@ -473,8 +473,8 @@ function startLiveAnimation() {
 }
 
 function stopRecordingNodes() {
-  if (state.sourceNode) { try { state.sourceNode.disconnect(); } catch(e) { console.warn('[nemo-recorder]', e.message); } state.sourceNode = null; }
-  if (state.workletNode) { try { state.workletNode.disconnect(); } catch(e) { console.warn('[nemo-recorder]', e.message); } state.workletNode = null; }
+  if (state.sourceNode) { try { state.sourceNode.disconnect(); } catch(e) { console.warn('[nemo-audio]', e.message); } state.sourceNode = null; }
+  if (state.workletNode) { try { state.workletNode.disconnect(); } catch(e) { console.warn('[nemo-audio]', e.message); } state.workletNode = null; }
   state.isRecording = false;
 }
 

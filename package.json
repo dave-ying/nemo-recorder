@@ -1,16 +1,16 @@
 {
-  "name": "nemo-recorder",
+  "name": "nemo-audio",
   "version": "1.0.0",
   "description": "Truly lossless PCM audio recorder in the browser — captures raw audio via AudioWorklet, edits on a waveform, exports WAV/MP3. Zero runtime dependencies.",
   "license": "MIT",
   "author": "Dave Ying",
-  "homepage": "https://github.com/dave-ying/nemo-recorder",
+  "homepage": "https://github.com/dave-ying/nemo-audio",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dave-ying/nemo-recorder.git"
+    "url": "https://github.com/dave-ying/nemo-audio.git"
   },
   "bugs": {
-    "url": "https://github.com/dave-ying/nemo-recorder/issues"
+    "url": "https://github.com/dave-ying/nemo-audio/issues"
   },
   "type": "module",
   "scripts": {

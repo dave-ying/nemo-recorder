@@ -276,7 +276,7 @@ export function requestEffectsSync(hint) {
           try {
             await runOneSync(hintToRun, deps);
           } catch (err) {
-            console.warn('[nemo-recorder]', err);
+            console.warn('[nemo-audio]', err);
             // A permanent denoise failure (e.g. WASM failed to load) would
             // otherwise error-toast on every future append — turn it off and
             // rebuild without it.
@@ -291,7 +291,7 @@ export function requestEffectsSync(hint) {
           }
         }
       } catch (err) {
-        console.warn('[nemo-recorder]', err);
+        console.warn('[nemo-audio]', err);
       }
     })();
     drainPromise.finally(() => { drainPromise = null; });

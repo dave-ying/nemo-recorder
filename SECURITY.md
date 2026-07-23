@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-Nemo Recorder is a client-side static web app — all audio processing happens in the browser. There is no backend, database, authentication, or server-side code in this repository.
+Nemo Audio is a client-side static web app — all audio processing happens in the browser. There is no backend, database, authentication, or server-side code in this repository.
 
 If you find a security issue, please **do not** open a public GitHub issue. Instead, report it privately:
 

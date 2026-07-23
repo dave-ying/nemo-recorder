@@ -12,7 +12,7 @@ let playbackStarting = false;
 // so a running state here always means audio is actually flowing.
 function suspendWhenIdle() {
   if (state.audioContext && state.audioContext.state === 'running') {
-    state.audioContext.suspend().catch(e => console.warn('[nemo-recorder]', e.message));
+    state.audioContext.suspend().catch(e => console.warn('[nemo-audio]', e.message));
   }
 }
 
@@ -63,8 +63,8 @@ export function pausePlayback() {
   if (!state.playbackSource) return;
   const elapsed = state.audioContext.currentTime - state.playbackStartTime + state.playbackOffset;
   state.playbackOffset = Math.min(elapsed, state.recordedBuffer.duration);
-  try { state.playbackSource.stop(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
-  try { state.playbackSource.disconnect(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
+  try { state.playbackSource.stop(); } catch (e) { console.warn('[nemo-audio]', e.message); }
+  try { state.playbackSource.disconnect(); } catch (e) { console.warn('[nemo-audio]', e.message); }
   state.playbackSource = null;
   state.isPlaying = false;
   el.playButton.classList.remove('playing');

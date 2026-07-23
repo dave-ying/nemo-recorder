@@ -264,8 +264,8 @@ function pausePreview() {
   state.previewOffset = Math.min(elapsed, state.pendingTakeBuffer.duration);
   state.isPreviewing = false;
   previewGen++;
-  try { state.previewSource.stop(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
-  try { state.previewSource.disconnect(); } catch (e) { console.warn('[nemo-recorder]', e.message); }
+  try { state.previewSource.stop(); } catch (e) { console.warn('[nemo-audio]', e.message); }
+  try { state.previewSource.disconnect(); } catch (e) { console.warn('[nemo-audio]', e.message); }
   state.previewSource = null;
   el.rmPlayBtn.classList.remove('playing');
   if (reviewRafId) cancelAnimationFrame(reviewRafId);

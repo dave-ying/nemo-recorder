@@ -43,7 +43,7 @@ export async function loadUploadedFile(file) {
     await loadBufferAsRecording(buffer, `Loaded "${file.name}" — lossless PCM ready`);
   } catch (err) {
     showToast(unsupportedFormatError(file.name, isWebKit), true);
-    console.warn('[nemo-recorder]', err.message);
+    console.warn('[nemo-audio]', err.message);
   } finally {
     isImporting = false;
     el.emptyStateUploadButton.disabled = false;
@@ -63,7 +63,7 @@ export async function appendUploadedFile(file) {
     await appendBufferToRecording(buffer, `Appended "${file.name}"`);
   } catch (err) {
     showToast(unsupportedFormatError(file.name, isWebKit), true);
-    console.warn('[nemo-recorder]', err.message);
+    console.warn('[nemo-audio]', err.message);
   } finally {
     isImporting = false;
   }

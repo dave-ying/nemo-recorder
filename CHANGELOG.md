@@ -1,6 +1,10 @@
 # Changelog
 
-All notable user-facing changes to Nemo Recorder are documented here.
+All notable user-facing changes to Nemo Audio are documented here.
+
+## 2026-07-23
+
+- Renamed the app from Nemo Recorder to Nemo Audio.
 
 ## 2026-07-22
 
