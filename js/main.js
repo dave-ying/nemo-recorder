@@ -5,13 +5,13 @@ import { applyTrimSilence } from './trim-silence.js';
 import { loadUploadedFile, appendUploadedFile } from './upload.js';
 import { drawPlaybackWaveform, removePlayheadCaretDraggingClass, hideSegmentTrash, showSegmentTrash, getSegmentIndexAtClientPoint, invalidateRectCache } from './waveform.js';
 import { splitAtPlayhead, deleteSegmentByIndex, deleteSegmentAtPlayhead, undo, redo, jumpToSegmentStart, jumpToSegmentEnd, seekFromClientX, beginSegmentReorderDrag, applySegmentReorderDrag, finishSegmentReorderDrag, cancelSegmentReorderDrag, selectAdjacentSegment, copySegmentByIndex, pasteSegmentAfterIndex, pasteInsertAtPlayhead } from './editing.js';
-import { startPlayback, pausePlayback, isPlaybackActive } from './playback.js';
 import { arrowKeyDown, arrowKeyUp, stepBySeconds } from './scrub.js';
 import { openExportModal, closeExportModal, renderExportQualityOptions, updateExportInfo, executeExport } from './export.js';
 import { openRecordModal, closeRecordModal, handleModalStop, handleModalRecord, togglePreview, initRecordModal } from './record-modal.js';
 import { closeHelpModal, initHelpModal } from './help-modal.js';
 import { openSegmentContextMenu, initSegmentContextMenu, closeSegmentContextMenu } from './context-menu.js';
-import { addTrack, toggleMasterPlayback, stopMasterPlayback, updateTracksPanel, initEffectsUI } from './tracks.js';
+import { addTrack, updateTracksPanel, initEffectsUI } from './tracks.js';
+import { initTimeline, togglePlay, seekToStart, seekToEnd, renderTimeline } from './timeline.js';
 
 const RESIZE_DEBOUNCE_MS = 120;
 let _pendingSeekClientX = null;
@@ -48,18 +48,12 @@ el.fileInput.addEventListener('change', (e) => {
   const file = /** @type {HTMLInputElement} */ (e.target).files[0];
   if (file) loadUploadedFile(file);
 });
-el.restartButton.addEventListener('click', () => {
-  if (state.isPlaying) pausePlayback();
-  jumpToSegmentStart();
-});
-el.skipForwardButton.addEventListener('click', () => {
-  if (state.isPlaying) pausePlayback();
-  jumpToSegmentEnd();
-});
-el.playButton.addEventListener('click', () => { if (isPlaybackActive()) { pausePlayback(); } else { stopMasterPlayback(); startPlayback(); } });
+// Transport now drives the shared timeline playhead over the whole mix.
+el.restartButton.addEventListener('click', () => seekToStart());
+el.skipForwardButton.addEventListener('click', () => seekToEnd());
+el.playButton.addEventListener('click', () => togglePlay());
 
 el.addTrackButton.addEventListener('click', addTrack);
-el.masterPlayButton.addEventListener('click', toggleMasterPlayback);
 
 el.downloadButton.addEventListener('click', openExportModal);
 el.splitButton.addEventListener('click', splitAtPlayhead);
@@ -286,9 +280,9 @@ document.addEventListener('keydown', (e) => {
     if (state.selectedSegmentIndex >= 0) pasteSegmentAfterIndex(state.selectedSegmentIndex);
     else showToast('Select a segment to paste after');
   } else if (e.code === 'Space' && noMod) {
-    if (!el.playbackView.hidden && state.recordedBuffer) {
+    if (!el.playbackView.hidden && state.mixBuffer) {
       e.preventDefault();
-      isPlaybackActive() ? pausePlayback() : startPlayback();
+      togglePlay();
     }
   } else if (isSplitShortcut && !el.playbackView.hidden && state.recordedBuffer) {
     e.preventDefault();
@@ -351,13 +345,10 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   invalidateRectCache();
   resizeTimer = setTimeout(() => {
-    if (!el.playbackView.hidden && state.recordedBuffer) {
+    if (!el.playbackView.hidden) {
       state.cachedPeaks = null;
       state.cachedPath = null;
-      const elapsed = state.isPlaying
-        ? state.audioContext.currentTime - state.playbackStartTime + state.playbackOffset
-        : state.playbackOffset;
-      drawPlaybackWaveform(elapsed / state.recordedBuffer.duration);
+      renderTimeline();
     }
   }, RESIZE_DEBOUNCE_MS);
 });
@@ -366,6 +357,7 @@ window.addEventListener('resize', () => {
 initRecordModal();
 initHelpModal();
 initSegmentContextMenu();
+initTimeline();
 updateEmptyState();
 updateTracksPanel();
 updateSegmentCountDisplay();
