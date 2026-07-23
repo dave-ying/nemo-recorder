@@ -857,9 +857,12 @@ kbd {
 }
 .timeline[hidden] { display: none; }
 
-.tl-ruler-row { display: flex; align-items: flex-end; flex-shrink: 0; height: 26px; }
+.tl-ruler-row {
+  display: flex; align-items: flex-end; flex-shrink: 0; height: 26px;
+  position: sticky; top: 0; z-index: 4; background: var(--bg);
+}
 .tl-corner { width: var(--tl-header-w); flex-shrink: 0; }
-.tl-ruler { flex: 1 1 0; height: 26px; display: block; }
+.tl-ruler { flex: 1 1 0; height: 26px; display: block; cursor: pointer; }
 
 .tl-grid { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
 
@@ -895,7 +898,8 @@ kbd {
 .tl-head-vol { display: flex; align-items: center; }
 .tl-head-vol .track-vol { width: 100%; }
 
-.tl-lane-body { position: relative; flex: 1 1 0; min-width: 0; background: var(--bg); }
+.tl-lane-body { position: relative; flex: 1 1 0; min-width: 0; background: var(--bg); cursor: grab; }
+.timeline.is-dragging-clip .tl-lane-body { cursor: grabbing; }
 .tl-lane-canvas { display: block; }
 .tl-lane-empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;

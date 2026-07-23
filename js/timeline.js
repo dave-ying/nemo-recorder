@@ -19,6 +19,7 @@ import { el } from './dom.js';
 import { formatTime } from './utils.js';
 import { computePeaksForRange, pickRulerIntervalSec, formatRulerLabel } from './waveform-math.js';
 import { trackSourceBuffer } from './effects.js';
+import { rebuildMix } from './editing.js';
 import {
   setActiveTrack, toggleMute, toggleSolo, setGainDb,
   removeTrack, toggleTrackFxPopover, enabledFxCount, registerTimeline,
@@ -47,7 +48,13 @@ let mixStartSec = 0;
 let rafId = 0;
 let playing = false;
 
-/** Peak cache keyed by a track's source AudioBuffer (auto-invalidates: edits produce a new buffer). */
+/**
+ * Peak cache: source AudioBuffer → Map of `${start}:${end}:${width}` → peaks.
+ * Keying by buffer identity auto-invalidates (edits produce a new buffer, so the
+ * stale entry is never hit again and the WeakMap lets it be GC'd); the inner map
+ * caches each clip's peaks across frames so playback/drag don't recompute them.
+ * @type {WeakMap<AudioBuffer, Map<string, Float32Array>>}
+ */
 const _peaksCache = new WeakMap();
 
 // ===== Scale / geometry =====
@@ -179,9 +186,14 @@ function buildLaneHeader(track, i, anySolo) {
   // Row 2: primary controls
   const ctls = document.createElement('div');
   ctls.className = 'tl-head-controls';
+  // Record / upload into a lane: fresh when the lane is empty, append when it
+  // already holds audio (so a lane can hold multiple takes, like the old "+").
+  const hasAudio = !!track.originalBuffer && track.segments.length > 0;
   ctls.append(
-    iconButton('track-ctl track-rec', 'Record into this track', SVG_MIC, () => { setActiveTrack(i); openRecordModal('fresh'); }),
-    iconButton('track-ctl track-upload', 'Upload into this track', SVG_UPLOAD, () => { setActiveTrack(i); el.fileInput.click(); }),
+    iconButton('track-ctl track-rec', hasAudio ? 'Record more into this track' : 'Record into this track', SVG_MIC,
+      () => { setActiveTrack(i); openRecordModal(hasAudio ? 'append' : 'fresh'); }),
+    iconButton('track-ctl track-upload', hasAudio ? 'Append audio to this track' : 'Upload into this track', SVG_UPLOAD,
+      () => { setActiveTrack(i); (hasAudio ? el.appendFileInput : el.fileInput).click(); }),
     toggleButton('track-ctl track-mute' + (track.muted ? ' is-on' : ''), 'Mute', 'M', () => toggleMute(i)),
     toggleButton('track-ctl track-solo' + (track.solo ? ' is-on' : '') + (anySolo && !track.solo ? ' is-dimmed' : ''), 'Solo', 'S', () => toggleSolo(i))
   );
@@ -266,9 +278,10 @@ function drawLane(canvas, track, isActive) {
   const sr = src.sampleRate;
   const data = src.getChannelData(0);
   const playX = secToX(playheadSec) * dpr;
+  const scale = (H / 2) * 0.86;
 
   let accSamples = track.offsetSamples || 0;
-  for (const seg of track.segments) {
+  track.segments.forEach((seg, segIndex) => {
     const len = seg.end - seg.start;
     const startSec = accSamples / sr;
     const endSec = (accSamples + len) / sr;
@@ -277,37 +290,41 @@ function drawLane(canvas, track, isActive) {
     const x0 = Math.round(secToX(startSec) * dpr);
     const x1 = Math.round(secToX(endSec) * dpr);
     const wpx = Math.max(1, x1 - x0);
+    const selected = isActive && segIndex === state.selectedSegmentIndex;
 
-    // Clip card background
-    ctx.fillStyle = isActive ? WAVEFORM_STYLE.hoverCardBg : WAVEFORM_STYLE.segmentCardBg;
+    // Clip card background + border (selected clips get an accent outline)
+    ctx.fillStyle = selected ? WAVEFORM_STYLE.hoverCardBg
+      : (isActive ? WAVEFORM_STYLE.hoverCardBg : WAVEFORM_STYLE.segmentCardBg);
     ctx.fillRect(x0, 2, wpx, H - 4);
-    ctx.strokeStyle = isActive ? WAVEFORM_STYLE.selectedEdgeColor : WAVEFORM_STYLE.segmentEdgeColor;
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = selected ? WAVEFORM_STYLE.selectedEdgeColor
+      : (isActive ? WAVEFORM_STYLE.selectedEdgeColor : WAVEFORM_STYLE.segmentEdgeColor);
+    ctx.lineWidth = selected ? 2 : 1;
     ctx.strokeRect(x0 + 0.5, 2.5, wpx - 1, H - 5);
 
-    // Waveform peaks
-    let entry = _peaksCache.get(src);
-    const key = `${seg.start}:${seg.end}:${wpx}`;
-    if (!entry || entry.key !== key) {
-      entry = { key, peaks: computePeaksForRange(data, seg.start, seg.end, wpx) };
-      _peaksCache.set(src, entry);
-    }
-    const peaks = entry.peaks;
-    const scale = (H / 2) * 0.86;
+    // Waveform peaks (cached per source + segment range + column width)
+    const peaks = cachedPeaks(src, data, seg.start, seg.end, wpx);
+    const onColor = selected ? WAVEFORM_STYLE.selectedPlayedColor
+      : (isActive ? WAVEFORM_STYLE.playedColor : WAVEFORM_STYLE.unplayedColor);
+    const offColor = selected ? WAVEFORM_STYLE.selectedUnplayedColorBright
+      : (isActive ? WAVEFORM_STYLE.unplayedColor : 'rgba(77, 216, 200, 0.16)');
     for (let x = 0; x < wpx; x++) {
-      const min = peaks[x * 2];
-      const max = peaks[x * 2 + 1];
       const colX = x0 + x;
-      const top = midY + min * scale;
-      const bot = midY + max * scale;
-      const h = Math.max(1, bot - top);
-      const played = colX <= playX;
-      ctx.fillStyle = played
-        ? (isActive ? WAVEFORM_STYLE.playedColor : WAVEFORM_STYLE.unplayedColor)
-        : (isActive ? WAVEFORM_STYLE.unplayedColor : 'rgba(77, 216, 200, 0.16)');
+      const top = midY + peaks[x * 2] * scale;
+      const h = Math.max(1, (midY + peaks[x * 2 + 1] * scale) - top);
+      ctx.fillStyle = colX <= playX ? onColor : offColor;
       ctx.fillRect(colX, top, 1, h);
     }
-  }
+  });
+}
+
+/** Peaks cached per source buffer, keyed by segment range + column width. */
+function cachedPeaks(src, data, start, end, wpx) {
+  let byRange = _peaksCache.get(src);
+  if (!byRange) { byRange = new Map(); _peaksCache.set(src, byRange); }
+  const key = `${start}:${end}:${wpx}`;
+  let peaks = byRange.get(key);
+  if (!peaks) { peaks = computePeaksForRange(data, start, end, wpx); byRange.set(key, peaks); }
+  return peaks;
 }
 
 function drawRuler() {
@@ -358,41 +375,122 @@ function positionPlayhead() {
   ph.style.height = (RULER_H + totalLanesHeightCss()) + 'px';
 }
 
-// ===== Seeking (click / drag on the lane area) =====
+// ===== Pointer interaction: seek / select clip / drag clip in time =====
+//
+// - Press on empty lane area or the ruler → scrub the playhead (drag to move it).
+// - Press on a track's clip and release without dragging → seek there, select
+//   that clip, and focus its track (so split/delete/trim act on it).
+// - Press on a clip and drag horizontally → reposition that whole track on the
+//   timeline (updates the track's offset; all its clips move together, since a
+//   track is one contiguous block of audio).
 
-/** Map a client X to a project time (seconds), clamped. */
+const CLIP_DRAG_THRESHOLD_PX = 4;
+
+/** Map a client X (relative to the lane column) to a project time (seconds). */
 function clientXToSec(clientX) {
   if (!el.timelineGrid) return 0;
   const rect = el.timelineGrid.getBoundingClientRect();
-  const x = clientX - rect.left - HEADER_W;
-  return Math.max(0, Math.min(projectDurationSec, xToSec(x)));
+  return Math.max(0, Math.min(projectDurationSec, xToSec(clientX - rect.left - HEADER_W)));
 }
 
-let seeking = false;
+/**
+ * Which track/segment (if any) sits under a project time on a given lane.
+ * @returns {{trackIndex:number, segIndex:number}|null}
+ */
+function clipHitTest(laneIndex, sec) {
+  const track = state.tracks[laneIndex];
+  if (!track) return null;
+  const src = trackSourceBuffer(track);
+  if (!src || track.segments.length === 0) return null;
+  const sr = src.sampleRate;
+  let acc = (track.offsetSamples || 0) / sr;
+  for (let i = 0; i < track.segments.length; i++) {
+    const s = track.segments[i];
+    const dur = (s.end - s.start) / sr;
+    if (sec >= acc && sec <= acc + dur) return { trackIndex: laneIndex, segIndex: i };
+    acc += dur;
+  }
+  return null;
+}
 
-function onSeekPointerDown(e) {
+/** @type {null | {mode:'seek'|'clip', trackIndex:number, segIndex:number, startClientX:number, startOffsetSamples:number, sr:number, moved:boolean}} */
+let drag = null;
+
+function onLanePointerDown(e) {
   if (!anyTrackHasAudio()) return;
   const rect = el.timelineGrid.getBoundingClientRect();
-  // Only start a seek when the press lands in the lane area (right of headers).
-  if (e.clientX - rect.left < HEADER_W) return;
-  if (/** @type {HTMLElement} */(e.target).closest('.track-ctl, input, .tl-lane-head')) return;
-  // Clicking a lane's waveform focuses that track (so split/delete target it).
-  const laneEl = /** @type {HTMLElement|null} */(/** @type {HTMLElement} */(e.target).closest('.tl-lane'));
-  if (laneEl && laneEl.dataset.index != null) {
-    const idx = Number(laneEl.dataset.index);
-    if (idx !== state.activeTrackIndex) setActiveTrack(idx);
+  if (e.clientX - rect.left < HEADER_W) return; // header zone
+  const targetEl = /** @type {HTMLElement} */(e.target);
+  if (targetEl.closest('.track-ctl, input, .tl-lane-head')) return;
+
+  const laneEl = /** @type {HTMLElement|null} */(targetEl.closest('.tl-lane'));
+  const laneIndex = laneEl && laneEl.dataset.index != null ? Number(laneEl.dataset.index) : -1;
+  const sec = clientXToSec(e.clientX);
+  const hit = laneIndex >= 0 ? clipHitTest(laneIndex, sec) : null;
+
+  if (hit) {
+    const track = state.tracks[hit.trackIndex];
+    const src = trackSourceBuffer(track);
+    drag = {
+      mode: 'clip', trackIndex: hit.trackIndex, segIndex: hit.segIndex,
+      startClientX: e.clientX, startOffsetSamples: track.offsetSamples || 0,
+      sr: src ? src.sampleRate : 48000, moved: false
+    };
+  } else {
+    drag = { mode: 'seek', trackIndex: -1, segIndex: -1, startClientX: e.clientX, startOffsetSamples: 0, sr: 0, moved: false };
+    seekTo(sec);
   }
-  seeking = true;
-  seekTo(clientXToSec(e.clientX));
-  window.addEventListener('pointermove', onSeekPointerMove);
-  window.addEventListener('pointerup', onSeekPointerUp);
+  window.addEventListener('pointermove', onLanePointerMove);
+  window.addEventListener('pointerup', onLanePointerUp);
 }
 
-function onSeekPointerMove(e) { if (seeking) seekTo(clientXToSec(e.clientX)); }
-function onSeekPointerUp() {
-  seeking = false;
-  window.removeEventListener('pointermove', onSeekPointerMove);
-  window.removeEventListener('pointerup', onSeekPointerUp);
+function onLanePointerMove(e) {
+  if (!drag) return;
+  if (drag.mode === 'seek') { seekTo(clientXToSec(e.clientX)); return; }
+  // clip drag: reposition the track in time (keep pxPerSec fixed for linear feel)
+  const dx = e.clientX - drag.startClientX;
+  if (!drag.moved && Math.abs(dx) < CLIP_DRAG_THRESHOLD_PX) return;
+  drag.moved = true;
+  if (el.timeline) el.timeline.classList.add('is-dragging-clip');
+  const dSamples = Math.round((dx / pxPerSec) * drag.sr);
+  const track = state.tracks[drag.trackIndex];
+  track.offsetSamples = Math.max(0, drag.startOffsetSamples + dSamples);
+  drawAllLanes();
+  positionPlayhead();
+}
+
+function onLanePointerUp() {
+  window.removeEventListener('pointermove', onLanePointerMove);
+  window.removeEventListener('pointerup', onLanePointerUp);
+  if (el.timeline) el.timeline.classList.remove('is-dragging-clip');
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (d.mode === 'clip') {
+    if (d.moved) {
+      // Committed a time move: refit the scale, rebuild the mix, redraw.
+      rebuildMix();
+      renderTimeline();
+    } else {
+      // A click on a clip: focus its track + select the clip + seek there.
+      if (d.trackIndex !== state.activeTrackIndex) setActiveTrack(d.trackIndex);
+      state.selectedSegmentIndex = d.segIndex;
+      seekTo(clientXToSec(d.startClientX));
+      renderTimeline();
+    }
+  }
+}
+
+/** Scrub from a press on the ruler (maps the ruler's own x → seconds). */
+function onRulerPointerDown(e) {
+  if (!anyTrackHasAudio() || !el.timelineRuler) return;
+  const rect = el.timelineRuler.getBoundingClientRect();
+  const toSec = (cx) => Math.max(0, Math.min(projectDurationSec, xToSec(cx - rect.left)));
+  seekTo(toSec(e.clientX));
+  const move = (ev) => seekTo(toSec(ev.clientX));
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
 }
 
 /** Move the playhead to a time; if playing, restart the mix from there. */
@@ -445,6 +543,7 @@ function stopMix(ended) {
   mixSource = null;
   playing = false;
   if (rafId) cancelAnimationFrame(rafId);
+  syncActivePlaybackOffset();
   drawAllLanes();
   positionPlayhead();
   updateTransportUI();
@@ -462,6 +561,7 @@ function animate() {
   const elapsed = state.audioContext.currentTime - mixStartCtxTime + mixStartSec;
   if (elapsed >= projectDurationSec) { stopMix(true); return; }
   playheadSec = elapsed;
+  syncActivePlaybackOffset();
   positionPlayhead();
   drawAllLanes();
   updateTransportUI();
@@ -485,9 +585,8 @@ export function seekToEnd() { seekTo(projectDurationSec); }
 // ===== Init (wire seek + resize) =====
 
 export function initTimeline() {
-  if (el.timelineGrid) {
-    el.timelineGrid.addEventListener('pointerdown', onSeekPointerDown);
-  }
+  if (el.timelineGrid) el.timelineGrid.addEventListener('pointerdown', onLanePointerDown);
+  if (el.timelineRuler) el.timelineRuler.addEventListener('pointerdown', onRulerPointerDown);
   // Let tracks.js drive timeline re-renders / playback stops without a static
   // import cycle (timeline statically imports tracks for the control mutations).
   registerTimeline({ renderTimeline, stopTimelinePlayback });
